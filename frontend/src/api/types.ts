@@ -342,6 +342,7 @@ export type StemState = "missing" | "queued" | "running" | "ready" | "error";
 export interface StemsStatus {
   available: boolean; // false: this install can't split (reason says why)
   reason: string | null;
+  waiting?: string | null; // the vocal model couldn't be downloaded: why, and when splitting tries again
   tracks: Record<string, { state: StemState; progress: number; error: string | null }>;
   ready: number;
   total: number;

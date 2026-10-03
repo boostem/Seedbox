@@ -39,6 +39,8 @@ export interface AppState {
   stems: Record<string, Record<string, StemEntry>>;
   /** stemsAvailable[folder] = whether this install can split vocals (from the stems status), and why not. */
   stemsAvailable: Record<string, { available: boolean; reason: string | null }>;
+  /** Set while the vocal model couldn't be downloaded (why, and when splitting tries again); null otherwise. */
+  stemModelWaiting: string | null;
   /** setVersion[folder] bumps on `set_changed` — include in deps to refetch a CrateSet. */
   setVersion: Record<string, number>;
   /** setmixes[target] = the latest SetMix seen for "crate:<folder>" / "setlist:<id>" (from `setmix` events). */
@@ -107,6 +109,7 @@ export const useApp = create<AppState>()((set, get) => ({
   analysis: {},
   stems: {},
   stemsAvailable: {},
+  stemModelWaiting: null,
   setVersion: {},
   setmixes: {},
   setlistVersion: {},
@@ -151,6 +154,7 @@ export const useApp = create<AppState>()((set, get) => ({
     set((s) => ({
       stems: { ...s.stems, [folder]: { ...s.stems[folder], ...status.tracks } },
       stemsAvailable: { ...s.stemsAvailable, [folder]: { available: status.available, reason: status.reason } },
+      stemModelWaiting: status.waiting === undefined ? s.stemModelWaiting : status.waiting,
     })),
   loadStems: async (folder) => {
     try {
@@ -211,7 +215,12 @@ export const useApp = create<AppState>()((set, get) => ({
       }
       case "stems": {
         const { folder, track_id, state, progress, error } = ev.data;
-        set((s) => ({ stems: { ...s.stems, [folder]: { ...s.stems[folder], [track_id]: { state, progress, error: error ?? null } } } }));
+        // a queued song with an error = the vocal model download failed and is retried; work starting clears it
+        const waiting = state === "queued" && error ? error : state === "queued" ? undefined : null;
+        set((s) => ({
+          stems: { ...s.stems, [folder]: { ...s.stems[folder], [track_id]: { state, progress, error: state === "queued" ? null : (error ?? null) } } },
+          stemModelWaiting: waiting === undefined ? s.stemModelWaiting : waiting,
+        }));
         break;
       }
       case "set_changed": {
@@ -301,7 +310,7 @@ export const useSetVersion = (folder: string): number => useApp((s) => s.setVers
 export const useStemState = (folder: string, trackId: string): StemEntry | undefined => useApp((s) => s.stems[folder]?.[trackId]);
 
 /** How many of `trackIds` (all of the crate's known tracks when omitted) have their vocals split / are splitting. */
-export function useStemsSummary(folder: string, trackIds?: string[]): { ready: number; running: StemEntry | null; total: number; available: boolean; reason: string | null } {
+export function useStemsSummary(folder: string, trackIds?: string[]): { ready: number; running: StemEntry | null; total: number; available: boolean; reason: string | null; waiting: string | null } {
   return useApp(
     useShallow((s) => {
       const rows = s.stems[folder] ?? {};
@@ -314,7 +323,7 @@ export function useStemsSummary(folder: string, trackIds?: string[]): { ready: n
         else if (r?.state === "running") running = r;
       }
       const av = s.stemsAvailable[folder];
-      return { ready, running, total: ids.length, available: av?.available ?? true, reason: av?.reason ?? null };
+      return { ready, running, total: ids.length, available: av?.available ?? true, reason: av?.reason ?? null, waiting: s.stemModelWaiting };
     }),
   );
 }

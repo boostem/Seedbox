@@ -499,7 +499,7 @@ on("GET", "/api/crates/([^/]+)/stems", ([folder]) => {
   if (!c) return fail(404, "no such crate");
   const ids = c.trackIds;
   const tracks = Object.fromEntries(ids.map((id, i) => [id, i === ids.length - 1 ? { state: "running" as const, progress: 0.4, error: null } : { state: "ready" as const, progress: 1, error: null }]));
-  return ok({ available: true, reason: null, tracks, ready: ids.length - 1, total: ids.length });
+  return ok({ available: true, reason: null, waiting: null, tracks, ready: ids.length - 1, total: ids.length });
 });
 on("GET", "/api/crates/([^/]+)/mix/([^/]+)/([^/]+)", ([folder, from, to], _b, q) => {
   const p = mixPair(folder, from, to);

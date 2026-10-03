@@ -73,6 +73,15 @@ def available() -> tuple[bool, str]:
     return separator.available()
 
 
+def model_unavailable(e: BaseException) -> bool:
+    """True when `e` is a failed model download (retry later), not a problem with the song."""
+    try:
+        from .separator import ModelUnavailable
+    except ImportError:
+        return False
+    return isinstance(e, ModelUnavailable)
+
+
 def model_id() -> str:
     try:
         from . import separator

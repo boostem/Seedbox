@@ -222,6 +222,7 @@ function StemsBadge({ plan, a, b, canRefresh, onRefresh }: { plan: MixPlan; a?: 
   const split = plan.vocal_stems ?? { a: false, b: false };
   const available = useApp((s) => Object.values(s.stemsAvailable).every((x) => x.available));
   const reason = useApp((s) => Object.values(s.stemsAvailable).find((x) => !x.available)?.reason ?? null);
+  const waiting = useApp((s) => s.stemModelWaiting);
   if (split.a && split.b) {
     return (
       <Tooltip content="Both songs' vocals are split: two vocals never sound at once, and acapellas and vocal-free loops are possible.">
@@ -236,6 +237,15 @@ function StemsBadge({ plan, a, b, canRefresh, onRefresh }: { plan: MixPlan; a?: 
       <Tooltip content={reason ?? "Vocal splitting isn't available on this install."}>
         <span className="inline-flex items-center gap-1 text-2xs text-fg-subtle">
           <AudioLines size={12} /> No vocal stems
+        </span>
+      </Tooltip>
+    );
+  }
+  if (waiting) {
+    return (
+      <Tooltip content={`${waiting} Until then vocal clashes are handled with the EQ.`}>
+        <span className="inline-flex items-center gap-1 text-2xs text-warn">
+          <AudioLines size={12} /> Vocal model: retrying
         </span>
       </Tooltip>
     );

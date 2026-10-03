@@ -354,7 +354,10 @@ with the "cut" advice reworded for blends.
   (`vocal_source: "stems"`, the heuristic kept as `vocal_per_bar_heuristic`).
 - One worker; songs in use (open transition, setlist, set mix) at the front in play order; the rest of a crate in
   the background, started only while no transition or set mix renders. SSE `{type: "stems", data: {folder,
-  track_id, state, progress, error?}}`; `GET /api/crates/{folder}/stems` → StemsStatus.
+  track_id, state, progress, error?}}`; `GET /api/crates/{folder}/stems` → StemsStatus. A failed model download
+  (`separator.ModelUnavailable`) fails no song: the song goes back to the front of the queue, nothing starts until
+  the retry (60 s, doubling to 15 min), the song's `queued` event carries the reason as `error`, and
+  `StemsStatus.waiting` says why and when ("Vocal model: retrying" in the UI).
 - Renderer: per deck, where its `vocals` / `instrumental` lanes move and the stem exists, the source becomes
   `g_i * (track - vocals) + g_v * vocals` before the time stretch (both at 1 = the original samples). `plan_hash` /
   `set_hash` include the stem file when a deck uses it. `RENDER_VERSION = 4`.

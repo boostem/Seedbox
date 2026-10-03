@@ -323,6 +323,15 @@ function StemsChip({ folder, ids }: { folder: string; ids: string[] }) {
     );
   }
   const done = st.ready >= st.total;
+  if (st.waiting && !done) {
+    return (
+      <Tooltip content={st.waiting}>
+        <span className="flex items-center gap-1 text-warn">
+          · <AudioLines size={11} /> vocal model: retrying
+        </span>
+      </Tooltip>
+    );
+  }
   return (
     <Tooltip content={done ? "Every song's vocals are split: transitions hand the vocals over cleanly." : "Each song's vocals are split in the background, songs you're using first. Transitions use them as they land."}>
       <span className={cn("flex items-center gap-1 num", done ? "text-ok" : "text-fg-subtle")}>

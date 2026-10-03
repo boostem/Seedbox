@@ -57,6 +57,11 @@ _lock = threading.Lock()
 _loaded: dict = {}  # {"sep": (model, device), "used": monotonic time}
 
 
+class ModelUnavailable(ValueError):
+    """The vocal model isn't on disk and couldn't be downloaded (offline, host down, a bad file): worth retrying later,
+    unlike a song that can't be split."""
+
+
 def available() -> tuple[bool, str]:
     """(can split here, why not): torch and einops importable (checked without importing them)."""
     missing = [m for m in ("torch", "einops") if importlib.util.find_spec(m) is None]
@@ -86,7 +91,7 @@ def _cancelled(cancel: threading.Event | None) -> None:
 
 def ensure_model(progress: Callable[[float], None] | None = None, cancel: threading.Event | None = None) -> Path:
     """The checkpoint on disk, downloading it first when it's missing (a partial download resumes, a dropped
-    connection is retried; ValueError when no host serves the expected file)."""
+    connection is retried; ModelUnavailable when no host serves the expected file)."""
     path = model_path()
     if path.is_file() and path.stat().st_size == MODEL["size"]:
         return path
@@ -111,7 +116,7 @@ def ensure_model(progress: Callable[[float], None] | None = None, cancel: thread
         os.replace(part, path)
         log.info("downloaded the vocal model %s (%.0f MB)", MODEL["file"], MODEL["size"] / 1e6)
         return path
-    raise ValueError("couldn't download the vocal model (" + "; ".join(errors) + ")")
+    raise ModelUnavailable("couldn't download the vocal model (" + "; ".join(errors) + ")")
 
 
 def _download(url: str, part: Path, progress: Callable[[float], None] | None, cancel: threading.Event | None) -> None:

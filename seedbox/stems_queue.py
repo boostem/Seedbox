@@ -2,6 +2,8 @@
 
 One worker drains a de-duplicated queue. Songs in use (an open transition, a setlist, a set mix) are queued at the
 front, in order; the rest of a crate waits behind them and only starts while nothing is being rendered (`idle`).
+When the vocal model can't be downloaded (offline, host down), nothing is marked failed: the song stays first in line
+and splitting tries again after 1, 2, 4, 8, then every 15 minutes (`waiting()` says why and when).
 The stem sidecars (loudness envelopes) are kept in a small memory LRU; the vocal FLACs stay on disk. enrich() hands
 the planner analyses whose vocal_per_bar comes from the stems once a track is split.
 """
@@ -25,6 +27,8 @@ MEMORY_CACHE = 128  # stem sidecars kept in memory
 PROGRESS_STEP = 0.05
 IDLE_POLL_S = 1.0
 UNLOAD_AFTER_S = 300.0  # drop the vocal model from memory after this long without work
+RETRY_FIRST_S = 60.0  # a failed model download is tried again after this, doubling up to RETRY_MAX_S
+RETRY_MAX_S = 900.0
 
 
 @dataclass
@@ -53,6 +57,9 @@ class StemQueue:
         self._bars: dict[tuple, list[float] | None] = {}
         self._cancel = threading.Event()
         self._closed = False
+        self._waiting: str | None = None  # the model download failed: why (None when splitting isn't waiting)
+        self._retry_at = 0.0  # monotonic time before which no split starts
+        self._retry_s = RETRY_FIRST_S
         self._thread = threading.Thread(target=self._worker, name="seedbox-stems", daemon=True)
         if start:
             self._thread.start()
@@ -89,8 +96,18 @@ class StemQueue:
             with self._cond:
                 tracks[tid] = {"state": st, "progress": round(self._progress.get((seed_dir.name, tid), 0.0), 3),
                                "error": self._errors.get((seed_dir.name, tid))}
-        return {"available": ok, "reason": None if ok else why, "tracks": tracks,
+        return {"available": ok, "reason": None if ok else why, "waiting": self.waiting(), "tracks": tracks,
                 "ready": sum(1 for t in tracks.values() if t["state"] == "ready"), "total": len(tracks)}
+
+    def waiting(self) -> str | None:
+        """Why splitting is on hold (the vocal model couldn't be downloaded) and when it tries again, else None."""
+        with self._cond:
+            if self._waiting is None:
+                return None
+            left = self._retry_at - time.monotonic()
+            why = self._waiting
+        when = f"in {max(1, round(left / 60))} min" if left > 0 else "now"
+        return f"{why[:1].upper()}{why[1:]}. Splitting vocals will try again {when}."
 
     def pending(self) -> int:
         with self._cond:
@@ -213,11 +230,16 @@ class StemQueue:
         self.bus.publish("stems", body)
 
     def _next(self) -> StemTask | None:
-        """The next task: the front queue first; a background one only while the app is idle."""
+        """The next task: the front queue first; a background one only while the app is idle; nothing while a failed
+        model download waits for its retry."""
         while True:
             with self._cond:
                 if self._closed:
                     return None
+                hold = self._retry_at - time.monotonic()
+                if hold > 0 and (self._front or self._back):
+                    self._cond.wait(hold)
+                    continue
                 if self._front:
                     return self._front.pop(0)
                 if self._back:
@@ -292,6 +314,17 @@ class StemQueue:
                     self._states.pop(task.key, None)
                 return
             msg = str(e) or type(e).__name__
+            if getattr(stems, "model_unavailable", lambda _e: False)(e):  # not the song's fault: wait for the model
+                with self._cond:
+                    self._states[task.key] = "queued"
+                    self._progress[task.key] = 0.0
+                    self._front.insert(0, task)
+                    self._waiting = msg
+                    self._retry_at = time.monotonic() + self._retry_s
+                    self._retry_s = min(RETRY_MAX_S, 2 * self._retry_s)
+                log.warning("vocal splitting waits: %s", msg)
+                self._publish(task, "queued", 0.0, self.waiting())
+                return
             log.warning("splitting the vocals of %s failed: %s", task.path.name, msg)
             with self._cond:
                 self._states[task.key] = "error"
@@ -303,4 +336,5 @@ class StemQueue:
             self._states[task.key] = "ready"
             self._progress[task.key] = 1.0
             self._errors.pop(task.key, None)
+            self._waiting, self._retry_s = None, RETRY_FIRST_S
         self._publish(task, "ready", 1.0)
