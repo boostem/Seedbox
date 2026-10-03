@@ -15,6 +15,8 @@ import hashlib
 import importlib.util
 import logging
 import os
+import platform
+import sys
 import threading
 import time
 import urllib.request
@@ -66,6 +68,8 @@ def available() -> tuple[bool, str]:
     """(can split here, why not): torch and einops importable (checked without importing them)."""
     missing = [m for m in ("torch", "einops") if importlib.util.find_spec(m) is None]
     if missing:
+        if "torch" in missing and sys.platform == "darwin" and platform.machine() == "x86_64":
+            return False, "vocal splitting needs PyTorch, which isn't made for Intel Macs any more (Apple Silicon only)"
         return False, f"vocal splitting needs {' and '.join(missing)} (pip install -r requirements.txt)"
     return True, ""
 

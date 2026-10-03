@@ -13,6 +13,7 @@ pywebview
 imageio-ffmpeg
 httpx
 pedalboard
-# vocal stems (musicreco.separator: a RoFormer vocal model, downloaded on first use)
-torch
+# vocal stems (musicreco.separator: a RoFormer vocal model, downloaded on first use); PyTorch has no wheels for
+# Intel Macs, which run without vocal stems
+torch; sys_platform != "darwin" or platform_machine == "arm64"
 einops
