@@ -3,13 +3,13 @@
  * the rendered-preview transport (render progress, loop, LUFS/peak/warnings), the automation DAW, and (only with
  * `details`) the plan's notes + markers. Space plays/stops the rendered transition.
  */
-import { AlertTriangle, Play, Redo2, Repeat, RotateCcw, Save, Square, Undo2 } from "lucide-react";
-import { useCallback } from "react";
+import { AlertTriangle, Play, Redo2, Repeat, RotateCcw, Save, Sparkles, Square, Undo2 } from "lucide-react";
+import { useCallback, useMemo } from "react";
 import type { MixPlan, MixStyle, MixTechnique, SetTrack, TrackAnalysis } from "@/api/types";
 import { Badge, Button, IconButton, ProgressBar, Select, Spinner, Tabs, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { useHotkey } from "@/lib/hotkeys";
-import { barLabel, BAR_OPTIONS, BLEND_STYLES, isBlend, TECHNIQUES } from "./lanes";
+import { barLabel, BAR_OPTIONS, BLEND_STYLES, fitLabel, isBlend, MANUAL_STYLES, STYLE_HINTS, TECHNIQUES } from "./lanes";
 import { MixDaw } from "./MixDaw";
 import { usePlayRequests } from "./pending";
 import { markerColor } from "./paint";
@@ -37,7 +37,18 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
 
   const rendering = r.status === "rendering";
   const blend = isBlend(plan.technique);
-  const styleHint = BLEND_STYLES.find((s) => s.id === plan.style)?.hint;
+  const fits = useMemo(() => new Map((plan.style_fit ?? []).map((f) => [f.style, f])), [plan.style_fit]);
+  // the presets ranked for these two songs (best fit first), and the strong alternatives as one-click chips
+  const blendStyles = useMemo(
+    () => [...BLEND_STYLES].sort((x, y) => (MANUAL_STYLES.includes(x.id) ? 1 : 0) - (MANUAL_STYLES.includes(y.id) ? 1 : 0) || (fits.get(y.id)?.fit ?? -1) - (fits.get(x.id)?.fit ?? -1)),
+    [fits],
+  );
+  const alsoFits = (plan.style_fit ?? []).filter((f) => f.style !== plan.style && f.fit >= 0.58 && !MANUAL_STYLES.includes(f.style)).slice(0, 3);
+  const current = fits.get(plan.style);
+  const styleTip = `${current?.why ? `Why ${plan.style}: ${current.why}. ` : ""}${STYLE_HINTS[plan.style] ?? "How the blend sounds"}`;
+  // a blend style rides on the current blend (or a fresh one); any other style is its own technique at its own length
+  const pick = (style: MixStyle) =>
+    void (BLEND_STYLES.some((s) => s.id === style) ? (blend ? mp.regenerate(plan.technique, plan.bars, style) : mp.regenerate("bass swap", undefined, style)) : mp.regenerate(style as MixTechnique));
   return (
     <div className="flex flex-col gap-3">
       {/* toolbar */}
@@ -72,21 +83,29 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
             </span>
           </Tooltip>
         )}
-        <Select value={plan.technique} onChange={(e) => void mp.regenerate(e.target.value as MixTechnique, plan.bars)} aria-label="Technique" className="capitalize">
-          {TECHNIQUES.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </Select>
-        {blend && (
-          <Tooltip content={styleHint ?? "How the blend sounds"}>
-            <Select value={plan.style} onChange={(e) => void mp.regenerate(plan.technique, plan.bars, e.target.value as MixStyle)} aria-label="Style" className="capitalize">
-              {BLEND_STYLES.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.id}
+        <Tooltip content={blend ? "How B comes in and A goes out" : styleTip}>
+          <Select value={plan.technique} onChange={(e) => void mp.regenerate(e.target.value as MixTechnique, plan.bars)} aria-label="Technique" className="capitalize">
+            {TECHNIQUES.map((t) => {
+              const label = t === "loop roll" || !blend ? fitLabel(t as MixStyle, fits.get(t as MixStyle)?.fit) : null;
+              return (
+                <option key={t} value={t}>
+                  {label ? `${t} · ${label}` : t}
                 </option>
-              ))}
+              );
+            })}
+          </Select>
+        </Tooltip>
+        {blend && (
+          <Tooltip content={styleTip}>
+            <Select value={plan.style} onChange={(e) => pick(e.target.value as MixStyle)} aria-label="Style" className="capitalize">
+              {blendStyles.map((s) => {
+                const label = fitLabel(s.id, fits.get(s.id)?.fit);
+                return (
+                  <option key={s.id} value={s.id}>
+                    {label ? `${s.id} · ${label}` : s.id}
+                  </option>
+                );
+              })}
             </Select>
           </Tooltip>
         )}
@@ -107,6 +126,25 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
           Save
         </Button>
       </div>
+
+      {/* other presets that suit these two songs, one click away */}
+      {alsoFits.length > 0 && (
+        <div className="-mt-1.5 flex flex-wrap items-center gap-1.5 px-1 text-2xs text-fg-subtle">
+          <Sparkles size={11} className="text-accent" />
+          <span>Also fits these two:</span>
+          {alsoFits.map((f) => (
+            <Tooltip key={f.style} content={`${f.why}. ${STYLE_HINTS[f.style] ?? ""}`}>
+              <button
+                type="button"
+                onClick={() => pick(f.style)}
+                className="rounded-xs border border-line bg-raised px-1.5 py-px font-medium text-fg-muted capitalize transition-colors hover:border-accent/50 hover:text-fg"
+              >
+                {f.style}
+              </button>
+            </Tooltip>
+          ))}
+        </div>
+      )}
 
       <MixDaw
         plan={plan}

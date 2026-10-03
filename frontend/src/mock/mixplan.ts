@@ -3,7 +3,7 @@
  * technique on the master beat timeline (beat 0 = B in), saved edits per pair, and a fake render (progress events,
  * a beat map from the tempo lane, a synthesised audio file at the master tempo — see mock/audio.ts).
  */
-import type { BlendStyle, DeckLoop, DeckPlan, Keyframe, LaneId, MixMarker, MixPlan, MixRender, MixStyle, MixTechnique, ServerEvent, Track, TrackAnalysis, Transition } from "@/api/types";
+import type { BlendStyle, DeckLoop, DeckPlan, Keyframe, LaneId, MixMarker, MixPlan, MixRender, MixStyle, MixTechnique, ServerEvent, StyleFit, Track, TrackAnalysis, Transition } from "@/api/types";
 import { LANE_RANGES } from "@/api/types";
 
 const LANE_IDS: LaneId[] = ["volume", "eq_low", "eq_mid", "eq_high", "filter", "echo_send", "echo_feedback", "reverb_send"];
@@ -17,6 +17,36 @@ export function mockStyle(tech: MixTechnique, key: string, asked?: string | null
   let h = 0;
   for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return BLEND_FLAVOURS[h % BLEND_FLAVOURS.length];
+}
+
+const MOCK_WHY: Partial<Record<MixStyle, string>> = {
+  "phrase mix": "the smooth, safe default",
+  "vocal throw": "A finishes a sung phrase over an instrumental part of B",
+  "echo exit": "A's last bars are sung: its last word can trail off",
+  "swell in": "B opens on pads / atmosphere",
+  "wash exit": "A ends soft and tonal: a wash dissolves it",
+  "filter wash": "A is still full (bass and music) over B's drums-only intro",
+  "dub echo": "sparse drums at A's end",
+  roll: "B's drop lands where A leaves",
+  "echo out": "a safe exit over any ending",
+  slam: "B has a drop to slam into",
+  "quick cut": "a clean bar line to cut on",
+  brake: "B doesn't start quiet enough for a power-down",
+  spinback: "nothing big to spin into",
+  "drop swap": "the drops don't line up",
+};
+
+/** Plausible fit scores for the mock editor: the planned style on top, the rest spread below it. */
+function mockFit(tech: MixTechnique, style: MixStyle, key: string): StyleFit[] {
+  const blend = ["long blend", "phrase blend", "bass swap"].includes(tech);
+  const cut = ["quick cut", "drop swap", "slam", "brake", "spinback", "echo out"].includes(tech);
+  if (!blend && !cut) return [];
+  const pool: MixStyle[] = blend ? ["phrase mix", "vocal throw", "echo exit", "swell in", "wash exit", "filter wash", "dub echo", "roll"] : ["echo out", "slam", "quick cut", "brake", "spinback", "drop swap"];
+  let h = 7;
+  for (const ch of key) h = (h * 33 + ch.charCodeAt(0)) >>> 0;
+  return pool
+    .map((s, i) => ({ style: s, fit: s === style ? 0.74 : Math.round((((h >> i) % 40) / 100 + 0.25) * 100) / 100, why: MOCK_WHY[s] ?? "" }))
+    .sort((x, y) => y.fit - x.fit);
 }
 
 const kf = (beat: number, value: number, curve: Keyframe["curve"] = "linear"): Keyframe => ({ beat, value, curve });
@@ -128,6 +158,7 @@ export function generateMixPlan(folder: string, a: Track, aAn: TrackAnalysis | n
     notes,
     edited: false,
     style: mockStyle(tech, a.id + b.id, style),
+    style_fit: mockFit(tech, mockStyle(tech, a.id + b.id, style), a.id + b.id),
   };
 }
 

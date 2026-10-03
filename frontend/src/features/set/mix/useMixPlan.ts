@@ -25,8 +25,9 @@ export interface MixPlanApi {
   redo: () => void;
   canUndo: boolean;
   canRedo: boolean;
-  /** A fresh plan for this technique / length (and blend style; without one the planner picks the best fit). */
-  regenerate: (technique: MixTechnique, bars: number, style?: MixStyle) => Promise<void>;
+  /** A fresh plan for this technique / length (and blend style; without one the planner picks the best fit; without
+   * a length it picks that too). */
+  regenerate: (technique: MixTechnique, bars?: number, style?: MixStyle) => Promise<void>;
   save: () => Promise<void>;
   revert: () => Promise<void>;
   reload: () => void;
@@ -107,7 +108,7 @@ export function useMixPlan(folder: string, from: string, to: string, enabled: bo
   }, []);
 
   const regenerate = useCallback(
-    async (technique: MixTechnique, bars: number, style?: MixStyle) => {
+    async (technique: MixTechnique, bars?: number, style?: MixStyle) => {
       try {
         const p = await mixApi.plan(folder, from, to, { technique, bars, style }, { quiet: true });
         update(p);

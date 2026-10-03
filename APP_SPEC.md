@@ -241,6 +241,14 @@ Contract: the "Full set mixes" and "Setlists" blocks at the end of `frontend/src
   same-family style (echo / wash / roll / turntable / cut) and 0.25 for a double drop / brake / spinback used in
   that window; a non-default style is never picked a 4th time in a row. Ties go to the phrase mix. `roll` and
   `loop roll` (`_MANUAL_ONLY`) are never picked automatically.
+- `MixPlan.style_fit` = `[{style, fit 0-1, why}]`, best first: a blend's flavours plus the bigger moves that also
+  suit the pair (double drop, filter sweep, echo out...), or a cut's exits. The editor ranks its menus with it.
+- Echo throws (`_echo_shape`): the send is open on the last beat only (25 ms ramp, closed on the 1); send
+  0.75-1.0 and B mid dip 0-6 dB from how much louder B comes in than A's last bar (a sung entry counts 6 dB more);
+  feedback 10^(-24 / (20 (n - 1))) clamped to 0.35-0.72, n = repeats that fit before B's next vocal / drop (2-8),
+  0.52 into a drop, 0.45 when A's last beat is sung and B comes in singing; delay 0.75 beat (0.5 below ~82 BPM,
+  1 above ~161). Renderer: ECHO_RETURN 1.15, input band-limited once (200 Hz-5 kHz, 2nd order), one-pole filters in
+  the loop, ping-pong (ECHO_PAN 0.35).
 ```python
 generate(a, a_an, b, b_an, folder, technique=None, bars=None, transition=None, style=None, recent=None) -> dict
 plan_styles(pairs: list[(a, a_an, b, b_an, transition)], fixed: list[str | None] | None = None) -> list[str]

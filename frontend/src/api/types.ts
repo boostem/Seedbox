@@ -293,6 +293,13 @@ export type MixTechnique = Technique | "filter sweep" | "loop roll" | "slam" | "
 export type BlendStyle = "phrase mix" | "vocal throw" | "echo exit" | "roll" | "swell in" | "wash exit" | "filter wash" | "dub echo";
 export type MixStyle = BlendStyle | "filter sweep" | "loop roll" | "double drop" | "echo out" | "slam" | "quick cut" | "drop swap" | "brake" | "spinback";
 
+/** How well a style fits this pair of songs (0-1) and why, from the planner's scoring. */
+export interface StyleFit {
+  style: MixStyle;
+  fit: number;
+  why: string;
+}
+
 export interface MixMarker {
   beat: number;
   label: string; // "B in", "bass swap", "A out", "echo throw", "loop", "A loop", "B loop", "B plays on", "loop roll", "brake", "spinback", "tempo ramp" …
@@ -314,6 +321,7 @@ export interface MixPlan {
   notes: string[]; // plain-language explanation of the plan
   edited: boolean; // true = user-saved edits (from .seedbox/mixplans), false = freshly generated
   style: MixStyle; // picked for the two songs and the transitions before it in the set (or asked for)
+  style_fit?: StyleFit[]; // the alternatives ranked for these two songs: blend styles for a blend, exits for a cut
 }
 
 export interface MixRender {

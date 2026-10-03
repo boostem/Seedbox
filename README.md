@@ -38,8 +38,12 @@ Other flags:
   when two drops line up, a **brake** into a quiet intro, a **spinback** over a big tempo jump, and more. Each is the
   best fit for its two songs, and no flashy style runs more than three times in a row. Every track plays straight
   through (nothing is looped), and when two vocals would clash the outgoing one is ducked and thrown into the echo.
-  Loop rolls only happen if you pick *Loop roll* or the *Roll* style in the mix editor, whose Technique and Style
-  menus override the pick.
+  Loop rolls only happen if you pick *Loop roll* or the *Roll* style in the mix editor.
+- **Presets that adapt to the songs.** The mix editor's Style menu ranks the presets for the two songs in front of
+  it ("great fit", "good fit", "won't fit") with the reason, and suggests the other strong options as one-click
+  chips. Picking a preset doesn't paste fixed settings: the echo time follows the tempo, the echo's level follows how
+  loud B comes in (B's mids dip so the repeats cut through), its repeats ring out before B's next vocal or drop,
+  throws land on A's last sung word, and swells, washes and filter climbs are sized to the intro, ending and blend.
 - **Full mix.** *Full mix* on the set builder renders the whole set as one continuous MP3 (320 kbps) using every
   transition exactly as planned (saved edits included), with tempo moves spread across each track so the set flows.
   It lands in `<crates folder>/Mixes/<name>/` with a `.cue` sheet, a `.txt` tracklist and ID3 chapters. Rendering

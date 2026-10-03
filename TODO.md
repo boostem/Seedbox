@@ -39,31 +39,61 @@
 - [x] **Subtler defaults**: the plain phrase mix needs a clear musical reason to give way to a flashier style, and
       echo outs ring a bit quieter and shorter.
 
-## Machine learning plan (all local)
-Use ML for **perception** (what's in each track) and **ranking** (which plan is best), not to generate mixes end to
-end: there's no clean data at that scale, it would be heavy to run on a laptop, and its output couldn't be edited in
-the mix editor. In order of payoff:
-- [ ] **Stems, no training needed**: run Demucs (htdemucs, MIT licence) once per track and cache per-bar stem energy
-      under `.seedbox/`. Real vocal activity fixes most bad calls today (the heuristic hears synth leads as vocals,
-      which misplaces clash ducking and echo throws); drums-only / bass-only bars sharpen intros, outros and bass
-      swaps; the stems themselves enable acapella-over-instrumental blends later. About real time on a CPU, much
-      faster on Apple Silicon.
-- [ ] **Learn from real DJ mixes**: the DJ Mix Dataset (Kim et al., ISMIR 2020: 1,557 mixes and 13,728 tracks from
-      1001Tracklists, `pip install djmix`, aligned with mix-to-track DTW) shows where DJs really mix in and out, how
-      long transitions last and how tempo and key move; the same group's fader / EQ gain estimation (DAFx 2022)
-      recovers the actual fader and EQ curves. Fit small models (gradient-boosted trees on our per-bar features) as
-      priors for cue bars, overlap length and lane shapes. The audio comes from YouTube and no licence is stated, so
-      this is for personal research only.
-- [ ] **EDM structure and cue points**: Raveform (TISMIR, CC BY 4.0: beats, downbeats and EDM sections like
-      buildup / breakdown / drop for ~1.4k tracks from DJ mixes) to train a section classifier that replaces the
-      energy-based drop detection; the cue-point dataset from "Cue Point Estimation using Object Detection" (2024,
-      ~21k expert cue points on ~5k tracks) for mix-in / mix-out points.
-- [ ] **Learn the style chooser from you**: log each style / technique change and each saved edit with the pair's
-      features, then fit a small reranker on top of the hand-scored table in `mixplan._flavor_choices` /
-      `_exit_choices`. A few hundred choices are enough to learn "loves rolls into drops, skip the swells".
-- [ ] **A render critic**: score rendered transitions from audio (beat drift, key clash, vocal over vocal via stems,
-      loudness dips and bumps, FX level) and render 2-3 candidate plans per transition, keeping the best before you
-      hear it.
+## Done (round 4: echoes you can hear, presets that adapt)
+- [x] **Audible echoes**: throws capture exactly A's last beat (the send opens on it and closes on the 1), a louder
+      return, ping-pong repeats, a steep band-limit on the way in and only gentle filtering in the loop, the delay
+      time from the tempo (dotted 8th, an 8th on slow songs, a quarter on fast ones), the tail sized to end before
+      B's next vocal or drop (about 2-8 repeats), only two repeats when A's last word would land on B's vocal, and
+      B's mids dipping while the first repeats ring. First second after the cut, 300 Hz-5 kHz, against B: 9 to
+      13 dB louder than before.
+- [x] **Adaptive presets**: every plan carries `style_fit` (each alternative's fit for these two songs and why);
+      the Style / Technique menus are ranked and labelled by it, strong alternatives show as one-click chips, and
+      a note says when the best fit stepped aside for variety. Preset settings come from the songs (echo time, send,
+      repeats and B's dip; swell and wash levels from how sparse the intro / ending are; the filter climb from the
+      blend length).
+
+## Machine learning plan (researched 2026-10-03)
+What the research says: no released model predicts a whole transition plan from audio (the one learned transition
+generator, DJtransGAN, rated no better than rules in its own listening test), and commercial auto-mixers (djay
+Automix AI, rekordbox, Engine DJ, VirtualDJ, DJ.Studio, Spotify Mix, Apple Music AutoMix) adapt where and how long
+to mix, plus stem gains, but keep FX choice and settings fixed or random. So: use ML to **hear the tracks better**
+and to **rank plans**, keep the planner's explainable rules, and let real-mix data and your edits tune them.
+
+**Phase 1, an optional "ML pack"** (an app variant or add-on, est. +450-520 MB: PyInstaller can't install packages
+at run time). torch 2.11 is the newest that still runs on the app's macOS 12 floor with Python 3.14.
+- [ ] **Demucs htdemucs** (MIT, 84 MB weights; est. ~8 s per 4-min track on the Apple GPU, ~1.5x track length on a
+      CPU): cache per-bar vocal / drum / bass stem loudness. Real vocal activity replaces the heuristic that hears
+      synth leads as vocals, echo throws land on the true last vocal offset, and drums-only bars become known. A
+      published listening test (Mosaikbox, ISMIR 2024) rated stem-aware transitions 3.46 vs 3.08 (p < 0.0001).
+- [ ] **Beat This!** (CPJKU, MIT code and weights, 8-78 MB): a per-beat grid with downbeats instead of a constant
+      tempo, so phrases, throws and any future loops stay on the beat.
+- [ ] **pyloudnorm** (MIT, tiny): per-bar loudness for level decisions (echo sends, B's dip, wash levels) instead of
+      the per-track energy scale.
+
+**Phase 2** (needs a macOS 14 floor for onnxruntime):
+- [ ] **Discogs-EffNet** on onnxruntime (CC BY-NC-SA weights, ~22 MB + ~78 MB runtime): genre / style, voice vs
+      instrumental and mood tags as preset priors (techno EQ blends, hip-hop / pop echo outs and cuts, DnB / dubstep
+      double drops, dub echoes, trance long blends and washes).
+- [ ] **allin1 v2 trained on Raveform** when it ships: EDM sections (buildup / drop / breakdown) at downbeat F1 0.965
+      vs 0.753 for the pop-trained model.
+- [ ] **CUE-DETR** (MIT, 166 MB): a second opinion on mix-in / mix-out cue points.
+
+**Data and learning (no runtime dependencies)**:
+- [ ] **Raveform priors** (CC BY 4.0, 479 MB of JSON: 4,902 real mixes, 53,780 transitions with beat-level
+      alignment, EDM section labels on 1,423 tracks): real overlap lengths and which sections DJs enter and leave on,
+      as a prior term in the planner's placement score.
+- [ ] **Learn from your edits**: log every style / technique override and saved edit as (chosen, rejected) with the
+      pair's features and fit small per-user weights on top of `_flavor_choices` / `_exit_choices` (DJ-MC is the
+      precedent), so the ranking learns your taste.
+- [ ] **Fader / EQ curve templates** from real mixes (Kim, Yang and Nam, DAFx 2022: a convex fit recovers fader and
+      3-band EQ curves from a mix and its tracks): cluster them into lane templates and pick by song features.
+      Research-only audio; ship only the aggregate templates.
+- [ ] **A render critic**: render the top 2-3 plans and tie-break with an audio quality model
+      (audiobox-aesthetics, CC BY 4.0), checked against listening first.
+
+**Skip**: DJtransGAN as a generator, MusicGen-style generated bridges (non-commercial weights, GPU), Spleeter /
+Open-Unmix (old, lower quality), madmom / BeatNet (broken installs, non-commercial weights), allin1 v1 (pop labels,
+NATTEN build issues), CLAP / MERT, TensorFlow builds (0.4-1.1 GB), and bundling Essentia's AGPL library.
 
 ## Next up (ideas)
 - [ ] **Key shift for clashing keys**: transpose a deck ±1-2 semitones with Rubber Band (key lock already runs every

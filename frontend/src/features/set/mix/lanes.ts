@@ -163,6 +163,20 @@ export const BLEND_STYLES: { id: BlendStyle; hint: string }[] = [
   { id: "roll", hint: "Only when you pick it: A loop-rolls its last bar (2 → 1 → ½ → ¼ beat) into B's drop or the bass swap." },
 ];
 
+/** Loop-based styles the planner never picks on its own. */
+export const MANUAL_STYLES: readonly MixStyle[] = ["roll", "loop roll"];
+
+/** A fit score in words, for menus and chips. */
+export function fitLabel(style: MixStyle, fit: number | undefined): string | null {
+  if (MANUAL_STYLES.includes(style)) return "by hand";
+  if (fit == null) return null;
+  if (fit <= 0) return "won't fit";
+  if (fit >= 0.7) return "great fit";
+  if (fit >= 0.58) return "good fit";
+  if (fit >= 0.4) return "okay";
+  return "weak";
+}
+
 export const STYLE_HINTS: Record<MixStyle, string> = {
   ...(Object.fromEntries(BLEND_STYLES.map((s) => [s.id, s.hint])) as Record<BlendStyle, string>),
   "filter sweep": "A rides a high-pass sweep out while B's low-pass opens: hides a key change.",

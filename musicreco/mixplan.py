@@ -74,7 +74,8 @@ _MAX_FX = 8
 _MAX_ABS_BEAT = 100_000.0
 _MIN_LOOP_BEATS = 1 / 16
 _VOCAL_CUT = -18.0  # dB on A's mids while vocals overlap
-_THROW_ECHO = 0.4  # echo send of the one throw on A's last sung word (pre-EQ: it catches the whole vocal)
+_THROW_ECHO = 0.55  # echo send of the clash throw on A's last word before its mids duck (kept short: 0.5 feedback)
+_ECHO_SEND = (0.75, 1.0)  # echo throws that have to be heard over B (see _echo_shape)
 _BASS_LOW = transitions._BASS_ON  # mean low_per_bar at/above this = real kick/bass weight
 
 # B's fader-in per loop-roll length, bars
@@ -270,6 +271,9 @@ def validate(plan: dict) -> dict:
             markers.append({"beat": float(m["beat"]), "label": m["label"][:40]})
     markers.sort(key=lambda m: m["beat"])
     notes = [n for n in (p.get("notes") if isinstance(p.get("notes"), list) else []) if isinstance(n, str)][:40]
+    fit = [{"style": f["style"], "fit": min(1.0, max(0.0, float(f["fit"]))), "why": str(f.get("why") or "")[:160]}
+           for f in (p.get("style_fit") if isinstance(p.get("style_fit"), list) else [])
+           if isinstance(f, dict) and f.get("style") in STYLES and _finite(f.get("fit"))][: len(STYLES)]
     return {
         "version": PLAN_VERSION, "folder": p.get("folder", ""), "from_id": p["from_id"], "to_id": p["to_id"],
         "technique": p["technique"], "bars": min(BARS, key=lambda n: abs(n - bars)),
@@ -277,6 +281,7 @@ def validate(plan: dict) -> dict:
         "tempo": tempo, "a": a, "b": b, "markers": markers, "notes": notes, "edited": bool(p.get("edited", False)),
         "style": p["style"] if p.get("style") in STYLES
         else p["technique"] if p["technique"] in STYLES else DEFAULT_STYLE,
+        "style_fit": fit,
     }  # fmt: skip
 
 
@@ -594,6 +599,7 @@ _FAMILY = {
 class _Choice:
     style: str
     score: float  # how well the style fits this pair, 0-1 (0 = not possible here)
+    why: str = ""  # the reason, in a few words (shown next to the style in the editor)
 
 
 def _choose(choices: list[_Choice], recent: list[str]) -> _Choice:
@@ -674,12 +680,19 @@ def _exit_choices(m: _Mix, eng: tuple[str, _Place], base: str) -> list[_Choice]:
     b_quiet = _mean(gb.energy, cue, cue + 4) < 0.55 * _body_energy(gb)
     jump = abs(m.b_bpm / m.a_bpm - 1) > 0.08
     return [
-        _Choice("echo out", 0.72 if a_sung else 0.5),
-        _Choice("slam", 0.7 if into_drop and a_hot else 0.58 if into_drop else 0.42),
-        _Choice("quick cut", 0.45 if a_sung else 0.55),
-        _Choice("brake", 0.68 if b_quiet and a_hot else 0.25),
-        _Choice("spinback", 0.72 if jump and into_drop else 0.45 if into_drop and a_hot else 0.18),
-        _Choice("drop swap", 0.72 if base == "drop swap" else 0.0),
+        _Choice("echo out", *((0.72, "A's last bars are sung: the last word trails off") if a_sung
+                              else (0.5, "a safe exit over any ending"))),
+        _Choice("slam", *((0.7, "A is at full power and B has a drop to slam into") if into_drop and a_hot
+                          else (0.58, "B has a drop to slam into") if into_drop else (0.42, "no drop in B to slam into"))),
+        _Choice("quick cut", *((0.45, "A is mid-vocal: a dry cut would chop the word") if a_sung
+                               else (0.55, "a clean bar line to cut on"))),
+        _Choice("brake", *((0.68, "full-power A into a quiet B: powering down sets it up") if b_quiet and a_hot
+                           else (0.25, "B doesn't start quiet enough for a power-down"))),
+        _Choice("spinback", *((0.72, "a big tempo jump into B's drop: the spin hides it") if jump and into_drop
+                              else (0.45, "B has a drop to spin into") if into_drop and a_hot
+                              else (0.18, "nothing big to spin into"))),
+        _Choice("drop swap", *((0.72, "the drops line up: A's build cuts into B's drop") if base == "drop swap"
+                               else (0.0, "the drops don't line up"))),
     ]
 
 
@@ -799,21 +812,94 @@ def _vocal_ends(m: _Mix, a_deck: dict, place: _Place) -> list[float]:
     return out
 
 
-def _throw(S: _Sends, at: float, send: float = 0.5, reverb: float = 0.0) -> dict:
-    """Echo throw into the cut on the 1 at `at`: A's echo send ramps up over its last 2 beats and is held through
-    the cut (pre-fader, feedback 0.6: the repeats ring a bar or two over B); reverb only when asked."""
-    S.add("echo", "a", at - 2, at, at + 4, send)
-    if reverb:
-        S.add("verb", "a", at - 2, at, at + 2, reverb)
-    return {"echo_beats": 0.75, "feedback": 0.6, "throw": at - 2}
+def _echo_beats(bpm: float) -> float:
+    """Delay time that reads as a clear echo at this tempo: the dotted 8th (3/4 beat) when its repeats land
+    0.28-0.55 s apart, else the 8th for slow songs and the quarter for fast ones."""
+    for beats in (0.75, 0.5, 1.0):
+        if 0.28 <= beats * 60.0 / bpm <= 0.55:
+            return beats
+    return 0.5 if bpm < 100 else 1.0
 
 
-def _blend_lanes(tech: str, length: int, swap: int | None, A: dict, B: dict, S: _Sends, into_drop: bool) -> dict:
+@dataclass
+class _Echo:
+    send: float  # echo send on the captured beat
+    fb: float  # feedback: how many repeats ring
+    beats: float  # delay time
+    duck: float  # dB B's mids dip while the first repeats ring (0 = none)
+
+
+def _echo_shape(m: _Mix, place: _Place, k: float, into_drop: bool = False) -> _Echo:
+    """The echo throw for repeats that have to be heard over B from master bar k.
+
+    Level: energy_per_bar is 0-1 over the 18 dB below each track's loud bars and every deck is trimmed to the same
+    loudness, so 18 * (eB - eA) is about how many dB louder B comes in than A's last bar (a sung entry counts 6 dB
+    more: it fills the band the repeats live in). The louder B, the hotter the send and the deeper B's mids dip for
+    the repeats (up to 6 dB; B's kick and bass still land at full).
+    Tail: the repeats should be gone (24 dB down) before B's next vocal or drop, so the feedback comes from that gap
+    (0.35-0.72: from 2-3 repeats before a vocal to 6-8 into a long quiet entry); into a drop it rings 3 times. When A's
+    last beat is sung and B comes in singing, the word echoes twice and gets out of the way (two vocals never sit on
+    top of each other)."""
+    ga, gb = m.ga, m.gb
+    k = max(0.0, k)
+    kb = _b_bar(place, int(k))
+    ka = place.a0 + int(k) - 1
+    beats = _echo_beats(m.a_bpm)
+    eb = _mean(gb.energy, kb, kb + 2) if m.real_b else 0.7
+    ea = _mean(ga.energy, ka, ka + 1) if m.real_a else 0.7
+    b_sung = m.real_b and _mean(gb.vocal, kb, kb + 2) >= transitions._VOCAL_ON
+    if b_sung and m.real_a and _mean(ga.vocal, ka, ka + 1) >= 0.4:
+        return _Echo(0.85, 0.45, beats, 2.0)
+    louder = 18.0 * (eb - ea) + (6.0 if b_sung else 0.0)
+    send = min(_ECHO_SEND[1], max(_ECHO_SEND[0], 0.85 + louder / 40.0))
+    duck = min(6.0, max(0.0, 2.0 + louder / 2.0))
+    if into_drop:
+        fb = 0.52
+    else:
+        nxt = next((j for j in range(kb + 1, min(gb.n, kb + 8))
+                    if gb.vocal[j] >= transitions._VOCAL_ON or j in gb.drops), kb + 8) if m.real_b else kb + 4
+        n = min(8.0, max(2.0, 4.0 * (nxt - kb) / beats))  # repeats that fit before B's next vocal / drop
+        fb = min(0.72, max(0.35, 10 ** (-24.0 / (20.0 * (n - 1.0)))))
+    return _Echo(round(send, 2), round(fb, 2), beats, round(duck, 1))
+
+
+def _duck_mids(B: dict, at: float, duck: float) -> None:
+    """Dip B's mids by `duck` dB while the first repeats of an echo throw ending at `at` ring, easing back over the
+    next bar and a half."""
+    if duck <= 0:
+        return
+    pts = sorted(B["eq_mid"], key=lambda p: p[0])
+    v0 = float(lane_value([{"beat": b, "value": v, "curve": c} for b, v, c in pts], at - 1.0)) if pts else 0.0
+    B["eq_mid"] = [p for p in pts if p[0] < at - 1.0] + [
+        (at - 1.0, v0, "linear"), (at - 0.25, v0 - duck, "hold"), (at + 2.0, v0 - duck, "ease"), (at + 6.0, v0, "hold")]
+
+
+def _repeats(fb: float) -> int:
+    """Echo repeats heard before the tail is 18 dB down."""
+    return max(1, int(18.0 / max(0.5, -20.0 * math.log10(max(0.05, fb)))))
+
+
+def _echo_words(beats: float) -> str:
+    return {0.5: "8th-note", 0.75: "dotted-8th", 1.0: "quarter-note"}.get(beats, f"{beats:g}-beat")
+
+
+def _throw(S: _Sends, B: dict, at: float, e: _Echo) -> dict:
+    """Echo throw ending on the 1 at `at`: A's send is wide open on its last beat only (a ~25 ms ramp in, closed on
+    the 1), so the delay repeats exactly that beat (pre-fader: the repeats ring on after A's fader is down) and fades
+    out over B, whose mids dip to make room for the first repeats."""
+    S.add("echo", "a", at - 1.05, at - 1.0, at, e.send)
+    _duck_mids(B, at, e.duck)
+    return {"echo_beats": e.beats, "feedback": e.fb, "throw": at - 1.0}
+
+
+def _blend_lanes(tech: str, length: int, swap: int | None, A: dict, B: dict, S: _Sends, into_drop: bool,
+                 echo: _Echo) -> dict:
     """Phrase mixing, spread over the whole overlap (same shape for 4/8/16/32 bars): B's fader eases up over the
     first half while its highs, mids and filter open; the bass swaps on the 1 of the swap bar with a 1-beat
     crossfade; A's mids/highs ease down over the second half under a gentle high-pass and its fader eases out over
     the last three eighths; A leaves clean on the phrase (the style adds any FX). Without a swap (B brings no bass, or
-    A rides until B's drop) A's bass carries to the end and the lows change hands on the 1."""
+    A rides until B's drop) A's bass carries to the end and the lows change hands on the 1. `echo` = the throw a
+    blend into an echo out ends with."""
     E = 4.0 * length
     sw = 4.0 * swap if swap is not None else None
     q = E / 4
@@ -836,7 +922,7 @@ def _blend_lanes(tech: str, length: int, swap: int | None, A: dict, B: dict, S: 
         A["eq_mid"] = [(out0, 0.0, "ease"), (E, -6.0, "hold")]
         A["eq_high"] = [(out0, 0.0, "ease"), (E, -6.0, "hold")]
         A["volume"] = [(E - 4, 1.0, "hold"), (E, 0.0, "hold")]
-        info.update(_throw(S, E))
+        info.update(_throw(S, B, E, echo))
         return info
     fade = max(8.0, 3 * E / 8) if tech in _BLENDS else max(8.0, q)
     if sw is None:  # A rides, bass and full energy, to the 1 where B's lows land (no dip before B's drop)
@@ -902,11 +988,12 @@ def _loop_roll(m: _Mix, place: _Place, A: dict, B: dict, a_deck: dict, S: _Sends
             "loop": loops[0] if blk and len(loops) > len(roll) else None}
 
 
-def _cut_lanes(tech: str, bars: int, A: dict, S: _Sends, into_drop: bool) -> dict:
+def _cut_lanes(tech: str, bars: int, A: dict, B: dict, S: _Sends, into_drop: bool, echo: _Echo) -> dict:
     """Cuts on the 1 at master beat 0, B straight in at full. Brake: A powers down over its last bar. Spinback: A is
     spun back on its last 2 beats into a short wash. Into B's drop: a short filter riser, A's bass out for its last
     beat and a short reverb swell, B's drop dry on the 1. Otherwise an echo throw on A's last beats, over a high-pass
-    riser for slams and echo outs (a slam also drops A's bass for its last beat)."""
+    riser for slams and echo outs (a slam also drops A's bass for its last beat); under an echo out B comes in a
+    touch down, its mids dipped, so the first repeats are heard."""
     info: dict = {"echo_beats": 0.75, "feedback": LANE_DEFAULTS["echo_feedback"], "throw": None, "roll": None,
                   "fx": None}
     A["volume"] = [(-4.0, 1.0, "hold"), (0.0, 0.0, "hold")]
@@ -932,7 +1019,11 @@ def _cut_lanes(tech: str, bars: int, A: dict, S: _Sends, into_drop: bool) -> dic
         A["filter"] = [(-riser, 0.0, "ease"), (0.0, 0.45 if tech == "slam" else 0.4, "hold")]
     if tech == "slam":
         A["eq_low"] = [(-2.0, 0.0, "linear"), (-1.0, _KILL, "hold")]
-    info.update(_throw(S, 0.0, send=0.45 if tech in ("slam", "quick cut") else 0.5))
+    if tech == "echo out":
+        B["volume"] = [(0.0, 0.88, "ease"), (4.0, 1.0, "hold")]
+        info.update(_throw(S, B, 0.0, echo))
+    else:  # slam / quick cut: a shorter echo, no dip (the cut itself is the move)
+        info.update(_throw(S, B, 0.0, _Echo(round(echo.send * 0.85, 2), 0.5, echo.beats, 0.0)))
     return info
 
 
@@ -941,7 +1032,7 @@ def _mid_sends(m: _Mix, tech: str, place: _Place, a_deck: dict, S: _Sends, clash
     Returns its master beat."""
     if not place.overlap or tech in ("echo out", "loop roll") or clash_at is None:
         return []
-    return [clash_at] if S.add("echo", "a", clash_at - 3, clash_at - 1, clash_at, _THROW_ECHO) else []
+    return [clash_at] if S.add("echo", "a", clash_at - 2, clash_at - 1, clash_at, _THROW_ECHO) else []
 
 
 def _flavor_choices(m: _Mix, place: _Place, probe: dict) -> list[_Choice]:
@@ -986,46 +1077,92 @@ def _flavor_choices(m: _Mix, place: _Place, probe: dict) -> list[_Choice]:
     ends = [p for p in _vocal_ends(m, probe, place) if E / 2 <= p <= E - 4.0
             and _mean(gb.vocal, _b_bar(place, int(p // 4)), _b_bar(place, int(p // 4)) + 2) < 0.4]
     real = m.real_a and m.real_b
-    base = 0.6 + (0.08 if a_perc_tail and b_intro_drums and L >= 16 else 0.0)
+    clean = a_perc_tail and b_intro_drums and L >= 16
+    sparse_tail = a_perc_tail and a_vocal_tail < 0.3
+    if not real:
+        throw = (0.0, "needs both songs analysed")
+    elif clash:
+        throw = (0.0, "A's vocal already goes into the echo to dodge B's")
+    elif ends:
+        throw = (0.74, "A finishes a sung phrase over an instrumental part of B")
+    else:
+        throw = (0.0, "A doesn't finish a sung phrase over an instrumental part of B")
+    if real and lands:
+        roll = (0.8, "B's drop lands where A leaves") if lift >= 1.25 or b_drop_at_e else \
+            (0.5, "B's lows come in where A leaves")
+    elif real and sw is not None and 8.0 <= sw <= E - 4.0:
+        roll = (0.62, "B's main section kicks in at the bass swap") if sw_lift >= 1.2 else \
+            (0.48, "a slip roll into the bass swap")
+    else:
+        roll = (0.0, "nothing for a roll to land on")
     return [
-        _Choice(DEFAULT_STYLE, base),
-        _Choice("vocal throw", 0.74 if real and ends and not clash else 0.0),
-        _Choice("roll", (0.8 if lift >= 1.25 or b_drop_at_e else 0.5) if real and lands
-                else (0.62 if sw_lift >= 1.2 else 0.48) if real and sw is not None and 8.0 <= sw <= E - 4.0
-                else 0.0),
-        _Choice("echo exit", 0.3 if clash or b_drop_at_e else 0.6 if a_vocal_tail >= 0.4
-                else 0.5 if not a_perc_tail else 0.42),
-        _Choice("wash exit", 0.66 if real and not a_perc_tail and a_soft_tail
-                else 0.58 if m.move == "diagonal" else 0.5 if m.move in ("+2 boost", "+7 boost") else 0.32),
-        _Choice("swell in", 0.68 if b_atmos else 0.6 if b_vocal_head else 0.3),
-        _Choice("filter wash", 0.66 if real and a_full_2nd and b_intro_drums else 0.34),
-        _Choice("dub echo", (0.3 if clash else 0.62 if m.a_bpm < 122 and a_perc_tail and a_vocal_tail < 0.3
-                             else 0.46 if a_perc_tail and a_vocal_tail < 0.3 else 0.3) if L >= 16 else 0.0),
+        _Choice(DEFAULT_STYLE, 0.68 if clean else 0.6,
+                "a clean drums-on-drums blend: nothing to hide" if clean else "the smooth, safe default"),
+        _Choice("vocal throw", *throw),
+        _Choice("roll", *roll),
+        _Choice("echo exit", *((0.3, "A's vocal already goes into the echo") if clash
+                               else (0.3, "B drops where A leaves: repeats would smear it") if b_drop_at_e
+                               else (0.6, "A's last bars are sung: its last word can trail off") if a_vocal_tail >= 0.4
+                               else (0.5, "A ends on music, no word to trail") if not a_perc_tail
+                               else (0.42, "A ends on bare drums"))),
+        _Choice("wash exit", *((0.66, "A ends soft and tonal: a wash dissolves it")
+                               if real and not a_perc_tail and a_soft_tail
+                               else (0.58, "the keys shift mood: a wash smooths it") if m.move == "diagonal"
+                               else (0.5, "the keys sit a little apart") if m.move in ("+2 boost", "+7 boost")
+                               else (0.32, "A's ending is busy: a wash would muddy it"))),
+        _Choice("swell in", *((0.68, "B opens on pads / atmosphere") if b_atmos
+                              else (0.6, "B opens on a vocal") if b_vocal_head
+                              else (0.3, "B opens on drums: nothing for a swell to grow from"))),
+        _Choice("filter wash", *((0.66, "A is still full (bass and music) over B's drums-only intro")
+                                 if real and a_full_2nd and b_intro_drums else (0.34, "A's tail is already light"))),
+        _Choice("dub echo", *((0.0, "needs a 16-bar blend") if L < 16
+                              else (0.3, "A's vocal already goes into the echo") if clash
+                              else (0.62, "slow, sparse drums at A's end leave room for long repeats")
+                              if m.a_bpm < 122 and sparse_tail
+                              else (0.46, "sparse drums at A's end") if sparse_tail
+                              else (0.3, "A's end is busy or sung"))),
     ]
 
 
 def _apply_flavor(style: str, m: _Mix, place: _Place, a_deck: dict, A: dict, B: dict, S: _Sends,
                   info: dict) -> tuple[str | None, list[dict]]:
-    """The style's FX on top of a phrase mix (the plain phrase mix adds nothing). Returns (note, markers)."""
-    gb = m.gb
+    """The style's FX on top of a phrase mix (the plain phrase mix adds nothing), each one set from the two songs:
+    the echo time from the tempo, the echo level and its number of repeats from how loud B is where they land, the
+    swell and wash levels from how sparse B's intro / A's tail are, the filter climb from the blend's length.
+    Returns (note, markers)."""
+    ga, gb = m.ga, m.gb
     L = place.overlap
     E = 4.0 * L
+    beats = _echo_beats(m.a_bpm)
     if style == "echo exit":
-        S.add("echo", "a", E - 4.0, E - 1.0, E + 4.0, 0.45)
-        return "A's last bar trails off in a dotted-8th echo over B.", [{"beat": E - 1.0, "label": "echo throw"}]
+        e = _echo_shape(m, place, L)
+        # A stays audible to the cut (its mids and highs already eased down) so the echo is heard coming off it
+        A["volume"] = [(E / 2, 1.0, "ease"), (E - 1.0, 0.7, "hold"), (E, 0.0, "hold")]
+        info.update(_throw(S, B, E, e))
+        return f"A rides out the phrase and its last beat goes into a {_echo_words(e.beats)} echo: about " \
+               f"{_repeats(e.fb)} repeats fade out over B" + (f", whose mids dip {e.duck:g} dB to let them through."
+                                                               if e.duck else "."), []
     if style == "swell in":
-        S.add("verb", "b", -2.0, 2.0, 6.0, 0.12)  # pre-fader: the wash sounds before B's fader is up
-        B["volume"] = [(0.0, 0.0, "ease"), (max(8.0, E / 2), 1.0, "hold")]
-        return "B rises out of a reverb wash before its dry signal comes up.", [{"beat": 0.0, "label": "B swell"}]
+        dens = _mean(gb.energy, place.b0, place.b0 + 4) / _body_energy(gb) if m.real_b else 0.5
+        verb = round(min(0.18, max(0.1, 0.2 - 0.12 * dens)), 2)  # the sparser B's intro, the more wash
+        rise = min(max(8.0, E / 2), 16.0 if dens < 0.4 else 8.0)
+        S.add("verb", "b", -2.0, 2.0, 2.0 + rise / 2, verb)  # pre-fader: the wash sounds before B's fader is up
+        B["volume"] = [(0.0, 0.0, "ease"), (rise, 1.0, "hold")]
+        return f"B rises out of a reverb wash and its dry signal comes up over {int(rise // 4)} bars " \
+               f"({'a sparse' if dens < 0.4 else 'a fuller'} intro, so {'more' if verb >= 0.14 else 'less'} wash).", \
+            [{"beat": 0.0, "label": "B swell"}]
     if style == "wash exit":
-        S.add("verb", "a", E - 8.0, E, E + 2.0, 0.16)
-        return "A dissolves into a reverb wash over its last 2 bars.", [{"beat": E - 8.0, "label": "reverb wash"}]
+        dens = _mean(ga.energy, place.a0 + L - 2, place.a0 + L) / _body_energy(ga) if m.real_a else 0.8
+        verb = round(min(0.2, max(0.12, 0.24 - 0.1 * dens)), 2)
+        S.add("verb", "a", E - 8.0, E, E + 2.0, verb)
+        return f"A dissolves into a reverb wash over its last 2 bars ({'light' if verb < 0.15 else 'fuller'} " \
+               "for this ending).", [{"beat": E - 8.0, "label": "reverb wash"}]
     if style == "dub echo":
-        a_deck["echo_beats"] = info["echo_beats"] = 0.5
-        info["feedback"] = 0.7
-        S.add("echo", "a", E - 16.0, E - 1.0, E + 4.0, 0.35)
-        return "A's last 4 bars build into a dub-style 8th-note echo that trails over B.", \
-            [{"beat": E - 16.0, "label": "echo build"}]
+        build = 16.0 if L >= 16 else 8.0
+        info.update(echo_beats=beats, feedback=0.72)
+        S.add("echo", "a", E - build, E - 1.0, E, 0.45)
+        return f"A's last {int(build // 4)} bars build into a {_echo_words(beats)} dub echo (feedback 0.72) that " \
+               "keeps repeating over B and fades away.", [{"beat": E - build, "label": "echo build"}]
     if style == "roll":
         lands = place.swap is None or any(abs(_b_bar(place, L) - d) <= 1 for d in gb.drops)
         at = E if lands else 4.0 * place.swap
@@ -1041,13 +1178,19 @@ def _apply_flavor(style: str, m: _Mix, place: _Place, a_deck: dict, A: dict, B: 
         if not ends:
             return None, []
         p = ends[-1]
-        S.add("echo", "a", p - 2.0, p - 1.0, p, _THROW_ECHO + 0.1)
-        return f"A's last sung phrase in the blend (ending in bar {int(p // 4)}) is thrown into the echo so the " \
-               "vocal trails off over B.", [{"beat": p - 1.0, "label": "echo throw"}]
+        e = _echo_shape(m, place, p / 4.0)
+        S.add("echo", "a", p - 1.05, p - 1.0, p, e.send)
+        _duck_mids(B, p, e.duck)
+        info.update(echo_beats=e.beats, feedback=e.fb)
+        return f"A's last sung phrase in the blend (ending in bar {int(p // 4)}) goes into a " \
+               f"{_echo_words(e.beats)} echo: about {_repeats(e.fb)} repeats trail off over B.", \
+            [{"beat": p - 1.0, "label": "echo throw"}]
     if style == "filter wash":
-        A["filter"] = [(E - 16.0, 0.0, "ease"), (E, 0.55, "hold")]
+        climb = min(E / 2, 32.0)
+        A["filter"] = [(E - climb, 0.0, "ease"), (E, 0.55, "hold")]
         S.add("verb", "a", E - 4.0, E, E + 2.0, 0.2)
-        return "A climbs a high-pass into a light reverb wash on its way out.", [{"beat": E - 4.0, "label": "reverb wash"}]
+        return f"A climbs a high-pass over its last {int(climb // 4)} bars into a light reverb wash on its way out.", \
+            [{"beat": E - 4.0, "label": "reverb wash"}]
     return None, []
 
 
@@ -1201,6 +1344,7 @@ class _Decision:
     style: str = DEFAULT_STYLE
     into_drop: bool = False
     notes: list[str] | None = None
+    fit: list[_Choice] | None = None  # how well each alternative style fits this pair (the editor ranks them)
 
 
 def _structure(m: _Mix, eng: tuple[str, _Place], tech: str, bars: int | None) -> _Decision:
@@ -1260,39 +1404,61 @@ def _decide(m: _Mix, eng: tuple[str, _Place], technique: str | None, bars: int |
         raise ValueError(f"unknown style {style!r}")
     if technique is None and style is not None and style not in BLEND_STYLES:
         technique = style  # a structural style is its technique
+    base = _base_technique(m, e_tech, e_place)
+    options: list[tuple[_Choice, str]] = []  # (choice, technique that builds it)
+    if base in ("cut", "drop swap"):
+        options += [(c, c.style) for c in _exit_choices(m, eng, base)]
+    elif base in _BLENDS:
+        options.append((_Choice(DEFAULT_STYLE, 0.6, "the music leaves room for a phrase blend"), base))
+    elif base == "echo out":  # the blend runs into A's cold ending: echo it out, or fade it out on the phrase
+        options += [(_Choice("echo out", 0.62, "A stops cold at the end of the blend"), "echo out"),
+                    (_Choice(DEFAULT_STYLE, 0.6, "fade A out on the phrase"), _blend_kind(m, e_place))]
+    else:  # a filter sweep (awkward keys / A's vocal over B's instrumental), with a plain blend as the fallback
+        options += [(_Choice(base, 0.66, "the keys or vocals clash: a filter crossfade hides it"), base),
+                    (_Choice(DEFAULT_STYLE, 0.5, "a plain blend over the clash"), "bass swap")]
+    if base not in ("cut", "drop swap") and (dd := _double_drop_place(m)) is not None:
+        options.append((_Choice("double drop", _double_drop_score(m, dd), "both drops line up in key"), "double drop"))
     if technique is not None:
         d = _structure(m, eng, technique, bars)
     else:
-        base = _base_technique(m, e_tech, e_place)
-        options: list[tuple[_Choice, str]] = []  # (choice, technique that builds it)
-        if base in ("cut", "drop swap"):
-            options += [(c, c.style) for c in _exit_choices(m, eng, base)]
-        elif base in _BLENDS:
-            options.append((_Choice(DEFAULT_STYLE, 0.6), base))
-        elif base == "echo out":  # the blend runs into A's cold ending: echo it out, or fade it out on the phrase
-            options += [(_Choice("echo out", 0.62), "echo out"), (_Choice(DEFAULT_STYLE, 0.6), _blend_kind(m, e_place))]
-        else:  # a filter sweep (awkward keys / A's vocal over B's instrumental), with a plain blend as the fallback
-            options += [(_Choice(base, 0.66), base), (_Choice(DEFAULT_STYLE, 0.5), "bass swap")]
-        if base not in ("cut", "drop swap") and (dd := _double_drop_place(m)) is not None:
-            options.append((_Choice("double drop", _double_drop_score(m, dd)), "double drop"))
         pick = _choose([c for c, _ in options], recent)
+        first: list[str] = []
+        _variety_note([c for c, _ in options], pick, recent, first)
         tech = next((t for c, t in options if c is pick), options[0][1])
         d = _structure(m, eng, tech, bars)
+        d.notes = first + (d.notes or [])
+    structural = [c for c, _ in options if c.style != DEFAULT_STYLE]
     if d.tech in _BLENDS and d.place.overlap:
         probe = {"beat0_s": 0.0, "native_bpm": m.a_bpm, "loops": []}
         choices = _flavor_choices(m, d.place, probe)
         fits = {c.style for c in choices if c.score > 0}
+        d.fit = choices + structural  # the flavours, and the bigger moves that also suit these two
         if style in BLEND_STYLES:
             if style not in fits:
-                d.notes.append(f"A {style} doesn't fit this pair, so it's a plain phrase mix.")
+                why = next(c.why for c in choices if c.style == style)
+                d.notes.append(f"A {style} doesn't fit this pair ({why}), so it's a plain phrase mix.")
             d.style = style if style in fits else DEFAULT_STYLE
         else:
-            d.style = _choose(choices, recent).style
+            pick = _choose(choices, recent)
+            _variety_note(choices, pick, recent, d.notes)
+            d.style = pick.style
     else:
         if style in BLEND_STYLES and style != DEFAULT_STYLE:
             d.notes.append(f"A {style} needs a blend, and this pair is planned as a {d.tech}.")
         d.style = d.tech if d.tech in STYLES else DEFAULT_STYLE
+        if d.tech in _CUTS or (d.tech == "echo out" and not d.place.overlap):
+            d.fit = [c for c, _ in options] if base in ("cut", "drop swap") else _exit_choices(m, eng, base)
+        else:
+            d.fit = [c for c, _ in options]
     return d
+
+
+def _variety_note(choices: list[_Choice], pick: _Choice, recent: list[str], notes: list[str]) -> None:
+    """Say so when the best fit stepped aside because it was used in the last few transitions."""
+    best = max((c for c in choices if c.style not in _MANUAL_ONLY), key=lambda c: c.score, default=None)
+    if best is not None and best.style != pick.style and best.score > pick.score and best.style in recent[-4:]:
+        notes.append(f"A {best.style} fits these two best, but the set just had one, so this one is a "
+                     f"{pick.style} for variety.")
 
 
 def plan_styles(pairs: list[tuple[Track, dict | None, Track, dict | None, dict | None]],
@@ -1358,20 +1524,24 @@ def generate(
 
     A, B = _lanes(), _lanes()
     S = _Sends()
+    beats = _echo_beats(m.a_bpm)
     if tech in _CUTS or (tech == "echo out" and L == 0):
-        info = _cut_lanes(tech, bars, A, S, place.b0 in gb.drops)
+        into = place.b0 in gb.drops
+        info = _cut_lanes(tech, bars, A, B, S, into, _echo_shape(m, place, 0, into))
     elif tech == "loop roll":
         info = _loop_roll(m, place, A, B, a_deck, S)
     elif tech == "double drop":
         info = _double_drop_lanes(A, B)
     else:
-        info = _blend_lanes(tech, L, place.swap, A, B, S, into_drop)
+        info = _blend_lanes(tech, L, place.swap, A, B, S, into_drop, _echo_shape(m, place, L, into_drop))
     clash = _clash_bars(m, a_deck, place) if tech not in ("filter sweep", "double drop") else []
     clash_at = _cut_mids(A, clash[0], E) if clash and L else None
     a_out = 4.0 * (ga.end - place.a0)  # A's music ends here
     if m.real_a and L and tech not in ("loop roll", "double drop") and a_out < E:
         A["volume"] = [(max(0.0, a_out - 8.0), 1.0, "ease"), (max(1.0, a_out), 0.0, "hold")]  # out before it stops
     throws = _mid_sends(m, tech, place, a_deck, S, clash_at)  # the problem-solving throw first, then the style
+    if throws and info["throw"] is None:
+        info.update(echo_beats=beats, feedback=0.5)  # the clash throw: a short echo of A's last word
     flavor_note, flavor_marks = None, []
     if tech in _BLENDS and d.style != DEFAULT_STYLE:
         flavor_note, flavor_marks = _apply_flavor(d.style, m, place, a_deck, A, B, S, info)
@@ -1472,6 +1642,8 @@ def generate(
         "bars": bars, "key_lock": True, "window": {"start_beat": ws, "end_beat": we}, "tempo": tempo_kf,
         "a": a_deck, "b": b_deck, "markers": sorted(markers, key=lambda mk: mk["beat"]), "notes": notes,
         "style": d.style, "edited": False,
+        "style_fit": [{"style": c.style, "fit": round(c.score, 2), "why": c.why}
+                      for c in sorted(d.fit or [], key=lambda c: -c.score)],
     }  # fmt: skip
     return validate(plan)
 

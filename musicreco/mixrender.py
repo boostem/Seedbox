@@ -33,7 +33,7 @@ from scipy import ndimage, signal
 
 from .paths import ffmpeg_path
 
-RENDER_VERSION = 2  # bump whenever the output for the same plan + files changes (invalidates cached renders)
+RENDER_VERSION = 3  # bump whenever the output for the same plan + files changes (invalidates cached renders)
 SR = 44100
 
 LANES = ("volume", "eq_low", "eq_mid", "eq_high", "filter", "echo_send", "echo_feedback", "reverb_send")
@@ -56,7 +56,8 @@ MAKEUP_DB = 1.0
 XOVER_LOW_HZ, XOVER_HIGH_HZ = 200.0, 2500.0
 FILTER_LP_MIN_HZ, FILTER_LP_MAX_HZ = 80.0, 20000.0
 FILTER_HP_MIN_HZ, FILTER_HP_MAX_HZ = 20.0, 10000.0
-ECHO_RETURN = 0.85
+ECHO_RETURN = 1.15
+ECHO_PAN = 0.35  # the echo's input leans this far left and the repeats swap sides (ping-pong)
 REVERB_RETURN = 0.6
 REVERB_PREDELAY_S = 0.022
 FX_KINDS = ("brake", "spinback")
@@ -636,16 +637,22 @@ def _dj_filter(x: np.ndarray, f: np.ndarray, sr: int) -> np.ndarray:
 
 
 def _echo(x: np.ndarray, delay: np.ndarray, fb: np.ndarray, sr: int) -> np.ndarray:
-    """Feedback delay (repeats only) with a band-limiting filter in the loop: every repeat gets thinner/darker."""
+    """Feedback delay (repeats only). The input is band-limited once, steeply (200 Hz - 5 kHz: no lows to fight the
+    incoming track's bass), and the loop only has gentle one-pole filters, so each repeat gets a little duller
+    without fading away. Ping-pong: the input leans left and each repeat swaps sides, which keeps the repeats clear
+    of the incoming track in the middle."""
     n = x.shape[1]
-    hp = signal.butter(2, 220.0, "highpass", fs=sr, output="sos")
-    lp = signal.butter(2, 6000.0, "lowpass", fs=sr, output="sos")
+    band = np.vstack([signal.butter(2, 200.0, "highpass", fs=sr, output="sos"),
+                      signal.butter(2, 5000.0, "lowpass", fs=sr, output="sos")])
+    mono = signal.sosfilt(band, x.astype(np.float64).mean(axis=0))
+    xd = np.stack([mono * (1.0 + ECHO_PAN), mono * (1.0 - ECHO_PAN)])
+    hp = signal.butter(1, 120.0, "highpass", fs=sr, output="sos")
+    lp = signal.butter(1, 6500.0, "lowpass", fs=sr, output="sos")
     sos = np.vstack([hp, lp])
     zi = np.zeros((2, 2, 2))
     w = np.zeros((2, n))
     out = np.zeros((2, n))
     blk = int(max(32, min(1024, np.floor(delay.min()) - 2)))
-    xd = x.astype(np.float64)
     for a in range(0, n, blk):
         b = min(n, a + blk)
         r = np.arange(a, b) - delay[a:b]
@@ -657,7 +664,7 @@ def _echo(x: np.ndarray, delay: np.ndarray, fb: np.ndarray, sr: int) -> np.ndarr
         d = (w[:, i0] * (1 - fr) + w[:, i1] * fr) * ok
         y, zi = signal.sosfilt(sos, d, axis=-1, zi=zi)
         out[:, a:b] = y
-        w[:, a:b] = xd[:, a:b] + y * fb[a:b]
+        w[:, a:b] = xd[:, a:b] + y[::-1] * fb[a:b]
     return out.astype(np.float32)
 
 
