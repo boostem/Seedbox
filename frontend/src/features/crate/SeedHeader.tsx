@@ -52,7 +52,7 @@ export function SeedHeader({ crate, library }: { crate: Crate; library: CrateSum
           <div className="label-caps flex items-center gap-1.5 !text-accent-hover">
             <Sprout size={11} /> Seed
             <span className="font-medium tracking-normal text-fg-subtle normal-case">
-              · {library ? `crate exists — ${plural(library.track_count, "track")}` : "new crate"}
+              · {library ? `crate exists, ${plural(library.track_count, "track")}` : "new crate"}
             </span>
           </div>
           <h1 className="mt-0.5 truncate text-2xl leading-tight font-semibold tracking-tight" title={s.name}>

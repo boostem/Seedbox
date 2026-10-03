@@ -9,7 +9,7 @@ import { fmtPitch } from "@/lib/format";
 type State = SetTrack["analysis_state"];
 
 const STATE_TEXT: Record<State, string> = {
-  ready: "Analysed — waveform, cues and mix points ready",
+  ready: "Analysed: waveform, cues and mix points ready",
   running: "Analysing audio…",
   queued: "Queued for analysis",
   missing: "Not analysed yet",

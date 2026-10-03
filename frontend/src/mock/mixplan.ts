@@ -175,7 +175,7 @@ export function mockRender(plan: MixPlan): MixRender {
   const warnings: string[] = [];
   const peakA = Math.max(...plan.a.lanes.volume.map((k) => k.value));
   const peakB = Math.max(...plan.b.lanes.volume.map((k) => k.value));
-  if (peakA + peakB > 1.9 && plan.bars >= 16) warnings.push("both decks near full volume during the blend (+3 dB bump) — limiter engaged");
+  if (peakA + peakB > 1.9 && plan.bars >= 16) warnings.push("both decks near full volume during the blend (+3 dB bump), limiter engaged");
   return {
     render_id: id,
     audio_url: `/api/renders/${id}.m4a`,

@@ -39,14 +39,14 @@ export const MOVE_LABEL: Record<Move, string> = {
 };
 
 export const MOVE_HELP: Record<Move, string> = {
-  same: "Same key — always harmonic",
-  "+1": "+1 on the wheel (a fifth up) — smooth lift",
-  "-1": "−1 on the wheel (a fifth down) — smooth",
-  relative: "Relative major/minor — same notes, mood change",
+  same: "Same key: always harmonic",
+  "+1": "+1 on the wheel (a fifth up): smooth lift",
+  "-1": "−1 on the wheel (a fifth down): smooth",
+  relative: "Relative major/minor: same notes, mood change",
   "+2 boost": "+2 energy boost",
   "+7 boost": "+7 energy boost (semitone up)",
   diagonal: "Diagonal (±1 and other letter)",
-  clash: "Key clash — use a cut or echo out",
+  clash: "Key clash: keep the blend short with the melody out early, or cut",
   "?": "Unknown key",
 };
 

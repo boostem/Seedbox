@@ -444,7 +444,7 @@ on("GET", "/api/crates/([^/]+)/set", ([folder]) => {
 on("PUT", "/api/crates/([^/]+)/order", ([folder], body) => {
   const c = crateByFolder(folder);
   if (!c) return fail(404, `No crate "${folder}"`);
-  if (hasRunningJob(folder)) return fail(409, "This crate has a running download job — try again when it finishes");
+  if (hasRunningJob(folder)) return fail(409, "This crate has a running download job, try again when it finishes");
   const ids = body.track_ids as string[];
   if (ids.length !== c.trackIds.length || !ids.every((id) => c.trackIds.includes(id))) return fail(422, "track_ids must be a permutation of the crate's tracks");
   c.trackIds = [...ids];
@@ -455,7 +455,7 @@ on("PUT", "/api/crates/([^/]+)/order", ([folder], body) => {
 on("POST", "/api/crates/([^/]+)/auto-order", async ([folder]) => {
   const c = crateByFolder(folder);
   if (!c) return fail(404, `No crate "${folder}"`);
-  if (hasRunningJob(folder)) return fail(409, "This crate has a running download job — try again when it finishes");
+  if (hasRunningJob(folder)) return fail(409, "This crate has a running download job, try again when it finishes");
   await sleep(450);
   c.trackIds = orderSet(c.seed, c.trackIds.map((id) => track(id)!)).map((t) => t.id);
   touch(c);

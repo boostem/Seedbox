@@ -19,6 +19,9 @@
 #   SEEDBOX_RELVENV    release venv folder (default packaging/.relvenv)
 #   RELEASE_PYTHON     CPython version for --release (default 3.14.7)
 #   RELEASE_MACOS      oldest macOS whose wheels --release picks (default 12.0; deno/ffmpeg need 12.0 anyway)
+#   RELEASE_TORCH      torch version --release bundles (default 2.11.0: the newest with macOS 12 wheels for Python
+#                      3.14; vocal splitting runs on the GPU on macOS 14+ and on the CPU before). The dev venv's
+#                      torch isn't pinned, since newer wheels need macOS 14.
 #   SEEDBOX_DENO       deno binary to bundle (default: Homebrew's if it only links system libraries, otherwise
 #                      the official self-contained release for DENO_VERSION, downloaded + checksum-verified)
 #   DENO_VERSION       e.g. 2.9.5 (default: the version of the deno on PATH, else the latest release)
@@ -57,6 +60,7 @@ if [[ $RELEASE == 1 ]]; then
   RELVENV="${SEEDBOX_RELVENV:-$HERE/.relvenv}"
   RELEASE_PYTHON="${RELEASE_PYTHON:-3.14.7}"
   RELEASE_MACOS="${RELEASE_MACOS:-12.0}"
+  RELEASE_TORCH="${RELEASE_TORCH:-2.11.0}"
   step "release venv: uv-managed CPython $RELEASE_PYTHON in $RELVENV, wheels for macOS $RELEASE_MACOS"
   if [[ ! -x "$RELVENV/bin/python" ]] || ! "$RELVENV/bin/python" -c \
       "import sys; assert sys.version.split()[0] == '$RELEASE_PYTHON' and '/uv/python/' in sys.base_prefix"; then
@@ -65,11 +69,13 @@ if [[ $RELEASE == 1 ]]; then
   fi
   PINS=()
   if [[ -x "$PROJECT/.venv/bin/python" ]]; then  # same versions as the dev venv the app was tested with
-    "$PROJECT/.venv/bin/python" -m pip freeze --exclude-editable > "$RELVENV/constraints.txt"
+    "$PROJECT/.venv/bin/python" -m pip freeze --exclude-editable | grep -viE '^torch==' > "$RELVENV/constraints.txt" \
+      || true
     PINS=(-c "$RELVENV/constraints.txt")
   fi
   MACOSX_DEPLOYMENT_TARGET="$RELEASE_MACOS" uv pip install -q -p "$RELVENV/bin/python" \
-    --python-platform aarch64-apple-darwin -r "$PROJECT/requirements.txt" pyinstaller ${PINS[@]+"${PINS[@]}"}
+    --python-platform aarch64-apple-darwin -r "$PROJECT/requirements.txt" "torch==$RELEASE_TORCH" pyinstaller \
+    ${PINS[@]+"${PINS[@]}"}
   PYTHON="$RELVENV/bin/python"
 fi
 

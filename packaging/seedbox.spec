@@ -93,6 +93,7 @@ hiddenimports = [
     *collect_submodules("yt_dlp"),  # lazy extractors are imported by name
     *collect_submodules("mutagen"),
     *collect_submodules("pedalboard"),  # mixrender: Rubber Band stretch + FX (native extension)
+    *collect_submodules("einops"),  # musicreco.roformer (vocal stems; torch comes with its own PyInstaller hook)
     "webview.platforms.cocoa",
     "compileall", "py_compile",  # updater's verification child
     # stdlib a newer (downloaded) yt-dlp may start importing; cheap insurance

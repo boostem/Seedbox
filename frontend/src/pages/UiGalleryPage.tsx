@@ -113,7 +113,7 @@ export function UiGalleryPage() {
 
   return (
     <Page>
-      <PageHeader title="Design system" subtitle="Seedbox UI kit — import from @/components/ui (see frontend/DESIGN.md)" />
+      <PageHeader title="Design system" subtitle="Seedbox UI kit: import from @/components/ui (see frontend/DESIGN.md)" />
       <PageBody className="px-5 py-5">
         <div className="mx-auto grid max-w-[1240px] grid-cols-2 gap-5">
           <Section title="Buttons">
@@ -156,7 +156,7 @@ export function UiGalleryPage() {
             <Kbd combo="Mod+Shift+K" />
           </Section>
 
-          <Section title="Camelot keys (lib/camelot.ts — single colour source)" className="col-span-2">
+          <Section title="Camelot keys (lib/camelot.ts, single colour source)" className="col-span-2">
             <div className="grid w-full grid-cols-12 gap-1.5">
               {CAMELOT_CODES.filter((c) => c.endsWith("A")).map((c) => (
                 <KeyBadge key={c} camelot={c} size="md" className="w-full" />

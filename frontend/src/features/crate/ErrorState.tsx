@@ -15,7 +15,7 @@ export function describeError(error: unknown, what = "this"): FriendlyError {
   const e = error instanceof ApiError ? error : null;
   const msg = (error as Error | null)?.message ?? String(error);
   if (e?.isNetwork) {
-    return { icon: Unplug, title: "Can't reach the Seedbox engine", description: "The app's engine isn't responding. It reconnects on its own — try again in a moment.", retryable: true };
+    return { icon: Unplug, title: "Can't reach the Seedbox engine", description: "The app's engine isn't responding. It reconnects on its own, so try again in a moment.", retryable: true };
   }
   if (e?.status === 502) {
     const limited = /429|rate|too many/i.test(msg);
@@ -24,7 +24,7 @@ export function describeError(error: unknown, what = "this"): FriendlyError {
       title: limited ? "tunebat is rate-limiting us" : "tunebat didn't answer",
       description: (
         <>
-          {limited ? "Too many requests in a short time — wait a few seconds, then retry." : "tunebat is slow or briefly unavailable. This usually clears up on a retry."}
+          {limited ? "Too many requests in a short time. Wait a few seconds, then retry." : "tunebat is slow or briefly unavailable. This usually clears up on a retry."}
           <span className="mt-1.5 block font-mono text-2xs text-fg-faint select-text">{msg}</span>
         </>
       ),

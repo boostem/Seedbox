@@ -13,3 +13,6 @@ pywebview
 imageio-ffmpeg
 httpx
 pedalboard
+# vocal stems (musicreco.separator: a RoFormer vocal model, downloaded on first use)
+torch
+einops

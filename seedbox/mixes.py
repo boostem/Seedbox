@@ -193,7 +193,8 @@ class MixService:
     def chain(self, pairs: list[Pair]) -> list[str | None]:
         """The style of every transition of a set (mixplan.plan_styles): a saved plan keeps its own, the others are
         each the best fit for their two songs given the styles before them. Uses the analyses known now (nothing
-        waits; missing ones are queued) and is remembered until the order, an analysis or a saved plan changes."""
+        waits; missing ones are queued) and is remembered until the order, an analysis, a track's vocal stems or a saved
+        plan changes."""
         mixplan = engine.optional("mixplan")
         if mixplan is None or not hasattr(mixplan, "plan_styles") or not pairs:
             return [None] * len(pairs)
@@ -206,10 +207,13 @@ class MixService:
         def an_of(d: Path, f: SetFile) -> dict | None:
             return known.get((str(d), f.track.id))
 
+        def state(an: dict | None) -> str | None:  # analysed (heuristic vocals or the stems') or not
+            return None if an is None else str(an.get("vocal_source") or "analysed")
+
         saved = [_mtime(p.saved) for p in pairs]
+        states = tuple(state(an_of(p.a_dir, p.a)) for p in pairs) + (state(an_of(pairs[-1].b_dir, pairs[-1].b)),)
         key = (tuple((str(p.a_dir), p.a.track.id, str(p.b_dir), p.b.track.id, str(p.saved)) for p in pairs),
-               tuple(saved), tuple(an_of(p.a_dir, p.a) is not None for p in pairs) + (an_of(pairs[-1].b_dir,
-               pairs[-1].b) is not None,), self.crates.bpm_tol)  # fmt: skip
+               tuple(saved), states, self.crates.bpm_tol)  # fmt: skip
         with self._lock:
             hit = self._chains.get(key)
         if hit is not None:

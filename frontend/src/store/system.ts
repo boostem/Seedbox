@@ -19,7 +19,7 @@ export async function runYtdlpUpdate(): Promise<void> {
   try {
     const result = await api.updateYtdlp({ quiet: true });
     useYtdlpUpdate.setState({ running: false, result });
-    if (result.ok) toast.success(result.message || `yt-dlp ${result.version} installed`, { title: "yt-dlp updated — applies on next launch", timeout: 8000 });
+    if (result.ok) toast.success(result.message || `yt-dlp ${result.version} installed`, { title: "yt-dlp updated: applies on next launch", timeout: 8000 });
     else toast.warning(result.message, { title: "yt-dlp update" });
   } catch (e) {
     const msg = (e as Error).message;

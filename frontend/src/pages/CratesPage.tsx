@@ -313,7 +313,7 @@ export function CratesPage() {
           className="flex-1"
           icon={Library}
           title="No crates yet"
-          description="Search for a seed track, tick the recommendations you like and download them — each seed becomes a crate here."
+          description="Search for a seed track, tick the recommendations you like and download them. Each seed becomes a crate here."
           action={
             <Button variant="primary" icon={Search} onClick={() => navigate({ name: "search" })}>
               Search for a seed

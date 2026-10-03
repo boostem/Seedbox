@@ -117,7 +117,7 @@ function SystemPanel() {
             )}
           </InfoRow>
           <div className="border-b border-line/60 px-4 py-3">
-            <p className="mb-2.5 text-xs text-fg-subtle">YouTube changes often — update first when downloads or previews fail. Updates apply the next time Seedbox starts.</p>
+            <p className="mb-2.5 text-xs text-fg-subtle">YouTube changes often: update first when downloads or previews fail. Updates apply the next time Seedbox starts.</p>
             <div className="flex items-center gap-3">
               <Button variant={outdated ? "primary" : "secondary"} icon={CircleArrowUp} loading={running} onClick={() => void runYtdlpUpdate()}>
                 {running ? "Updating yt-dlp…" : outdated ? `Update to ${system.ytdlp_latest}` : "Check for update"}
@@ -128,7 +128,7 @@ function SystemPanel() {
               <p className={cn("mt-2.5 text-xs select-text", result.ok ? "text-ok" : "text-warn")}>
                 {result.ok ? "✓ " : ""}
                 {result.message}
-                {result.ok && pending ? " — restart Seedbox to start using it." : ""}
+                {result.ok && pending ? ". Restart Seedbox to start using it." : ""}
               </p>
             )}
             {!running && error && <p className="mt-2.5 text-xs text-danger select-text">{error}</p>}
@@ -145,7 +145,7 @@ function SystemPanel() {
               </>
             ) : (
               <Badge tone="danger" size="xs">
-                missing — downloads can't encode MP3
+                missing: downloads can't encode MP3
               </Badge>
             )}
           </InfoRow>
@@ -161,7 +161,7 @@ function SystemPanel() {
               </>
             ) : (
               <Badge tone="warn" size="xs">
-                missing — some YouTube videos may fail
+                missing: some YouTube videos may fail
               </Badge>
             )}
           </InfoRow>

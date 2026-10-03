@@ -249,7 +249,7 @@ export function TrackWaveform({ analysis, trackId, onSeek, height = 132, overvie
               }}
               onPointerMove={(e) => ovDrag.current && ovTo(e)}
               onPointerUp={() => (ovDrag.current = false)}
-              aria-label="Track overview — click to move the zoomed view"
+              aria-label="Track overview: click to move the zoomed view"
             />
             <canvas ref={ovHeadRef} className="pointer-events-none absolute inset-0 h-full w-full" />
           </div>

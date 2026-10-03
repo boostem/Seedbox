@@ -45,8 +45,10 @@ Other flags:
   - Where it really fits (A singing across the swap, keys that sit together), A's vocal rides over B's beat as an
     **acapella**.
 
-  The model (about 200 MB) downloads the first time it's needed. Until a song is split, vocal clashes are handled by
-  ducking A's mids.
+  The model (BS-RoFormer "Resurrection", 205 MB) downloads the first time it's needed. Splitting runs on the Apple
+  GPU on macOS 14+: roughly 2-5 minutes per song on M1/M2-class chips and 1-2 minutes on Pro/Max chips; on macOS
+  12/13 it runs on the CPU and is several times slower. Until a song is split, vocal clashes are handled by
+  ducking A's mids. Splitting needs PyTorch (`requirements.txt` now includes `torch` and `einops`).
 - **Other styles, only when the songs need them.** A **filter fade** for two full arrangements or keys a step apart,
   a **double drop** (EQ only) when two drops line up, and a clean **quick cut** on the phrase when the tempos are too
   far apart to glide. Clashing keys get an 8-bar blend with A's melody and vocal out early. Tempo gaps up to 12%

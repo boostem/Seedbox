@@ -188,7 +188,7 @@ export function SearchPage() {
             value={draft}
             spellCheck={false}
             autoComplete="off"
-            placeholder="Search tunebat — artist and title, or paste a Spotify / tunebat link"
+            placeholder="Search tunebat: artist and title, or paste a Spotify / tunebat link"
             aria-label="Search tunebat"
             wrapperClassName="h-11 max-w-[820px] flex-1 text-[15px] shadow-card"
             onChange={(e) => {
@@ -279,7 +279,7 @@ export function SearchPage() {
             footer={
               <div className="flex h-14 items-center justify-center gap-3 border-t border-line/60 text-xs text-fg-subtle">
                 {error ? (
-                  <span className="text-danger">Couldn't load more — </span>
+                  <span className="text-danger">Couldn't load more. </span>
                 ) : null}
                 {hasNext ? (
                   <Button size="sm" icon={ChevronDown} loading={status === "more"} onClick={loadMore}>
@@ -352,7 +352,7 @@ function StartPanel({ recent, onPick, onClearRecent }: { recent: string[]; onPic
         <div className="flex flex-col gap-1.5">
           <h2 className="text-lg font-semibold tracking-tight">Find a seed track</h2>
           <p className="max-w-[560px] text-sm text-fg-muted">
-            Pick the exact version you play — single, extended mix or remix. Seedbox ranks tunebat's recommendations for it by how well they mix,
+            Pick the exact version you play: single, extended mix or remix. Seedbox ranks tunebat's recommendations for it by how well they mix,
             pre-ticks the ones that pass your rule, and preloads 20-second previews.
           </p>
         </div>
@@ -383,7 +383,7 @@ function StartPanel({ recent, onPick, onClearRecent }: { recent: string[]; onPic
         {seeds.length > 0 && (
           <section className="flex flex-col gap-2">
             <div className="label-caps flex items-center gap-2">
-              <Sprout size={11} /> Your seeds — open recommendations again
+              <Sprout size={11} /> Your seeds: open recommendations again
             </div>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-2">
               {seeds.map((c) => (

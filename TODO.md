@@ -52,6 +52,22 @@
       repeats and B's dip; swell and wash levels from how sparse the intro / ending are; the filter climb from the
       blend length).
 
+## Done (round 5, branch claude/chill-mixes: chill mixes)
+- [x] **Chill planner** (`mixplan.MODE = "chill"`; the FX planner stays, `SEEDBOX_MIX_MODE=fx`): every transition
+      uses only the EQ, the filter and the vocal stems. Default: a 16-bar phrase mix. B's fader is up with its EQ
+      shut, its highs open first, then its mids (A dipping 4 dB in each band to make room), the bass swaps halfway,
+      then A's mids and highs leave under a touch of high-pass.
+- [x] **Bass swaps by the songs**: hard on the 1 (steady kicks, tight bass), quick over one bar (a bassline that never
+      lets go, a broken kick), slow over 4 bars (a soft low end). New `kick_per_bar` / `bass_per_bar` in the
+      analysis (ANALYSIS_VERSION 5). Pick one by hand in the editor's *Bass swap* menu.
+- [x] **Vocal stems**: a RoFormer model splits every song's vocals in the background (songs in use first), cached as
+      FLAC + loudness envelopes; the stems replace the heuristic vocal detection. Per-deck *Vocals* / *Instrumental*
+      lanes; two vocals never sound at once; acapella moments where A's vocal can ride over B's beat.
+- [x] **Loops only when needed**: A's last 8 bars repeat when its clean ending is too short for the blend, with the
+      vocal taken out of the repeat.
+- [x] Chill styles only when the songs need them (filter fade, double drop EQ-only, quick cut), clashing keys get 8
+      bars with A's melody out early, tempo gaps up to 12% glide, no variety rule.
+
 ## Machine learning plan (researched 2026-10-03)
 What the research says: no released model predicts a whole transition plan from audio (the one learned transition
 generator, DJtransGAN, rated no better than rules in its own listening test), and commercial auto-mixers (djay
@@ -61,8 +77,10 @@ and to **rank plans**, keep the planner's explainable rules, and let real-mix da
 
 **Phase 1, an optional "ML pack"** (an app variant or add-on, est. +450-520 MB: PyInstaller can't install packages
 at run time). torch 2.11 is the newest that still runs on the app's macOS 12 floor with Python 3.14.
-- [ ] **Demucs htdemucs** (MIT, 84 MB weights; est. ~8 s per 4-min track on the Apple GPU, ~1.5x track length on a
-      CPU): cache per-bar vocal / drum / bass stem loudness. Real vocal activity replaces the heuristic that hears
+- [x] ~~**Demucs htdemucs**~~ done differently in round 5: a RoFormer vocal model is part of the app (torch in
+      requirements.txt) and splits every song's vocals; stem loudness per bar replaces the vocal heuristic. Still
+      open from this item: drum / bass stems (a 4-stem model). Original note: (MIT, 84 MB weights; est. ~8 s per
+      4-min track on the Apple GPU, ~1.5x track length on a CPU): cache per-bar vocal / drum / bass stem loudness. Real vocal activity replaces the heuristic that hears
       synth leads as vocals, echo throws land on the true last vocal offset, and drums-only bars become known. A
       published listening test (Mosaikbox, ISMIR 2024) rated stem-aware transitions 3.46 vs 3.08 (p < 0.0001).
 - [ ] **Beat This!** (CPJKU, MIT code and weights, 8-78 MB): a per-beat grid with downbeats instead of a constant
@@ -107,12 +125,13 @@ NATTEN build issues), CLAP / MERT, TensorFlow builds (0.4-1.1 GB), and bundling 
       same on CDJs.
 - [ ] **"Build me a 60-minute set"** from the whole library: pick tracks across crates to hit a target length and
       energy arc (warm-up → peak → cool-down), then order and render it.
-- [ ] **Stem-aware transitions** (on top of the cached stems in the ML plan): acapella-over-instrumental blends,
-      vocal swaps, drums-only intros for tracks that don't have them.
+- [ ] **More stems**: drums / bass / other (a 4-stem model) for true drum and bass swaps and drums-only intros for
+      tracks that don't have them (vocal swaps and acapellas are done).
+- [ ] **B's intro loop**: when B's intro is too short, repeat a clean 8-bar stretch of it (A's ending already does).
 - [ ] **A/B alternatives**: render 2-3 different plans for a transition side by side and keep the favourite.
 - [ ] **Full-mix waveform** with transition markers and scrubbing on the set mix panel.
 - [ ] **Publish a mix** to Mixcloud with its tracklist (their upload API takes sections), or SoundCloud.
 - [ ] Render settings: target loudness, WAV/FLAC output, key lock off (vinyl-style pitch).
 - [ ] Rip quality check: flag downloads with a low spectral cutoff or clipping before they reach a set.
-- [ ] Until stems land, vocal detection stays heuristic: a lightweight harmonic/percussive split +
+- [ ] Until a song's vocals are split, vocal detection stays heuristic: a lightweight harmonic/percussive split +
       pitch-salience-with-vibrato check would already cut the synth-lead false positives.

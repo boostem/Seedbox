@@ -321,7 +321,19 @@ Contract: `LaneId` gains `vocals` / `instrumental`; `MixPlan.swap_kind` / `vocal
   Quick cut: A out on the 1, nothing else (tempo gaps over 12% or when asked).
 - Clashing keys: 8 bars, A's mids out over bars 2-3 (its vocal with them), B's mids in over bars 4-5.
 
-## Stems (musicreco/stems.py, musicreco/separator.py, seedbox/stems_queue.py)
+## Stems (musicreco/stems.py, musicreco/separator.py, musicreco/roformer.py, seedbox/stems_queue.py)
+- Model (`separator.MODEL`): unwa's BS-RoFormer "Resurrection" vocal model (BS-RoFormer, dim 256, depth 12, 62
+  bands, STFT 2048 / hop 512, chunks of 785,920 samples with overlap 2; MVSep multisong vocals SDR 11.34, the
+  cleanest "bleedless" scores among the public RoFormers, so a muted vocal leaves little behind). Weights:
+  `https://huggingface.co/pcunwa/BS-Roformer-Resurrection/resolve/main/BS-Roformer-Resurrection.ckpt`, 204,510,749
+  bytes, sha256 9dbfe5cb...2dd5, no license stated: downloaded on first use into `<app support>/models/`
+  (resumable, retried, checksum-verified), never committed or bundled. Runners-up: becruily "deux" (Mel-Band,
+  435 MB, CC BY-NC weights) and unwa "Leap" (vocal SDR 11.72, ~30% slower).
+- `musicreco/roformer.py`: an inference-only port of MSST's BS- / Mel-Band RoFormer (MIT, derived from
+  lucidrains/BS-RoFormer, MIT); checkpoints load with `strict=True`. Needs torch + einops only. The network runs on
+  MPS when available (macOS 14+ with torch ≥ 2.9), STFT / mask math on the CPU, attention split to stay under
+  ~512 MB per call; a GPU failure falls back to the CPU for good. The model is dropped after 5 minutes idle.
+- Release builds bundle torch 2.11.0 (`RELEASE_TORCH`): the newest with macOS 12 wheels for Python 3.14.
 - `<crate>/.seedbox/stems/<id>.flac`: the vocal stem (44.1 kHz stereo 16-bit FLAC, sample-aligned with
   `mixrender.decode_stereo`); `<id>.json`: cache key (size, mtime, STEMS_VERSION, model id, audio fingerprint),
   `vocal_db` / `mix_db` loudness envelopes at 20 fps. `vocal_per_bar(meta, analysis)` = share of a bar's frames with

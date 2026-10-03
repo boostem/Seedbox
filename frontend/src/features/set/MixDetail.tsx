@@ -1,6 +1,6 @@
 import { AlertTriangle, ArrowRight, ChevronLeft, ChevronRight, Headphones, Info, Square } from "lucide-react";
 import { useCallback, useMemo } from "react";
-import type { SetTrack } from "@/api/types";
+import type { MixPlan, SetTrack } from "@/api/types";
 import { Button, CoverArt, IconButton, MoveChip, ScoreChip, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { fmtBpm, fmtPitch } from "@/lib/format";
@@ -25,6 +25,14 @@ export interface MixDetailProps {
   onPrev?: () => void;
   onNext?: () => void;
   onSelectTrack: (id: string) => void;
+}
+
+/** The mix plan in a few words: "16-bar phrase mix, quick bass swap", "double drop", "quick cut". */
+function planSummary(p: MixPlan): string {
+  const blend = p.style === "phrase mix" || p.style === "filter fade" || p.style === "acapella";
+  if (!blend) return p.style;
+  const swap = p.swap_kind ? `, ${p.swap_kind} bass swap` : "";
+  return `${p.bars}-bar ${p.style}${swap}${p.a.loops.length ? ", A's ending repeats" : ""}`;
 }
 
 /** Audition plan for a ready transition (needs A's bar length; falls back to the tunebat BPM). */
@@ -108,7 +116,11 @@ export function MixDetail({ folder, t, a, b, index, count, onPrev, onNext, onSel
         {!t.pending && <ScoreChip value={t.score} move={t.key_move} passed={t.ready} size="md" />}
         <MoveChip move={t.key_move} />
         <PitchChip pct={t.pitch_pct} />
-        {t.ready && t.technique && <span className="text-sm font-semibold">{techniqueLong(t)}</span>}
+        {mp.plan ? (
+          <span className="text-sm font-semibold capitalize">{planSummary(mp.plan)}</span>
+        ) : (
+          t.ready && t.technique && <span className="text-sm font-semibold">{techniqueLong(t)}</span>
+        )}
         <span className="flex-1" />
         {t.warnings.length > 0 && (
           <Tooltip content={t.warnings.join(" · ")}>
@@ -123,7 +135,7 @@ export function MixDetail({ folder, t, a, b, index, count, onPrev, onNext, onSel
         )}
         {plan && !hasPlan && !mp.loading && (
           <>
-            <span className="text-2xs text-fg-subtle">Rough preview — two browser decks, not beat-locked</span>
+            <span className="text-2xs text-fg-subtle">Rough preview: two browser decks, not beat-locked</span>
             <Button variant="primary" icon={active ? Square : Headphones} loading={loading} kbd="Space" onClick={() => audition.toggle(plan)}>
               {active ? "Stop audition" : "Audition transition"}
             </Button>

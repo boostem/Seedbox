@@ -21,8 +21,8 @@ const TITLES: Record<Route["name"], string> = {
 
 const CONNECTION: Record<ConnectionState, { tone: "ok" | "warn" | "danger" | "neutral"; label: string; help: string }> = {
   connecting: { tone: "neutral", label: "Connecting", help: "Connecting to the Seedbox engine…" },
-  live: { tone: "ok", label: "Live", help: "Connected — live updates on" },
-  reconnecting: { tone: "warn", label: "Reconnecting", help: "Lost the event stream — retrying" },
+  live: { tone: "ok", label: "Live", help: "Connected: live updates on" },
+  reconnecting: { tone: "warn", label: "Reconnecting", help: "Lost the event stream, retrying" },
   offline: { tone: "danger", label: "Offline", help: "The Seedbox engine isn't responding" },
 };
 
@@ -80,7 +80,7 @@ function YtdlpStatus() {
   }
   return (
     <span className="inline-flex items-center gap-1.5">
-      <Tooltip content={outdated ? `yt-dlp ${system.ytdlp_latest} is available — YouTube changes often, update if downloads fail` : "yt-dlp (YouTube downloader) version"}>
+      <Tooltip content={outdated ? `yt-dlp ${system.ytdlp_latest} is available. YouTube changes often, update if downloads fail` : "yt-dlp (YouTube downloader) version"}>
         <span className="inline-flex items-center gap-1.5 text-xs text-fg-subtle num">
           {outdated && <span className="size-1.5 rounded-full bg-warn" />}
           yt-dlp <span className="text-fg-muted">{system.ytdlp_version}</span>
@@ -123,7 +123,7 @@ export function TopBar() {
         <YtdlpStatus />
         <span className="h-4 w-px bg-line-strong" />
         {mock ? (
-          <Tooltip content="VITE_MOCK=1 — fixtures + simulated events, no backend">
+          <Tooltip content="VITE_MOCK=1: fixtures + simulated events, no backend">
             <StatusDot tone="boost" label={<span className="text-xs font-medium text-move-boost">Mock data</span>} />
           </Tooltip>
         ) : (

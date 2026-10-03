@@ -109,7 +109,7 @@ const ResultRowView = memo(function ResultRowView({
           )}
           {parts.feat && <span className="truncate text-xs text-fg-subtle">{parts.feat}</span>}
           {groupSize > 1 && groupIndex === 0 && (
-            <Tooltip content={grouped ? `${groupSize} versions of this song — values that differ from this one are highlighted below` : `${groupSize} versions of this song in the results`}>
+            <Tooltip content={grouped ? `${groupSize} versions of this song. Values that differ from this one are highlighted below` : `${groupSize} versions of this song in the results`}>
               <span className="ml-auto inline-flex h-4 shrink-0 items-center rounded-xs border border-line-strong px-1 text-2xs text-fg-subtle num">{groupSize} versions</span>
             </Tooltip>
           )}

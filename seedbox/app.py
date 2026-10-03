@@ -494,7 +494,7 @@ def _clip_test(youtube: Any, cand: Any) -> dict:
 # ---------------------------------------------------------------- entry
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(prog="seedbox", description="Seedbox — tunebat-powered DJ crate builder")
+    p = argparse.ArgumentParser(prog="seedbox", description="Seedbox: tunebat-powered DJ crate builder")
     p.add_argument("--server-only", action="store_true", help="run the API without a window")
     p.add_argument("--port", type=int, default=None, help="API port (default: free port; 8765 with --dev)")
     p.add_argument("--dev", action="store_true", help=f"load the Vite dev server ({DEV_URL}) in the window")

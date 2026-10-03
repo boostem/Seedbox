@@ -335,7 +335,7 @@ function CrateView({ seedId, crate, refreshing, demo }: { seedId: string; crate:
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 text-sm text-fg-subtle">
           <CircleSlash size={18} />
-          {filter === "ticked" ? "Nothing ticked yet — press A to tick everything that passes the rule." : "No recommendation passes the rule for this seed."}
+          {filter === "ticked" ? "Nothing ticked yet. Press A to tick everything that passes the rule." : "No recommendation passes the rule for this seed."}
         </div>
       )}
 
@@ -345,7 +345,7 @@ function CrateView({ seedId, crate, refreshing, demo }: { seedId: string; crate:
         <div className="flex shrink-0 items-center gap-3">
           {activeJob ? (
             <a href={href({ name: "downloads", jobId: activeJob.job_id })} className="inline-flex items-center gap-1.5 text-xs text-accent-hover hover:underline">
-              <Spinner size={11} /> Downloading into this crate — view progress <ArrowRight size={12} />
+              <Spinner size={11} /> Downloading into this crate: view progress <ArrowRight size={12} />
             </a>
           ) : (
             <span className="text-right text-xs leading-tight text-fg-subtle num">
@@ -353,7 +353,7 @@ function CrateView({ seedId, crate, refreshing, demo }: { seedId: string; crate:
               {tickedFailing > 0 && (
                 <>
                   {" · "}
-                  <Tooltip content="Ticked although they fail the key/BPM rule — press A to keep only passing tracks">
+                  <Tooltip content="Ticked although they fail the key/BPM rule. Press A to keep only passing tracks">
                     <span className="text-warn">{tickedFailing} fail the rule</span>
                   </Tooltip>
                 </>
@@ -388,7 +388,7 @@ function PreviewSummary({ counts }: { counts: ReturnType<typeof usePreviewCounts
     <Tooltip
       content={
         <span className="num">
-          {ready} ready · {busy} loading · {noMatch} no match{error ? ` · ${error} failed` : ""} — clips preload in the background, ticked/high-score first
+          {ready} ready · {busy} loading · {noMatch} no match{error ? ` · ${error} failed` : ""}. Clips preload in the background, ticked/high-score first
         </span>
       }
     >

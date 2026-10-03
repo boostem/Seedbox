@@ -54,7 +54,7 @@ export const SetRow = memo(function SetRow({ st, folder, selected, isSeed, onSel
       )}
     >
       {selected && !overlay && <span className="absolute top-1.5 bottom-1.5 left-0 w-[2px] rounded-full bg-accent" />}
-      <Tooltip content="Drag to re-order — keyboard: focus, Space, ↑↓, Space">
+      <Tooltip content="Drag to re-order (keyboard: focus, Space, ↑↓, Space)">
         <button
           ref={handleRef}
           type="button"

@@ -89,7 +89,7 @@ export function Sidebar() {
               </a>
             );
           })}
-          {crates && crates.length === 0 && <p className="px-2 py-1 text-xs text-fg-faint">No crates yet — search for a seed track.</p>}
+          {crates && crates.length === 0 && <p className="px-2 py-1 text-xs text-fg-faint">No crates yet: search for a seed track.</p>}
         </div>
       </div>
 

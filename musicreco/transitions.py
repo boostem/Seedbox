@@ -8,6 +8,7 @@ A half/double-time B is put on a matching grid first (one of its bars = two of A
 from __future__ import annotations
 
 import math
+import os
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -15,6 +16,7 @@ from . import mixing
 from .models import Track
 
 TECHNIQUES = ("long blend", "phrase blend", "bass swap", "drop swap", "quick cut", "echo out")
+_CHILL = os.environ.get("SEEDBOX_MIX_MODE", "").strip().lower() != "fx"  # same switch as mixplan.MODE
 
 PHRASE = 8  # bars; overlaps are 8, 16 or 32 bars and always start on a phrase in both tracks
 _MAX_BARS = 20_000  # sanity cap on bar_count (a 2-hour track at 130 BPM is ~3,900 bars)
@@ -212,7 +214,7 @@ def _tempo(track: Track, an: dict | None) -> tuple[float, str | None]:
         return bpm, None
     if any(abs(bpm / tb - r) / r <= _GRID_BPM_TOL for r in (0.5, 1.0, 2.0)):
         return bpm, None
-    return bpm, f"tempo doesn't match tunebat ({bpm:.1f} vs {tb:.0f}) — probably a wrong download"
+    return bpm, f"tempo doesn't match tunebat ({bpm:.1f} vs {tb:.0f}): probably a wrong download"
 
 
 def _pitch_on_b(a_bpm: float, b_bpm: float) -> tuple[float, float] | None:
@@ -316,7 +318,7 @@ def _plan(a: _Grid, b: _Grid, key_clash: bool) -> _Plan:
     ):
         blend = None
 
-    if _abrupt(a):
+    if _abrupt(a) and not _CHILL:  # chill mixes have no echo: a cold ending is just where the blend ends
         if blend is None:
             return _Plan("echo out", _cut_bar(a), _first_cue(b), 0, _CUT_FIT["echo out"], [])
         if a.end - (blend.a0 + blend.length) < _MIN_SKIP_NOTE:  # the blend runs into A's cold ending
@@ -405,7 +407,7 @@ def _plan_notes(a: _Grid, b: _Grid, plan: _Plan) -> list[str]:
             f"Cue B at {t_b} ({_cue_words(b, b0)}). Let A's build run and on the 1 where A would drop "
             f"(A {t_in}, bar {a0 + 1}) hard-cut to B."
         )
-        notes.append(f"Skips A's last {a.end - a0} bars and B's first {_plural(b0, 'bar')} — a quick-mixing move.")
+        notes.append(f"Skips A's last {a.end - a0} bars and B's first {_plural(b0, 'bar')}: a quick-mixing move.")
         return notes
     if not length:
         lead = "Hit an echo/delay on A's last beat and drop" if plan.technique == "echo out" else "Cut to"
@@ -419,12 +421,12 @@ def _plan_notes(a: _Grid, b: _Grid, plan: _Plan) -> list[str]:
     notes.append(f"Cue B at {t_b} ({_cue_words(b, b0)}) and start it at A {t_in} (A bar {a0 + 1}, on the phrase).")
     if b0 == b.off > 0 and a0 >= b.off:
         notes.append(
-            f"B has a {b.off}-bar pickup before its first phrase — you can also play it from its first downbeat, "
+            f"B has a {b.off}-bar pickup before its first phrase: you can also play it from its first downbeat, "
             f"starting {b.off} bars earlier at A {_mmss(a.t(a0 - b.off))}."
         )
     k = _swap_offset(b, plan)
     if k is None:
-        notes.append("B brings no bass in this stretch — let A's bass carry the blend, then cut it on the 1.")
+        notes.append("B brings no bass in this stretch: let A's bass carry the blend, then cut it on the 1.")
     else:
         notes.append(
             f"Keep B's lows cut, swap the bass on the 1 at A {_mmss(a.t(a0 + k))} "
@@ -442,7 +444,7 @@ def _plan_notes(a: _Grid, b: _Grid, plan: _Plan) -> list[str]:
         notes.append(f"B's intro runs {_plural(i1 - b_end, 'more bar')} on its own after A is out.")
     else:
         start = max(i1, b0)
-        bass = " — get A's bass out by then" if b.mean(b.low, start, b_end) >= _BASS_ON else ""
+        bass = ": get A's bass out by then" if b.mean(b.low, start, b_end) >= _BASS_ON else ""
         notes.append(f"B's main section starts {b_end - start} bars before A is out (B {_mmss(b.t(start))}){bass}.")
     if a.end - e >= _MIN_SKIP_NOTE:
         notes.append(f"Skips A's last {a.end - e} bars ({_mmss(a.t(e))}–{_mmss(a.t(a.end))}).")
@@ -455,20 +457,20 @@ def _plan_warnings(a: _Grid, b: _Grid, plan: _Plan) -> list[str]:
         k0, k1 = plan.clash[0], plan.clash[-1] + 1
         warnings.append(
             f"Vocals overlap for {_plural(len(plan.clash), 'bar')} "
-            f"(A {_mmss(a.t(plan.a0 + k0))}–{_mmss(a.t(plan.a0 + k1))}) — ride the mids or shorten the blend."
+            f"(A {_mmss(a.t(plan.a0 + k0))}–{_mmss(a.t(plan.a0 + k1))}): ride the mids or shorten the blend."
         )
     if not plan.length and plan.technique != "echo out":
         if a.outro_vocals and b.intro_vocals:
-            warnings.append("A's outro and B's intro both have vocals — no clean blend, so cut.")
+            warnings.append("A's outro and B's intro both have vocals: no clean blend, so cut.")
         elif b.intro_bars < PHRASE and a.outro_bars < PHRASE:
-            warnings.append(f"Short edges (A outro {a.outro_bars}, B intro {b.intro_bars} bars) — no room to blend.")
+            warnings.append(f"Short edges (A outro {a.outro_bars}, B intro {b.intro_bars} bars): no room to blend.")
     if plan.technique != "drop swap" and not b.intro_bars:
-        warnings.append("B has no intro — it starts full-on.")
+        warnings.append("B has no intro: it starts full-on.")
     elif plan.technique != "drop swap" and b.intro_bars < PHRASE:
-        warnings.append(f"B's intro is only {_plural(b.intro_bars, 'bar')} — its main section hits almost at once.")
+        warnings.append(f"B's intro is only {_plural(b.intro_bars, 'bar')}: its main section hits almost at once.")
     elif plan.length > b.intro_bars and not (a.outro_drums and plan.a0 >= a.outro[0]):
         warnings.append(
-            f"B's intro ({b.intro_bars} bars) is shorter than the {plan.length}-bar blend — "
+            f"B's intro ({b.intro_bars} bars) is shorter than the {plan.length}-bar blend, "
             "its main section comes in over A's music."
         )
     if plan.technique not in ("echo out", "drop swap") and a.outro_bars < PHRASE:
@@ -485,28 +487,28 @@ def _key_text(a: Track, b: Track, move: str, plan: _Plan | None) -> tuple[list[s
     if plan is not None and plan.length and plan.tonal == 0:
         return [f"Key {key} clashes, but the overlap is drums-only on one deck at all times, so it should pass."], []
     if plan is not None and not plan.length:
-        return [], [f"Key clash {key} — cut, don't blend."]
-    return [], [f"Key clash {key} — keep the overlap short and percussive."]
+        return [], [f"Key clash {key}: cut, don't blend."]
+    return [], [f"Key clash {key}: keep the overlap short and percussive."]
 
 
 def _tempo_text(
     a_bpm: float, b_bpm: float, pitch: tuple[float, float] | None, tol: float
 ) -> tuple[list[str], list[str]]:
     if pitch is None:
-        return [], ["BPM unknown — beatmatch by ear."]
+        return [], ["BPM unknown: beatmatch by ear."]
     pct, factor = pitch
     notes, warnings = [], []
     if factor != 1 and abs(pct) <= tol * 100:
         kind = "half" if factor == 2 else "double"
-        notes.append(f"B is {kind}-time ({b_bpm:.0f} BPM) — mix it at {b_bpm * factor:.0f}.")
+        notes.append(f"B is {kind}-time ({b_bpm:.0f} BPM): mix it at {b_bpm * factor:.0f}.")
     if abs(pct) < 0.05:
         notes.append(f"Same tempo ({a_bpm:.1f} BPM).")
     else:
         notes.append(f"Pitch B {pct:+.1f}% ({b_bpm * factor:.1f} → {a_bpm:.1f} BPM).")
     if abs(pct) > tol * 100:
-        warnings.append(f"B needs {pct:+.1f}% pitch — outside the ±{tol * 100:.0f}% tempo range.")
+        warnings.append(f"B needs {pct:+.1f}% pitch, outside the ±{tol * 100:.0f}% tempo range.")
     elif abs(pct) > _BIG_PITCH:
-        warnings.append(f"Big tempo change ({pct:+.1f}% on B) — use key lock.")
+        warnings.append(f"Big tempo change ({pct:+.1f}% on B): use key lock.")
     return notes, warnings
 
 

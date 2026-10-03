@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 MEMORY_CACHE = 128  # stem sidecars kept in memory
 PROGRESS_STEP = 0.05
 IDLE_POLL_S = 1.0
+UNLOAD_AFTER_S = 300.0  # drop the vocal model from memory after this long without work
 
 
 @dataclass
@@ -213,15 +214,17 @@ class StemQueue:
 
     def _next(self) -> StemTask | None:
         """The next task: the front queue first; a background one only while the app is idle."""
-        with self._cond:
-            while True:
+        while True:
+            with self._cond:
                 if self._closed:
                     return None
                 if self._front:
                     return self._front.pop(0)
                 if self._back:
                     break
-                self._cond.wait()
+                timed_out = not self._cond.wait(UNLOAD_AFTER_S)
+            if timed_out:  # nothing to do for a while: free the model's memory (outside the lock)
+                self._unload()
         while True:  # background work waits for the app to be idle (renders take the CPU first)
             try:
                 idle = bool(self.idle())
@@ -237,6 +240,14 @@ class StemQueue:
                 if not self._back:
                     return None
                 self._cond.wait(IDLE_POLL_S)
+
+    def _unload(self) -> None:
+        stems = self.module()
+        if stems is not None:
+            try:
+                stems.unload_model(UNLOAD_AFTER_S)
+            except Exception:  # noqa: BLE001
+                log.exception("unloading the vocal model failed")
 
     def _worker(self) -> None:
         while True:

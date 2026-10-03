@@ -22,18 +22,18 @@ function usePlayerStatusFor(id: string) {
 
 function stateHelp(p: PreviewStatus | undefined, status: ReturnType<typeof usePlayerStatusFor>): string {
   if (status === "playing") return "Stop preview (Space)";
-  if (status === "loading") return "Fetching the clip — plays as soon as it's ready";
+  if (status === "loading") return "Fetching the clip: plays as soon as it's ready";
   switch (p?.state) {
     case "ready":
       return p.youtube_title ? `Play 20 s preview · ${p.youtube_title}` : "Play 20 s preview";
     case "loading":
       return "Preloading the clip… click to play when ready";
     case "queued":
-      return "Queued for preloading — click to fetch it now";
+      return "Queued for preloading: click to fetch it now";
     case "no_match":
       return p.error ? `No preview: ${p.error}` : "No YouTube match for a preview";
     case "error":
-      return `Preview failed${p.error ? `: ${p.error}` : ""} — click to retry`;
+      return `Preview failed${p.error ? `: ${p.error}` : ""}. Click to retry`;
     default:
       return "Play 20 s preview (fetched on demand)";
   }

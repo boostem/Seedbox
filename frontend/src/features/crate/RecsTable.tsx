@@ -140,7 +140,7 @@ const RecRow = memo(function RecRow({
           checked={ticked}
           onChange={(v, e) => onTick(t.id, v, e)}
           color={ticked && !passed ? "var(--color-warn)" : undefined}
-          title={ticked && !passed ? "Ticked although it fails the key/BPM rule — X to untick" : ticked ? "Untick (X)" : "Tick (X)"}
+          title={ticked && !passed ? "Ticked although it fails the key/BPM rule. X to untick" : ticked ? "Untick (X)" : "Tick (X)"}
         />
       </Td>
       <Td className="px-1">

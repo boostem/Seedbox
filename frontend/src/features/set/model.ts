@@ -192,5 +192,5 @@ export function tempoMismatch(trackBpm: number, an: { bpm: number; bpm_source: s
 }
 
 export function tempoMismatchText(trackBpm: number, anBpm: number): string {
-  return `Tempo doesn't match tunebat (audio ${anBpm.toFixed(1)} vs ${Math.round(trackBpm)} BPM) — probably a wrong download.`;
+  return `Tempo doesn't match tunebat (audio ${anBpm.toFixed(1)} vs ${Math.round(trackBpm)} BPM): probably a wrong download.`;
 }

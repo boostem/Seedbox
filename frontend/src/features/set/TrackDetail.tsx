@@ -39,8 +39,8 @@ export function WavePlaceholder({ view, height = 190 }: { view: AnalysisView; he
   const msg =
     view.status === "pending"
       ? view.state === "running"
-        ? "Analysing audio — waveform, cues and mix points appear in a moment…"
-        : "Queued for analysis — waveform, cues and mix points appear when it's done."
+        ? "Analysing audio: waveform, cues and mix points appear in a moment…"
+        : "Queued for analysis: waveform, cues and mix points appear when it's done."
       : view.status === "error"
         ? view.message
         : "Loading analysis…";
@@ -81,7 +81,7 @@ function Summary({ an, st, onSeek }: { an: TrackAnalysis; st: SetTrack; onSeek: 
         </span>
       </>
     ) : (
-      <span className="text-fg-subtle">{which === "intro" ? "none — starts straight into the music" : "none — ends cold"}</span>
+      <span className="text-fg-subtle">{which === "intro" ? "none: starts straight into the music" : "none: ends cold"}</span>
     );
   return (
     <div>

@@ -132,14 +132,14 @@ export function mockTransition(a: Track, aAn: TrackAnalysis | null, b: Track, bA
   const pitch_pct = Math.round(((a.bpm / (b.bpm * factor)) - 1) * 1000) / 10;
   const warnings: string[] = [];
   const notes: string[] = [];
-  if (key_move === "clash") warnings.push(`key clash (${a.camelot} → ${b.camelot}) — keep the overlap short`);
+  if (key_move === "clash") warnings.push(`key clash (${a.camelot} → ${b.camelot}): keep the overlap short`);
   if (Math.abs(pitch_pct) > tol * 100 * 0.6) warnings.push(`big tempo change (${pitch_pct > 0 ? "+" : ""}${pitch_pct}% on B)`);
   if (factor !== 1) notes.push(`B plays ${factor === 2 ? "half" : "double"}-time against A`);
   let s = KEY_PTS[key_move] ?? 0;
   s += 25 * Math.max(0, 1 - Math.abs(pitch_pct) / 10);
   const ready = !!aAn && !!bAn;
   if (!ready) {
-    notes.unshift("Waiting for audio analysis — key and tempo only");
+    notes.unshift("Waiting for audio analysis: key and tempo only");
     return { from_id: a.id, to_id: b.id, score: Math.round(Math.min(100, s * 1.18)), key_move, pitch_pct, out_start_s: null, in_start_s: null, overlap_bars: null, swap_bar: null, technique: null, notes, warnings, ready: false };
   }
   const overlap = snapBars(Math.min(aAn.outro.bars, bAn.intro.bars));

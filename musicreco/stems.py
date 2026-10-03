@@ -81,6 +81,16 @@ def model_id() -> str:
     return separator.MODEL["id"]
 
 
+def unload_model(idle_for_s: float = 0.0) -> None:
+    """Drop the loaded vocal model when it has been idle at least `idle_for_s` (frees its memory)."""
+    try:
+        from . import separator
+    except ImportError:
+        return
+    if separator.idle_s() >= idle_for_s:
+        separator.unload()
+
+
 # --- cache ---------------------------------------------------------------------------------------------------------
 
 

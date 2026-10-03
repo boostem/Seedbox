@@ -55,6 +55,7 @@ class SetMixJob:
         self.finished_at: str | None = None
         self.result: dict | None = None
         self.track_ids: list[str] = []
+        self.split: list[str] = []  # tracks whose vocals were split when it rendered (more later = worth re-rendering)
         self.hash: str | None = None
         self.cancel = threading.Event()
 
@@ -74,6 +75,7 @@ class SetMixJob:
         job.finished_at = d.get("finished_at")
         job.result = d.get("result") if isinstance(d.get("result"), dict) else None
         job.track_ids = [t for t in d.get("track_ids") or [] if isinstance(t, str)]
+        job.split = [t for t in d.get("split") or [] if isinstance(t, str)]
         job.hash = d.get("hash")
         return job
 
@@ -131,7 +133,7 @@ class SetMixService:
         return [d for d in data.get("mixes", []) if isinstance(d, dict)] if isinstance(data, dict) else []
 
     def _remember(self, job: SetMixJob) -> None:
-        entry = {**job.to_json(), "track_ids": job.track_ids, "hash": job.hash}
+        entry = {**job.to_json(), "track_ids": job.track_ids, "split": job.split, "hash": job.hash}
         with self._lock:
             mixes = [m for m in self._index() if m.get("mix_id") != job.mix_id]
             mixes.insert(0, entry)
@@ -194,7 +196,7 @@ class SetMixService:
         if job.track_ids and job.track_ids != self._sequence_ids(target):
             return True
         try:
-            _t, _s, pairs = self._resolve(target)
+            _t, seq, pairs = self._resolve(target)
         except ApiError:
             return True
         finished = job.finished_at or ""
@@ -205,7 +207,8 @@ class SetMixService:
                 continue
             if mt > finished:
                 return True
-        return False
+        # songs whose vocals got split since: their transitions now hand the vocals over cleanly
+        return any(f.track.id not in job.split and self.crates.vocal_path(d, f) is not None for d, f in seq)
 
     def get(self, mix_id: str) -> dict:
         return self._job(mix_id).to_json()
@@ -349,6 +352,7 @@ class SetMixService:
         entries = [setmix.SetEntry(f.track, f.path, analyses.get(f.track.id), d.name, self.crates.vocal_path(d, f))
                    for d, f in seq]
         unsplit = sum(1 for e in entries if e.vocal_path is None)
+        job.split = [e.track.id for e in entries if e.vocal_path is not None]
         notes: list[str] = []
         for _round in range(6):
             tl = setmix.build(entries, plans)
