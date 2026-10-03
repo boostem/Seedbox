@@ -318,7 +318,8 @@ with the "cut" advice reworded for blends.
   starts singing while A is between lines → A's vocal muted there; mid-line before the swap → B's vocal waits for A's
   line to end, at the latest the swap (the vocals change hands with the bass); later → A's vocal fades just before its
   line (or over the 2 beats before B's) unless A's line ends within 2 bars. In a key clash A's vocal is already out
-  from bar 3 (with its mids), so only A's singing before then can hold B's vocal back.
+  from bar 3 (with its mids), so only A's singing before then can hold B's vocal back. Once B sings, A's split vocal
+  stays out for good, traces too (bars above `_VOCAL_TRACE` = 0.05 but below a sung bar: ad-libs, a word's tail).
 - Acapella (score 0.76): A's vocal split, keys same / ±1 / relative, tempo gap ≤ 2%, A singing across the swap bar on
   the plain window (a line running there or starting within a bar) that ends ≥ 2 bars after it inside the blend, and
   B not singing before then (or B split: its vocal waits). A's instrumental drops out on the 1 of the swap, its vocal
@@ -355,3 +356,5 @@ with the "cut" advice reworded for blends.
   `g_i * (track - vocals) + g_v * vocals` before the time stretch (both at 1 = the original samples). `plan_hash` /
   `set_hash` include the stem file when a deck uses it. `RENDER_VERSION = 4`.
 - Analysis: `ANALYSIS_VERSION = 5` adds `kick_per_bar` and `bass_per_bar` (between-kick low level vs the bar's).
+  `6`: the tunebat tempo is octave-corrected into 70-180 BPM (was 90-180), so 70-89 BPM hip-hop / R&B keeps its
+  own bars instead of double-time ones (an 86 BPM song had 8-bar "16-bar blends" and 4-bar phrases).

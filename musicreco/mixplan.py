@@ -84,6 +84,7 @@ _MAX_FX = 8
 _MAX_ABS_BEAT = 100_000.0
 _MIN_LOOP_BEATS = 1 / 16
 _VOCAL_CUT = -18.0  # dB on A's mids while vocals overlap
+_VOCAL_TRACE = 0.05  # vocal_per_bar above this: some vocal is there (ad-libs, a word's tail), even if not a sung bar
 _THROW_ECHO = 0.55  # echo send of the clash throw on A's last word before its mids duck (kept short: 0.5 feedback)
 _ECHO_SEND = (0.75, 1.0)  # echo throws that have to be heard over B (see _echo_shape)
 _BASS_LOW = transitions._BASS_ON  # mean low_per_bar at/above this = real kick/bass weight
@@ -1735,8 +1736,9 @@ def _handoff(m: _Mix, va: list[float], vb: list[float], sw: int, cut: int | None
     B starts singing while A is between lines: A's vocal is muted there (inaudible) so its next line never starts.
     B starts singing mid-line before the bass swap: B's vocal waits for A's line to end, at the latest for the swap,
     where the vocals change hands with the bass. Later: A's vocal fades out just before its line, or over the 2 beats
-    before B's, unless A's line ends within 2 bars (then B's vocal waits for it). `cut`: the bar from which A's vocal
-    is already out (the key-clash shape takes it early), so nothing after it can clash."""
+    before B's, unless A's line ends within 2 bars (then B's vocal waits for it). Once B sings, A's split vocal stays
+    out for good, traces too (ad-libs, a word's tail: bars below a sung bar). `cut`: the bar from which A's vocal is
+    already out (the key-clash shape takes it early), so nothing after it can clash."""
     ON = transitions._VOCAL_ON
     if cut is not None:
         va = [x if j < cut else 0.0 for j, x in enumerate(va)]
@@ -1746,6 +1748,9 @@ def _handoff(m: _Mix, va: list[float], vb: list[float], sw: int, cut: int | None
         return None, None, None, None
     later = [j for j in range(kb, L) if va[j] >= ON]
     if not later:
+        if m.stems_a and any(va[j] > _VOCAL_TRACE for j in range(kb, L)):  # only traces of A's vocal left
+            return (4.0 * kb, 1.0), None, None, \
+                f"B starts singing in bar {kb + 1}, so what's left of A's vocal goes out there."
         return None, None, None, None
     if va[kb] < ON:
         if m.stems_a:
@@ -1756,7 +1761,7 @@ def _handoff(m: _Mix, va: list[float], vb: list[float], sw: int, cut: int | None
     end = next((j for j in range(kb, L) if va[j] < ON), L)
     if m.stems_b and (kb < sw or end <= kb + 2):
         t = min(end, sw) if kb < sw else end
-        a_off = m.stems_a and any(va[j] >= ON for j in range(t, L))
+        a_off = m.stems_a and any(va[j] > _VOCAL_TRACE for j in range(t, L))
         if t < end:
             note = f"B starts singing in bar {kb + 1} while A is mid-line, so the vocals change hands with the bass " \
                    f"(bar {t + 1}): A's vocal goes out as B's comes in."
@@ -1867,7 +1872,8 @@ def _chill_headline(m: _Mix, d: _Chill) -> str:
     return text[0].upper() + text[1:]
 
 
-def _chill_eq_note(m: _Mix, d: _Chill) -> str | None:
+def _chill_eq_note(m: _Mix, d: _Chill, a_sings: bool = True) -> str | None:
+    """The EQ moves in words; `a_sings`: A has a vocal during the blend (a clash takes it out with A's mids)."""
     L = d.place.overlap
     if d.style == "filter fade":
         return "B rises out of a closed low-pass that opens over the first three quarters while A slides up into a " \
@@ -1876,8 +1882,9 @@ def _chill_eq_note(m: _Mix, d: _Chill) -> str | None:
         return None
     if d.key_mode == "clash":
         keys = f" ({m.a.camelot} → {m.b.camelot})" if m.a.camelot and m.b.camelot else ""
+        vocal = " and its vocal" if a_sings else ""
         return f"The keys clash{keys}, so the blend is {L} bars and mostly drums overlap: A's mids (its chords and " \
-               "melody) and its vocal leave in the first bars, and B's mids only open after they're gone."
+               f"melody){vocal} leave in the first bars, and B's mids only open after they're gone."
     q = max(1, L // 4)
     mild = " (right at the swap: the keys are a step apart)" if d.key_mode == "mild" else ""
     return f"B's fader is up with its EQ shut: its highs (the hats) open over the first {q} bars and its mids over " \
@@ -1900,6 +1907,7 @@ def _generate_chill(a: Track, a_an: dict | None, b: Track, b_an: dict | None, fo
     markers = [{"beat": 0.0, "label": "B in" if L else "cut"}]
     a_mute: list[tuple[float, float]] = []  # (beat, fade): A's vocal is muted from there on
     b_wait: float | None = None
+    a_sings = True  # A has a vocal during the blend (as far as the notes go)
     if d.style == "quick cut":
         A["volume"] = [(-4.0, 1.0, "hold"), (0.0, 0.0, "hold")]
     elif d.style == "double drop":
@@ -1917,6 +1925,7 @@ def _generate_chill(a: Track, a_an: dict | None, b: Track, b_an: dict | None, fo
         if d.swap_kind != "carry":
             markers.append({"beat": low_at, "label": "bass swap"})
         va, vb = _overlap_vocals(m, place, d.loop, strip=m.stems_a)
+        a_sings = any(x >= transitions._VOCAL_ON for x in va)
         if d.loop is not None:
             a_deck["loops"] = [d.loop]
             markers.append({"beat": d.loop["start_beat"], "label": "loop"})
@@ -1984,7 +1993,7 @@ def _generate_chill(a: Track, a_an: dict | None, b: Track, b_an: dict | None, fo
     if tempo.post_end is not None:
         markers.append({"beat": E, "label": "tempo ramp"})
     notes = [_chill_headline(m, d)]
-    if (eq := _chill_eq_note(m, d)) is not None:
+    if (eq := _chill_eq_note(m, d, a_sings)) is not None:
         notes.append(eq)
     if L and d.style != "double drop" and d.swap_why:
         notes.append(d.swap_why)

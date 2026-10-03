@@ -1,7 +1,7 @@
 """Track structure for DJ use: beat grid, bars, 8-bar phrases, sections, intro/outro, cues, 3-band waveform.
 
 numpy/scipy only, ~0.5 s per 3-minute track. Method:
-- tempo: the tunebat BPM (octave-corrected into 90-180) refined ±1.2 % by a phase-coherent comb over the whole
+- tempo: the tunebat BPM (octave-corrected into 70-180) refined ±1.2 % by a phase-coherent comb over the whole
   onset envelope, snapped to an integer when that fits as well; another tempo only on overwhelming evidence.
 - beat phase: the kick's attack start (sharpest > 150 Hz / > 1.5 kHz transient just before the low-band rise,
   folded over every beat at 0.5 ms), not the low band itself, which lags the attack by up to ~60 ms.
@@ -41,7 +41,7 @@ from .paths import ffmpeg_path
 
 log = logging.getLogger(__name__)
 
-ANALYSIS_VERSION = 5  # bump whenever the algorithm or output changes: older cache entries are recomputed
+ANALYSIS_VERSION = 6  # bump whenever the algorithm or output changes: older cache entries are recomputed
 SR = 22050
 DECODE_TIMEOUT_S = 300
 MIN_DURATION_S = 8.0
@@ -215,7 +215,7 @@ def _octave_into(bpm: float, lo: float = 90.0, hi: float = 180.0) -> float:
 
 
 def _tempo(front: _Front, bpm_hint: float | None, dbg: dict) -> tuple[float, str]:
-    """Grid BPM and its source. The tunebat hint (octave-corrected into 90-180, refined ±1.2 %) wins unless the
+    """Grid BPM and its source. The tunebat hint (octave-corrected into 70-180, refined ±1.2 %) wins unless the
     onsets overwhelmingly prefer another tempo: 2x the hint's comb strength for a musically related ratio (3:2,
     4:3), or for an unrelated one only when the hint fits nowhere (strength < 0.08) and the other is >= 3x and
     >= 0.15 (e.g. a YouTube version at another speed, or a wrong download)."""
@@ -225,7 +225,7 @@ def _tempo(front: _Front, bpm_hint: float | None, dbg: dict) -> tuple[float, str
     dbg.update(acf_bpm=det0, det_bpm=det, q_det=q_det)
     if not bpm_hint or not (30 <= bpm_hint <= 400):
         return _snap(o, fps, det), "detected"
-    hint = _octave_into(float(bpm_hint))
+    hint = _octave_into(float(bpm_hint), lo=70.0)  # 70-89 BPM hip-hop / R&B keeps its own bars (not double-time)
     bpm, q_hint = _refine(o, fps, hint, 0.012)
     at_edge = abs(bpm / hint - 1) > 0.0115  # the refinement ran into the window edge: the hint does not hold
     if at_edge:

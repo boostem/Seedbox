@@ -35,11 +35,13 @@ Other flags:
   EQ, filter, vocals, instrumental, tempo). Most are **phrase mixes**: a 16-bar blend done with the EQ alone. B's
   fader comes up with its EQ shut, its highs (the hats) open first, then its mids. The bass changes hands halfway.
   When both songs have a steady four-on-the-floor kick it's a hard swap on the 1. A soft low end gets a slow 4-bar
-  blend, and a kick that isn't on every beat (hip-hop, soul, live drums) gets a quick 1-bar swap. Then A's mids and highs leave under
-  a touch of high-pass. There is no echo, no reverb and no loop rolls.
+  blend, and a kick that isn't on every beat (hip-hop, soul, live drums) gets a quick 1-bar swap. Then A's mids and
+  highs leave under a touch of high-pass. There is no echo, no reverb and no loop rolls. The notes on each
+  transition say what its mix will do.
 - **Vocal stems.** Each song's vocals are split from the rest by a RoFormer model, in the background. Songs you're
   using go first: an open transition, a setlist or a set mix. With the stems:
-  - Two vocals never sound at once: the outgoing vocal is muted while A plays on as an instrumental.
+  - Two vocals never sound at once: A's vocal is muted while A plays on as an instrumental, or B's first line waits
+    until A's is done.
   - When A's clean ending is too short for a 16-bar blend, its last 8 bars repeat under B with the vocal taken out of
     the repeat.
   - Where it really fits (A singing across the swap, keys that sit together), A's vocal rides over B's beat as an

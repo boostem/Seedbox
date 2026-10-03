@@ -68,6 +68,10 @@
       vocal taken out of the repeat.
 - [x] Chill styles only when the songs need them (filter fade, double drop EQ-only, quick cut), clashing keys get 8
       bars with A's melody out early, tempo gaps up to 12% glide, no variety rule.
+- [x] **The set view says what the mix will do**: transition notes come from the planned mix (`plan_notes`), not
+      the old hand-mixing recipe, and its "cut, don't blend" advice is reworded for blends.
+- [x] **Hip-hop tempos**: tunebat tempos of 70-89 BPM keep their own bars (ANALYSIS_VERSION 6). They used to be
+      folded to double time, so an 86 BPM song got 8-bar "16-bar blends" and mixed against a 91 BPM one as half time.
 
 ## Machine learning plan (researched 2026-10-03)
 What the research says: no released model predicts a whole transition plan from audio (the one learned transition
