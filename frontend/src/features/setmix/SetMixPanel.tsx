@@ -53,9 +53,9 @@ function Tracklist({ m, r }: { m: SetMix; r: SetMixResult }) {
                 <span className="block truncate text-2xs text-fg-subtle">{t.artists.join(", ")}</span>
               </span>
               {tr && (
-                <Tooltip content={`${tr.technique}${tr.overlap ? ` · ${tr.overlap}-bar blend` : ""}${tr.edited ? " · your saved edit" : ""}`}>
+                <Tooltip content={`${tr.style && tr.style !== tr.technique ? `${tr.style} · ` : ""}${tr.technique}${tr.overlap ? ` · ${tr.overlap}-bar blend` : ""}${tr.edited ? " · your saved edit" : ""}`}>
                   <span className="hidden shrink-0 items-center gap-1 rounded-xs bg-raised px-1.5 py-0.5 text-2xs text-fg-muted capitalize @lg:inline-flex">
-                    {tr.technique}
+                    {tr.style ?? tr.technique}
                     {tr.overlap ? <span className="num text-fg-subtle">{tr.overlap}</span> : null}
                     {tr.edited && <span className="size-1.5 rounded-full bg-accent" />}
                   </span>

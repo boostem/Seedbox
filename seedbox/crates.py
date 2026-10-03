@@ -338,6 +338,10 @@ class CrateService:
         aq.enqueue(later, front=True)
         return analyses, states
 
+    def analyses_now(self, seed_dir: Path, files: list[SetFile]) -> dict[str, dict | None]:
+        """Track id -> analysis for those known now (None for the rest, which are queued at the front)."""
+        return self._analyses(seed_dir, files)[0]
+
     def crate_set(self, folder: str) -> dict:
         """CrateSet (types.ts). Transitions are partial (ready=false) until both tracks' analyses exist."""
         seed_dir = resolve_crate(self.root, folder)

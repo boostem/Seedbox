@@ -290,24 +290,29 @@ class SetlistService:
         """A -> B for a link mix plan: both tracks in this setlist's crates (normally one crate's last track and
         the next crate's first)."""
         check_ids(from_id, to_id)
-        where = {f.track.id: (d, f) for d, f in self.sequence(sid)}
+        seq, pairs = self.pairs_for_mix(sid, chain=False)
+        where = {f.track.id: (d, f) for d, f in seq}
         if from_id not in where or to_id not in where:
             raise NotFound("track not in this setlist")
+        k = next((k for k, p in enumerate(pairs) if (p.a.track.id, p.b.track.id) == (from_id, to_id)), None)
+        if k is not None and pairs[k].key == f"setlist:{sid}":  # a link in the play order: knows the styles before it
+            return self.mixes.with_chain(pairs)[k]
         (ad, af), (bd, bf) = where[from_id], where[to_id]
         return Pair(f"setlist:{sid}", ad, af, bd, bf, self.dir / sid / "mixplans" / f"{from_id}__{to_id}.json")
 
-    def pairs_for_mix(self, sid: str) -> tuple[list[tuple[Path, SetFile]], list[Pair]]:
+    def pairs_for_mix(self, sid: str, chain: bool = True) -> tuple[list[tuple[Path, SetFile]], list[Pair]]:
         """The play order and the Pair of every consecutive transition: a crate's own pair inside a crate (its
-        saved edits apply), the setlist's link pair across crates."""
+        saved edits apply), the setlist's link pair across crates; with `chain`, each knows the styles of the
+        transitions before it in the whole setlist."""
         seq = self.sequence(sid)
         pairs = []
         for (ad, af), (bd, bf) in zip(seq, seq[1:]):
             if ad == bd:
-                pairs.append(self.mixes.pair(ad.name, af.track.id, bf.track.id))
+                pairs.append(self.mixes.pair(ad.name, af.track.id, bf.track.id, chain=False))
             else:
                 pairs.append(Pair(f"setlist:{sid}", ad, af, bd, bf,
                                   self.dir / sid / "mixplans" / f"{af.track.id}__{bf.track.id}.json"))
-        return seq, pairs
+        return seq, (self.mixes.with_chain(pairs) if chain else pairs)
 
     def title(self, sid: str) -> str:
         return self._load(sid).get("name") or "Setlist"

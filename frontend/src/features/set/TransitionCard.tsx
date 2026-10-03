@@ -6,6 +6,7 @@ import { cn } from "@/lib/cn";
 import { moveColor } from "@/lib/moves";
 import { useApp } from "@/store/app";
 import { PitchChip } from "./bits";
+import { STYLE_HINTS } from "./mix/lanes";
 import { headline, type SetTransition, techniqueShort } from "./model";
 
 export interface TransitionCardProps {
@@ -58,6 +59,11 @@ export const TransitionCard = memo(function TransitionCard({ t, a, b, folder, se
           )}
           <MoveChip move={t.key_move} />
           {technique && <span className="shrink-0 text-xs font-medium whitespace-nowrap text-fg">{technique}</span>}
+          {t.ready && t.style && t.style !== "phrase mix" && (
+            <Tooltip content={`Planned style: ${t.style}. ${STYLE_HINTS[t.style]}`}>
+              <span className="shrink-0 rounded-xs bg-accent/12 px-1.5 py-px text-2xs font-semibold whitespace-nowrap text-accent-hover capitalize">{t.style}</span>
+            </Tooltip>
+          )}
           <span className="min-w-0 flex-1 truncate text-xs text-fg-subtle">
             {t.pending ? (
               "scoring…"

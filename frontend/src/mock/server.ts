@@ -5,7 +5,7 @@
 import type { EventStream } from "@/api/client";
 import type { Crate, CrateLink, CrateSet, Job, JobItem, MixPlan, Partner, PreviewStatus, ServerEvent, Setlist, SetMix, Settings, SetTrack, SystemStatus, Track } from "@/api/types";
 import { mockAnalysis, mockTransition } from "./analysis";
-import { emitRenderProgress, generateMixPlan, mockRender, validateMixPlan } from "./mixplan";
+import { emitRenderProgress, generateMixPlan, mockRender, mockStyle, validateMixPlan } from "./mixplan";
 import { crateSummary, energyRatings, FAVOUR, genreFor, HOME, initialCrates, type MockCrate, orderSet, POOL, recsFor, sanitize, SEARCH_PAGE } from "./data";
 import { between, hash, rng, sleep } from "./rng";
 
@@ -188,7 +188,10 @@ function crateSet(c: MockCrate): CrateSet {
     analysis_state: states.get(t.id) ?? "missing",
   }));
   const an = (t: Track) => (states.get(t.id) === "ready" ? mockAnalysis(t) : null);
-  const transitions = tracks.slice(1).map((b, i) => mockTransition(tracks[i], an(tracks[i]), b, an(b), settings.bpm_tolerance));
+  const transitions = tracks.slice(1).map((b, i) => {
+    const t = mockTransition(tracks[i], an(tracks[i]), b, an(b), settings.bpm_tolerance);
+    return { ...t, style: t.ready ? mockStyle(t.technique ?? "phrase blend", tracks[i].id + b.id) : null };
+  });
   return { folder: c.folder, path: crateDir(c.folder), seed_id: c.seed?.id ?? null, tracks: setTracks, transitions };
 }
 
@@ -484,18 +487,19 @@ function mixPair(folder: string, from: string, to: string): { c: MockCrate; a: T
   if (st?.get(from) !== "ready" || st?.get(to) !== "ready") return fail(409, "both tracks need their analysis first");
   return { c, a, b };
 }
-function genPlan(folder: string, a: Track, b: Track, technique?: string | null, bars?: number | null): MixPlan {
+function genPlan(folder: string, a: Track, b: Track, technique?: string | null, bars?: number | null, style?: string | null): MixPlan {
   const t = mockTransition(a, mockAnalysis(a), b, mockAnalysis(b), settings.bpm_tolerance);
-  return generateMixPlan(folder, a, mockAnalysis(a), b, mockAnalysis(b), t, technique, bars);
+  return generateMixPlan(folder, a, mockAnalysis(a), b, mockAnalysis(b), t, technique, bars, style);
 }
 on("GET", "/api/crates/([^/]+)/mix/([^/]+)/([^/]+)", ([folder, from, to], _b, q) => {
   const p = mixPair(folder, from, to);
   if ("status" in p) return p;
   const technique = q.get("technique");
   const bars = Number(q.get("bars")) || null;
+  const style = q.get("style");
   const saved = savedPlans.get(`${folder}|${from}|${to}`);
-  if (saved && !technique && !bars) return ok(saved);
-  return ok(genPlan(folder, p.a, p.b, technique, bars));
+  if (saved && !technique && !bars && !style) return ok(saved);
+  return ok(genPlan(folder, p.a, p.b, technique, bars, style));
 });
 on("PUT", "/api/crates/([^/]+)/mix/([^/]+)/([^/]+)", ([folder, from, to], body) => {
   const p = mixPair(folder, from, to);
@@ -556,6 +560,7 @@ async function runSetMix(m: SetMix, tracks: Track[], folders: string[]) {
     return { index: i, track_id: tr.id, display_name: tr.display_name, name: tr.name, artists: tr.artists, camelot: tr.camelot, bpm: tr.bpm, folder: folders[i], start_s: start, in_s: Math.max(0, start - 30), out_s: t + 30 };
   });
   const techs = ["long blend", "bass swap", "echo out", "filter sweep", "slam", "loop roll", "spinback", "brake"] as const;
+  const flavours = ["phrase mix", "phrase mix", "vocal throw", "roll", "phrase mix", "swell in", "echo exit"] as const;
   step({
     state: "done",
     progress: 1,
@@ -571,7 +576,11 @@ async function runSetMix(m: SetMix, tracks: Track[], folders: string[]) {
       lufs: -11.4,
       true_peak_db: -1.6,
       tracks: out,
-      transitions: out.slice(1).map((x, i) => ({ index: i, technique: techs[hash(x.track_id) % techs.length], bars: 16, overlap: hash(x.track_id) % 3 ? 16 : 0, at_s: x.in_s, edited: i === 1 })),
+      transitions: out.slice(1).map((x, i) => {
+        const technique = techs[hash(x.track_id) % techs.length];
+        const style = technique === "long blend" || technique === "bass swap" ? flavours[hash(x.track_id + "s") % flavours.length] : technique;
+        return { index: i, technique, style, bars: 16, overlap: hash(x.track_id) % 3 ? 16 : 0, at_s: x.in_s, edited: i === 1 };
+      }),
       warnings: [],
     },
   });
@@ -708,8 +717,8 @@ on("GET", "/api/setlists/([^/]+)/mix/([^/]+)/([^/]+)", ([id, from, to], _b, q) =
   const p = linkPair(id, from, to);
   if ("status" in p) return p;
   const saved = linkPlans.get(`${id}|${from}|${to}`);
-  if (saved && !q.get("technique") && !q.get("bars")) return ok(saved);
-  return ok(genPlan(`setlist:${id}`, p.a, p.b, q.get("technique"), Number(q.get("bars")) || null));
+  if (saved && !q.get("technique") && !q.get("bars") && !q.get("style")) return ok(saved);
+  return ok(genPlan(`setlist:${id}`, p.a, p.b, q.get("technique"), Number(q.get("bars")) || null, q.get("style")));
 });
 on("PUT", "/api/setlists/([^/]+)/mix/([^/]+)/([^/]+)", ([id, from, to], body) => {
   const p = linkPair(id, from, to);

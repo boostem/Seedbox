@@ -1,15 +1,15 @@
 /**
- * The v4 mix editor for one transition: technique / bars (re-generate), Edited badge, Save / Revert, undo/redo,
+ * The v4 mix editor for one transition: technique / style / bars (re-generate), Edited badge, Save / Revert, undo/redo,
  * the rendered-preview transport (render progress, loop, LUFS/peak/warnings), the automation DAW, and (only with
  * `details`) the plan's notes + markers. Space plays/stops the rendered transition.
  */
 import { AlertTriangle, Play, Redo2, Repeat, RotateCcw, Save, Square, Undo2 } from "lucide-react";
 import { useCallback } from "react";
-import type { MixPlan, MixTechnique, SetTrack, TrackAnalysis } from "@/api/types";
+import type { MixPlan, MixStyle, MixTechnique, SetTrack, TrackAnalysis } from "@/api/types";
 import { Badge, Button, IconButton, ProgressBar, Select, Spinner, Tabs, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { useHotkey } from "@/lib/hotkeys";
-import { barLabel, BAR_OPTIONS, TECHNIQUES } from "./lanes";
+import { barLabel, BAR_OPTIONS, BLEND_STYLES, isBlend, TECHNIQUES } from "./lanes";
 import { MixDaw } from "./MixDaw";
 import { usePlayRequests } from "./pending";
 import { markerColor } from "./paint";
@@ -36,6 +36,8 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
   usePlayRequests(`${a.track.id}>${b.track.id}`, true, toggle);
 
   const rendering = r.status === "rendering";
+  const blend = isBlend(plan.technique);
+  const styleHint = BLEND_STYLES.find((s) => s.id === plan.style)?.hint;
   return (
     <div className="flex flex-col gap-3">
       {/* toolbar */}
@@ -58,7 +60,7 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
             </Tooltip>
           ) : r.render ? (
             <span className={cn("text-2xs num", r.fresh ? "text-fg-subtle" : "text-warn")}>
-              {r.fresh ? `${r.render.lufs.toFixed(1)} LUFS · ${r.render.true_peak_db.toFixed(1)} dBTP` : "edited — re-renders on play"}
+              {r.fresh ? `${r.render.lufs.toFixed(1)} LUFS · ${r.render.true_peak_db.toFixed(1)} dBTP` : "edited: re-renders on play"}
             </span>
           ) : null}
         </div>
@@ -77,7 +79,23 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
             </option>
           ))}
         </Select>
-        <Tabs variant="segmented" value={String(plan.bars)} onChange={(v) => void mp.regenerate(plan.technique, Number(v))} items={BAR_OPTIONS.map((n) => ({ id: String(n), label: `${n} bars` }))} />
+        {blend && (
+          <Tooltip content={styleHint ?? "How the blend sounds"}>
+            <Select value={plan.style} onChange={(e) => void mp.regenerate(plan.technique, plan.bars, e.target.value as MixStyle)} aria-label="Style" className="capitalize">
+              {BLEND_STYLES.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.id}
+                </option>
+              ))}
+            </Select>
+          </Tooltip>
+        )}
+        <Tabs
+          variant="segmented"
+          value={String(plan.bars)}
+          onChange={(v) => void mp.regenerate(plan.technique, Number(v), blend ? plan.style : undefined)}
+          items={BAR_OPTIONS.map((n) => ({ id: String(n), label: `${n} bars` }))}
+        />
         <span className="flex-1" />
         {mp.dirty ? <Badge tone="warn">Unsaved edits</Badge> : plan.edited ? <Badge tone="accent">Edited</Badge> : null}
         <IconButton icon={Undo2} label="Undo (⌘Z)" size="md" onClick={mp.undo} disabled={!mp.canUndo} />
@@ -112,6 +130,7 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
         <section className="rounded-md border border-line bg-surface px-3 py-2.5">
           <h3 className="label-caps mb-1.5 !text-fg-muted">
             The plan · <span className="capitalize">{plan.bars}-bar {plan.technique}</span>
+            {blend && plan.style && <span className="capitalize"> · {plan.style}</span>}
           </h3>
           <ul className="flex flex-col gap-1 text-sm select-text">
             {plan.notes.map((n, i) => (

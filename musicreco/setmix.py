@@ -88,7 +88,7 @@ class Timeline:
     g_start: float
     g_end: float
     marks: list[dict]  # per track: index, in_beat (enters), take_beat (takes over), out_beat (leaves)
-    techniques: list[dict]  # per transition: index, technique, bars, beat
+    techniques: list[dict]  # per transition: index, technique, style, bars, overlap, beat, edited
     conflicts: list[int] = field(default_factory=list)  # tracks too short for both of their transitions
     warnings: list[str] = field(default_factory=list)
 
@@ -266,8 +266,8 @@ def build(entries: list[SetEntry], plans: list[dict]) -> Timeline:
     techniques = []
     for i, p in enumerate(plans):
         overlap = 0 if p["a"].get("fx") else int(round(max(0.0, p["a"]["play_to_beat"]) / 4))
-        techniques.append({"index": i, "technique": p["technique"], "bars": p["bars"], "overlap": overlap,
-                           "beat": g(i, 0.0), "edited": bool(p.get("edited"))})
+        techniques.append({"index": i, "technique": p["technique"], "style": p.get("style") or p["technique"],
+                           "bars": p["bars"], "overlap": overlap, "beat": g(i, 0.0), "edited": bool(p.get("edited"))})
     return Timeline(decks, tk, decks[0].p0, decks[-1].p1, marks, techniques, conflicts, warnings)
 
 
@@ -795,7 +795,9 @@ def tracklist(result: dict, title: str) -> str:
     for n, tr in enumerate(result["tracks"], 1):
         how = ""
         if n > 1 and (t := trans.get(n - 2)):
-            how = f"   ← {t['technique']}" + (f" ({t['overlap']} bars)" if t.get("overlap") else "")
+            style, tech = t.get("style") or t["technique"], t["technique"]
+            detail = ([tech] if style != tech else []) + ([f"{t['overlap']} bars"] if t.get("overlap") else [])
+            how = f"   ← {style}" + (f" ({', '.join(detail)})" if detail else "")
         lines.append(f"{_ts(tr['start_s']):>8}  {n:2d}. {tr['display_name']}  [{tr['camelot'] or '?'} · "
                      f"{round(tr['bpm']) if tr['bpm'] else '?'} BPM]{how}")
     lines += ["", "Mixed with Seedbox."]

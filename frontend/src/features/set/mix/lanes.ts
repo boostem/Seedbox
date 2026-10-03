@@ -2,7 +2,7 @@
  * MixPlan model helpers (mirrors musicreco/mixplan.py): lane metadata (range, colour, snapping, formatting),
  * keyframe interpolation, master beat → deck file time (loops honoured), and render-audio time ↔ master beat.
  */
-import type { Curve, DeckPlan, Keyframe, LaneId, MixPlan, MixRender } from "@/api/types";
+import type { BlendStyle, Curve, DeckPlan, Keyframe, LaneId, MixPlan, MixRender, MixStyle, MixTechnique } from "@/api/types";
 import { LANE_RANGES } from "@/api/types";
 
 export type DeckId = "a" | "b";
@@ -144,8 +144,37 @@ export function timeAt(r: MixRender, beat: number): number {
 
 export const CURVES: Curve[] = ["linear", "ease", "hold"];
 
-export const TECHNIQUES = ["long blend", "bass swap", "filter sweep", "echo out", "loop roll", "phrase blend", "drop swap", "slam", "spinback", "brake", "quick cut"] as const;
+export const TECHNIQUES = ["long blend", "bass swap", "filter sweep", "echo out", "loop roll", "phrase blend", "double drop", "drop swap", "slam", "spinback", "brake", "quick cut"] as const;
 export const BAR_OPTIONS = [4, 8, 16, 32] as const;
+
+/** The phrase-mixing techniques: their sound is set by a blend style. */
+export const BLEND_TECHNIQUES: readonly MixTechnique[] = ["long blend", "phrase blend", "bass swap"];
+export const isBlend = (t: MixTechnique) => BLEND_TECHNIQUES.includes(t);
+
+/** Blend styles, the default first, with what each one does (STYLE_HINTS covers every style). */
+export const BLEND_STYLES: { id: BlendStyle; hint: string }[] = [
+  { id: "phrase mix", hint: "B eases in and A eases out over whole phrases, bass swapped on the 1. No FX." },
+  { id: "vocal throw", hint: "A's last sung phrase is thrown into the echo and trails off over B." },
+  { id: "roll", hint: "A rolls its last bar (2 → 1 → ½ → ¼ beat) into B's drop or the bass swap." },
+  { id: "echo exit", hint: "A's last bar trails off in a dotted-8th echo." },
+  { id: "dub echo", hint: "A's last 4 bars build into a long 8th-note echo." },
+  { id: "swell in", hint: "B rises out of a reverb wash before its dry signal comes up." },
+  { id: "wash exit", hint: "A dissolves into a reverb wash over its last 2 bars." },
+  { id: "filter wash", hint: "A climbs a high-pass into a light reverb wash on its way out." },
+];
+
+export const STYLE_HINTS: Record<MixStyle, string> = {
+  ...(Object.fromEntries(BLEND_STYLES.map((s) => [s.id, s.hint])) as Record<BlendStyle, string>),
+  "filter sweep": "A rides a high-pass sweep out while B's low-pass opens: hides a key change.",
+  "loop roll": "A loops and rolls 8 → 4 → 2 → 1 → ½ beat into the 1 where B's bass drops in.",
+  "double drop": "Both drops land on the same 1, then the bass goes to B.",
+  "echo out": "A's last beats fly off into an echo and B starts on the 1.",
+  slam: "A 4-bar loop roll and a high-pass riser slam into B on the 1.",
+  "quick cut": "A 1-bar stutter, then a clean cut into B on the 1.",
+  "drop swap": "A's build cuts straight into B's drop.",
+  brake: "A powers down like a turntable switched off; B starts on the 1.",
+  spinback: "A is spun back and B lands on the 1: hides a big tempo jump.",
+};
 
 /** "bar.beat" relative to B in (beat 0 = bar 1.1; negative beats count back from it). */
 export function barLabel(beat: number): string {

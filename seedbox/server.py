@@ -503,17 +503,28 @@ def create_app(
             })  # fmt: skip
         return JSON(out)
 
+    def with_styles(data: dict) -> dict:
+        """CrateSet + the planned style of each transition (the set's style chain); the set works without them."""
+        try:
+            styles = state.mixes.crate_styles(data["folder"])
+        except Exception:  # noqa: BLE001
+            log.exception("planning the styles of %s failed", data.get("folder"))
+            return data
+        for t, st in zip(data["transitions"], styles):
+            t["style"] = st
+        return data
+
     @app.get("/api/crates/{folder}/set")
     def crate_set(folder: str) -> Response:
-        return JSON(state.crates.crate_set(folder))
+        return JSON(with_styles(state.crates.crate_set(folder)))
 
     @app.put("/api/crates/{folder}/order")
     def crate_order(folder: str, req: OrderRequest) -> Response:
-        return JSON(state.crates.set_order(folder, req.track_ids))
+        return JSON(with_styles(state.crates.set_order(folder, req.track_ids)))
 
     @app.post("/api/crates/{folder}/auto-order")
     def crate_auto_order(folder: str) -> Response:
-        return JSON(state.crates.auto_order(folder))
+        return JSON(with_styles(state.crates.auto_order(folder)))
 
     @app.get("/api/crates/{folder}/partners/{track_id}")
     def crate_partners(folder: str, track_id: str, direction: str = Query("out")) -> Response:
@@ -523,8 +534,8 @@ def create_app(
 
     @app.get("/api/crates/{folder}/mix/{from_id}/{to_id}")
     def mix_plan(folder: str, from_id: str, to_id: str, technique: str | None = Query(None),
-                 bars: int | None = Query(None)) -> Response:  # fmt: skip
-        return JSON(state.mixes.plan(folder, from_id, to_id, technique, bars))
+                 bars: int | None = Query(None), style: str | None = Query(None)) -> Response:  # fmt: skip
+        return JSON(state.mixes.plan(folder, from_id, to_id, technique, bars, style))
 
     @app.put("/api/crates/{folder}/mix/{from_id}/{to_id}")
     def mix_save(folder: str, from_id: str, to_id: str, body: Any = Body(...)) -> Response:  # noqa: B008
@@ -597,8 +608,8 @@ def create_app(
 
     @app.get("/api/setlists/{sid}/mix/{from_id}/{to_id}")
     def setlist_mix_plan(sid: str, from_id: str, to_id: str, technique: str | None = Query(None),
-                         bars: int | None = Query(None)) -> Response:  # fmt: skip
-        return JSON(state.mixes.plan_pair(state.setlists.pair(sid, from_id, to_id), technique, bars))
+                         bars: int | None = Query(None), style: str | None = Query(None)) -> Response:  # fmt: skip
+        return JSON(state.mixes.plan_pair(state.setlists.pair(sid, from_id, to_id), technique, bars, style=style))
 
     @app.put("/api/setlists/{sid}/mix/{from_id}/{to_id}")
     def setlist_mix_save(sid: str, from_id: str, to_id: str, body: Any = Body(...)) -> Response:  # noqa: B008

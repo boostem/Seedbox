@@ -209,7 +209,7 @@ def plan_hash(plan: dict, a_path: Path, b_path: Path) -> str
 ## Endpoints (SERVER)
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/api/crates/{folder}/mix/{from_id}/{to_id}?technique=&bars=` | MixPlan (saved edits if any and no technique/bars given, else generated) |
+| GET | `/api/crates/{folder}/mix/{from_id}/{to_id}?technique=&bars=&style=` | MixPlan (saved edits if any and no technique/bars/style given, else generated) |
 | PUT | same | save edited MixPlan → `.seedbox/mixplans/<from>__<to>.json`, returns validated MixPlan (edited=true) |
 | DELETE | same | drop saved edits → generated MixPlan |
 | POST | `/api/crates/{folder}/mix/{from_id}/{to_id}/render` (optional body: MixPlan to render unsaved edits) | MixRender (cached by plan_hash; SSE `{type:"render", data:{render_id, state, progress}}` while it runs) |
@@ -227,8 +227,28 @@ Contract: the "Full set mixes" and "Setlists" blocks at the end of `frontend/src
   source_beat: 4h, length_beats: 4·size}` with B's beat0 moved h bars earlier, so B continues from its cue after
   the hold) and deck A (outro stretch, loop rolls). `DeckPlan.fx` = `[{kind: "brake" | "spinback", beat, beats}]`
   (validated, ≤ 8, beats 0.25–16); the deck is silent after the effect.
-- Echo / reverb sends tap post-filter, pre-EQ. Send lanes are built from prioritised pulses (exit throw first, then
-  the bass-swap accent, vocal clash / phrase-end throws, breakdown washes).
+- Echo / reverb sends tap post-filter, pre-EQ. A plain phrase mix has no sends except the vocal-clash throw; every
+  other send comes from the transition's style (below).
+
+## Transition styles (MixPlan.style)
+- `STYLES` = the default `"phrase mix"`, the blend flavours (`vocal throw`, `echo exit`, `roll`, `swell in`,
+  `wash exit`, `filter wash`, `dub echo`; they ride on a long blend / phrase blend / bass swap) and the structural
+  styles, which are their technique (`filter sweep`, `loop roll`, `double drop`, `echo out`, `slam`, `quick cut`,
+  `drop swap`, `brake`, `spinback`). `validate` fills a missing style from the technique (else the default).
+- Choice: the structure first (what the music allows: blend, cut, double drop, loop-built outro), then the flavour;
+  each candidate is scored 0-1 on the pair's analysis (vocal ends, energy lift where A leaves, B's intro, keys,
+  tempo jump). A score is lowered by 0.04 per use of the same style in the previous 4 transitions, 0.03 per use of a
+  same-family style (echo / wash / roll / turntable / cut) and 0.25 for a double drop / brake / spinback used in
+  that window; a non-default style is never picked a 4th time in a row. Ties go to the phrase mix.
+```python
+generate(a, a_an, b, b_an, folder, technique=None, bars=None, transition=None, style=None, recent=None) -> dict
+plan_styles(pairs: list[(a, a_an, b, b_an, transition)], fixed: list[str | None] | None = None) -> list[str]
+```
+  `recent` = the styles of the transitions before this one (most recent last); `generate(..., recent=chain[k-4:k])`
+  reproduces `plan_styles(...)[k]`. `fixed[k]` = a saved plan's style. The server's `MixService.chain` runs
+  `plan_styles` over a crate's (or setlist's) play order with the analyses known now, cached until the order, an
+  analysis or a saved plan changes; plan endpoints accept `?style=` (422 for unknown styles), and `SetMixTransition`
+  carries `style`.
 
 ## Full set mix (musicreco/setmix.py)
 ```python

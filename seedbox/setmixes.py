@@ -95,16 +95,20 @@ class SetMixService:
 
     # --- targets ---------------------------------------------------------------------------------------------------
 
-    def _resolve(self, target: str) -> tuple[str, list[tuple[Path, SetFile]], list[Pair]]:
+    def _resolve(self, target: str, chain: bool = False) -> tuple[str, list[tuple[Path, SetFile]], list[Pair]]:
+        """Title, play order and transitions of a target; with `chain`, each transition knows the styles of the
+        ones before it (what its generated plan needs)."""
         kind, _, key = target.partition(":")
         if kind == "crate":
             seed_dir = resolve_crate(self.crates.root, key)
             files = self.crates.files(seed_dir)
             seed = library.load_crate_seed(seed_dir)
-            pairs = [self.mixes.pair(seed_dir.name, a.track.id, b.track.id) for a, b in zip(files, files[1:])]
+            pairs = self.mixes.crate_pairs(seed_dir, files)
+            if chain:
+                self.mixes.with_chain(pairs)
             return (seed.display_name if seed else seed_dir.name), [(seed_dir, f) for f in files], pairs
         if kind == "setlist":
-            seq, pairs = self.setlists.pairs_for_mix(key)
+            seq, pairs = self.setlists.pairs_for_mix(key, chain=chain)
             return self.setlists.title(key), seq, pairs
         raise ApiError("unknown mix target", 422)
 
@@ -280,11 +284,29 @@ class SetMixService:
         if job.cancel.is_set():
             raise engine.optional("setmix").Cancelled()
 
+    def _shorter(self, pair: Pair, p: dict, mixplan: Any) -> dict | None:
+        """A shorter generated plan for a transition that leaves its track too short: the same technique (and blend
+        style) at the next length down, else a phrase blend of that length (a double drop is always 16 bars), else
+        a quick cut. None when nothing comes out shorter."""
+        shorter = _SHORTER.get(int(p["bars"]))
+        tries: list[tuple[str, int, str | None]] = []
+        if shorter:
+            style = p.get("style") if p.get("style") in getattr(mixplan, "BLEND_STYLES", ()) else None
+            tries.append((p["technique"], shorter, style))
+            if p["technique"] not in ("long blend", "phrase blend", "bass swap"):
+                tries.append(("phrase blend", shorter, None))
+        tries.append(("quick cut", 4, None))
+        for tech, bars, style in tries:
+            q = self.mixes.plan_pair(pair, technique=tech, bars=bars, wait_s=PLAN_WAIT_S, style=style)
+            if q["technique"] != p["technique"] or int(q["bars"]) < int(p["bars"]):
+                return q
+        return None
+
     def _run(self, job: SetMixJob) -> None:
         setmix = engine.optional("setmix")
         mixplan = engine.optional("mixplan")
         self._set(job, "preparing", 0.0, "Collecting the tracks")
-        title, seq, pairs = self._resolve(job.target)
+        title, seq, pairs = self._resolve(job.target)  # the chain comes once every track is analysed
         job.title = title
         job.track_ids = [f.track.id for _, f in seq]
         n = len(seq)
@@ -307,7 +329,9 @@ class SetMixService:
                     if time.monotonic() > deadline:
                         raise ApiError(f"{f.track.display_name} is still being analysed, try again shortly") from None
 
-        # plans: saved edits or generated
+        # plans: saved edits or generated (each knowing the styles of the transitions before it)
+        self._set(job, progress=0.02, message="Choosing the transitions")
+        self.mixes.with_chain(pairs)
         plans = []
         for k, p in enumerate(pairs):
             self._check(job)
@@ -324,13 +348,13 @@ class SetMixService:
             for i in tl.conflicts:
                 for j in (i, i - 1):  # shorten the track's out-transition first, then its in-transition
                     p = plans[j]
-                    if p.get("edited") or p["technique"] in mixplan._CUTS:
+                    if j < 0 or p.get("edited") or p["technique"] in mixplan._CUTS:
                         continue
-                    bars = _SHORTER.get(int(p["bars"]))
-                    tech, bars = (p["technique"], bars) if bars else ("quick cut", None)
-                    plans[j] = self.mixes.plan_pair(pairs[j], technique=tech, bars=bars or 4, wait_s=PLAN_WAIT_S)
-                    notes.append(f"transition {j + 1} shortened to fit ({plans[j]['technique']}, "
-                                 f"{plans[j]['bars']} bars)")
+                    short = self._shorter(pairs[j], p, mixplan)
+                    if short is None:
+                        continue
+                    plans[j] = short
+                    notes.append(f"transition {j + 1} shortened to fit ({short['technique']}, {short['bars']} bars)")
                     fixed = True
                     break
             if not fixed:

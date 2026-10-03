@@ -3,12 +3,21 @@
  * technique on the master beat timeline (beat 0 = B in), saved edits per pair, and a fake render (progress events,
  * a beat map from the tempo lane, a synthesised audio file at the master tempo — see mock/audio.ts).
  */
-import type { DeckLoop, DeckPlan, Keyframe, LaneId, MixMarker, MixPlan, MixRender, MixTechnique, ServerEvent, Track, TrackAnalysis, Transition } from "@/api/types";
+import type { BlendStyle, DeckLoop, DeckPlan, Keyframe, LaneId, MixMarker, MixPlan, MixRender, MixStyle, MixTechnique, ServerEvent, Track, TrackAnalysis, Transition } from "@/api/types";
 import { LANE_RANGES } from "@/api/types";
 
 const LANE_IDS: LaneId[] = ["volume", "eq_low", "eq_mid", "eq_high", "filter", "echo_send", "echo_feedback", "reverb_send"];
 const NEUTRAL: Record<LaneId, number> = { volume: 1, eq_low: 0, eq_mid: 0, eq_high: 0, filter: 0, echo_send: 0, echo_feedback: 0.5, reverb_send: 0 };
-const TECHS: MixTechnique[] = ["long blend", "bass swap", "filter sweep", "echo out", "loop roll", "phrase blend", "drop swap", "slam", "quick cut", "brake", "spinback"];
+const TECHS: MixTechnique[] = ["long blend", "bass swap", "filter sweep", "echo out", "loop roll", "phrase blend", "drop swap", "slam", "quick cut", "brake", "spinback", "double drop"];
+
+/** The blend flavour (asked for, else a stable mostly-phrase-mix pick per pair); other techniques are their own style. */
+export function mockStyle(tech: MixTechnique, key: string, asked?: string | null): MixStyle {
+  if (!["long blend", "phrase blend", "bass swap"].includes(tech)) return tech as MixStyle;
+  if (asked && (BLEND_FLAVOURS as string[]).includes(asked)) return asked as BlendStyle;
+  let h = 0;
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return BLEND_FLAVOURS[h % BLEND_FLAVOURS.length];
+}
 
 const kf = (beat: number, value: number, curve: Keyframe["curve"] = "linear"): Keyframe => ({ beat, value, curve });
 
@@ -20,7 +29,9 @@ function deck(track: Track, an: TrackAnalysis | null, beat0_s: number, from: num
   return { track_id: track.id, beat0_s, native_bpm: an?.bpm ?? track.bpm, play_from_beat: from, play_to_beat: to, echo_beats: echo, loops, lanes: lanes(l) };
 }
 
-export function generateMixPlan(folder: string, a: Track, aAn: TrackAnalysis | null, b: Track, bAn: TrackAnalysis | null, t: Transition, technique?: string | null, bars?: number | null): MixPlan {
+const BLEND_FLAVOURS: BlendStyle[] = ["phrase mix", "phrase mix", "vocal throw", "phrase mix", "roll", "echo exit", "phrase mix", "swell in", "dub echo", "wash exit", "filter wash"];
+
+export function generateMixPlan(folder: string, a: Track, aAn: TrackAnalysis | null, b: Track, bAn: TrackAnalysis | null, t: Transition, technique?: string | null, bars?: number | null, style?: string | null): MixPlan {
   const tech = (TECHS.includes(technique as MixTechnique) ? technique : t.technique === "quick cut" ? "quick cut" : t.technique ?? "phrase blend") as MixTechnique;
   const cut = tech === "quick cut" || tech === "drop swap" || tech === "slam" || tech === "brake" || tech === "spinback";
   const L = ([4, 8, 16, 32].includes(bars ?? 0) ? bars : Math.max(4, Math.min(32, t.overlap_bars || 16))) as 4 | 8 | 16 | 32;
@@ -130,6 +141,7 @@ export function generateMixPlan(folder: string, a: Track, aAn: TrackAnalysis | n
     markers: markers.sort((x, y) => x.beat - y.beat),
     notes,
     edited: false,
+    style: mockStyle(tech, a.id + b.id, style),
   };
 }
 

@@ -32,11 +32,14 @@ Other flags:
 ### Transitions, full mixes and setlists
 
 - **Transitions you can hear.** Every pair in the set builder has a rendered transition with editable automation
-  (fader, 3-band EQ, filter, echo, reverb, loops, tempo). Loops do real work: a short outro loops its last clean
-  phrase to stretch into a long blend, a short intro loops to hold its groove under a long outro, and loop rolls
-  (8 → 4 → 2 → 1 → ½ beat) build into the cuts. Echo throws catch the outgoing vocal's phrase ends and the beat before
-  the bass swap; reverb washes ride filter sweeps, breakdown exits and drops. Hard exits also come as a turntable
-  **brake** or a **spinback**.
+  (fader, 3-band EQ, filter, echo, reverb, loops, tempo). Most are **phrase mixes**: B eases in and A eases out over
+  whole phrases with the bass swapped on the 1, like most DJ mixes. Where a pair suits something flashier it gets it:
+  a **vocal throw** when A sings out over B's instrumental, a **roll** into B's drop, a reverb **swell** for a
+  pad intro, a **double drop** when two drops line up, a **brake** into a quiet intro, a **spinback** over a big
+  tempo jump, and more. Each is the best fit for its two songs, and no flashy style runs more than three times in a
+  row. Loops do real work: a short outro loops to stretch into a long blend, a short intro loops to hold its groove
+  under a long outro, A drops onto a clean loop of its own groove when two vocals would clash, and loop rolls
+  (8 → 4 → 2 → 1 → ½ beat) build into the cuts. The mix editor's Technique and Style menus override the pick.
 - **Full mix.** *Full mix* on the set builder renders the whole set as one continuous MP3 (320 kbps) using every
   transition exactly as planned (saved edits included), with tempo moves spread across each track so the set flows.
   It lands in `<crates folder>/Mixes/<name>/` with a `.cue` sheet, a `.txt` tracklist and ID3 chapters. Rendering

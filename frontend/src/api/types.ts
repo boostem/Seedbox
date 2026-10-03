@@ -199,6 +199,7 @@ export interface Transition {
   overlap_bars: number | null;
   swap_bar: number | null; // 1-based bar within the overlap where B's low end replaces A's (any blend that swaps bass, incl. blend → echo out); null for cuts / no bass
   technique: Technique | null;
+  style?: MixStyle | null; // the planned transition style in this set (crate set responses; null = can't be planned yet)
   notes: string[]; // human explanations
   warnings: string[]; // e.g. "vocals overlap for 8 bars"
   ready: boolean; // false until both analyses exist (then only key/BPM fields are meaningful)
@@ -283,7 +284,14 @@ export interface DeckPlan {
   lanes: Record<LaneId, Keyframe[]>; // every lane present, at least one keyframe each
 }
 
-export type MixTechnique = Technique | "filter sweep" | "loop roll" | "slam" | "brake" | "spinback";
+export type MixTechnique = Technique | "filter sweep" | "loop roll" | "slam" | "brake" | "spinback" | "double drop";
+
+/**
+ * How a transition sounds (mixplan.STYLES). "phrase mix" is the default: B eases in and A eases out over whole
+ * phrases. The blend flavours ride on a long blend / phrase blend / bass swap; every other style is its technique.
+ */
+export type BlendStyle = "phrase mix" | "vocal throw" | "echo exit" | "roll" | "swell in" | "wash exit" | "filter wash" | "dub echo";
+export type MixStyle = BlendStyle | "filter sweep" | "loop roll" | "double drop" | "echo out" | "slam" | "quick cut" | "drop swap" | "brake" | "spinback";
 
 export interface MixMarker {
   beat: number;
@@ -305,6 +313,7 @@ export interface MixPlan {
   markers: MixMarker[];
   notes: string[]; // plain-language explanation of the plan
   edited: boolean; // true = user-saved edits (from .seedbox/mixplans), false = freshly generated
+  style: MixStyle; // picked for the two songs and the transitions before it in the set (or asked for)
 }
 
 export interface MixRender {
@@ -341,6 +350,7 @@ export interface SetMixTrack {
 export interface SetMixTransition {
   index: number; // tracks[index] -> tracks[index + 1]
   technique: MixTechnique;
+  style?: MixStyle; // missing in mixes rendered before styles existed
   bars: number;
   overlap: number; // bars both tracks play (0 = a cut)
   at_s: number;

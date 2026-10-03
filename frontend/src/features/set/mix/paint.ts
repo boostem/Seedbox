@@ -41,6 +41,7 @@ export function paintGrid(ctx: CanvasRenderingContext2D, view: View, y: number, 
 
 const MARKER_COLOR: [RegExp, keyof ReturnType<typeof wavePalette>][] = [
   [/brake|spinback/i, "danger"],
+  [/double drop/i, "warn"],
   [/^b in/i, "accent"],
   [/bass/i, "low"],
   [/a out/i, "fgMuted"],

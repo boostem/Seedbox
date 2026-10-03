@@ -2,6 +2,8 @@
 
 A pair is two tracks of one crate (saved edits: <crate>/.seedbox/mixplans/<from>__<to>.json) or, for a setlist's
 crate-to-crate links, tracks of two crates (saved edits under the setlist, see setlists.py). Saves are atomic.
+A transition in a set is planned knowing the styles of the transitions before it (chain / mixplan.plan_styles), so
+the set's technical moves vary while each one is still the best fit for its two songs.
 Renders: <cache>/renders/<hash>.m4a + .json, keyed by mixrender.plan_hash, at most RENDER_WORKERS at a time;
 identical requests share one render; the folder is trimmed least-recently-used first to RENDER_CACHE_MB.
 """
@@ -31,9 +33,11 @@ log = logging.getLogger(__name__)
 
 RENDER_WORKERS = 2
 RENDER_CACHE_MB = 1024
+CHAIN_CACHE = 32  # sets whose style chain is remembered
+CHAIN_RECENT = 4  # styles before a transition that its plan sees
 PROGRESS_STEP = 0.05  # publish render progress in steps of at least this much
 TECHNIQUES = ("long blend", "phrase blend", "bass swap", "drop swap", "quick cut", "echo out", "filter sweep",
-              "loop roll", "slam", "brake", "spinback")  # fmt: skip
+              "loop roll", "slam", "brake", "spinback", "double drop")  # fmt: skip
 BARS = (4, 8, 16, 32)
 _ID = re.compile(r"^[A-Za-z0-9]{1,64}$")
 _RENDER_ID = re.compile(r"^[A-Za-z0-9_-]{6,128}$")
@@ -69,6 +73,14 @@ class Pair:
     b_dir: Path
     b: SetFile
     saved: Path
+    recent: list[str] | None = None  # styles of the transitions before this one in its set (most recent last)
+
+
+def _mtime(path: Path) -> int:
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return 0
 
 
 def check_ids(from_id: str, to_id: str) -> None:
@@ -87,6 +99,7 @@ class MixService:
         self._pool = ThreadPoolExecutor(max_workers=RENDER_WORKERS, thread_name_prefix="seedbox-render")
         self._lock = threading.Lock()
         self._inflight: dict[str, Future] = {}
+        self._chains: dict[tuple, list[str | None]] = {}
 
     @property
     def renders_dir(self) -> Path:
@@ -96,45 +109,119 @@ class MixService:
 
     # --- plans ----------------------------------------------------------------------------------------------------
 
-    def pair(self, folder: str, from_id: str, to_id: str) -> Pair:
-        """A pair of one crate's tracks."""
+    def pair(self, folder: str, from_id: str, to_id: str, chain: bool = True) -> Pair:
+        """A pair of one crate's tracks; when it's consecutive in the crate's set order (and `chain`), it carries
+        the styles of the transitions before it."""
         check_ids(from_id, to_id)
         seed_dir = resolve_crate(self.crates.root, folder)
-        return Pair(seed_dir.name, seed_dir, self.crates.file(seed_dir, from_id), seed_dir,
+        pair = Pair(seed_dir.name, seed_dir, self.crates.file(seed_dir, from_id), seed_dir,
                     self.crates.file(seed_dir, to_id), self.saved_path(seed_dir, from_id, to_id))
+        if chain:
+            files = self.crates.files(seed_dir)
+            ids = [f.track.id for f in files]
+            k = ids.index(from_id)
+            if k + 1 < len(ids) and ids[k + 1] == to_id:
+                pair.recent = self.with_chain(self.crate_pairs(seed_dir, files))[k].recent
+        return pair
+
+    def crate_pairs(self, seed_dir: Path, files: list[SetFile]) -> list[Pair]:
+        """The Pair of every consecutive transition of a crate's set order (no chain yet: see with_chain)."""
+        return [Pair(seed_dir.name, seed_dir, a, seed_dir, b, self.saved_path(seed_dir, a.track.id, b.track.id))
+                for a, b in zip(files, files[1:])]
 
     @staticmethod
     def saved_path(seed_dir: Path, from_id: str, to_id: str) -> Path:
         return seed_dir / ".seedbox" / "mixplans" / f"{from_id}__{to_id}.json"
 
-    def plan(self, folder: str, from_id: str, to_id: str, technique: str | None = None, bars: int | None = None) -> dict:
-        """Saved edits (when no technique/bars are asked for), else a freshly generated MixPlan."""
-        return self.plan_pair(self.pair(folder, from_id, to_id), technique, bars)
+    def plan(self, folder: str, from_id: str, to_id: str, technique: str | None = None, bars: int | None = None,
+             style: str | None = None) -> dict:
+        """Saved edits (when no technique/bars/style are asked for), else a freshly generated MixPlan."""
+        return self.plan_pair(self.pair(folder, from_id, to_id), technique, bars, style=style)
 
     def plan_pair(self, pair: Pair, technique: str | None = None, bars: int | None = None,
-                  wait_s: float | None = None) -> dict:
-        if technique is None and bars is None and (saved := self._load_saved(pair.saved)) is not None:
+                  wait_s: float | None = None, style: str | None = None) -> dict:
+        if technique is None and bars is None and style is None and (saved := self._load_saved(pair.saved)) is not None:
             return saved
-        return self._generate(pair, technique, bars, wait_s)
+        return self._generate(pair, technique, bars, wait_s, style)
 
-    def _generate(self, pair: Pair, technique: str | None, bars: int | None, wait_s: float | None = None) -> dict:
+    def _generate(self, pair: Pair, technique: str | None, bars: int | None, wait_s: float | None = None,
+                  style: str | None = None) -> dict:
         if technique is not None and technique not in TECHNIQUES:
             raise ApiError(f"unknown technique {technique!r}", 422)
         if bars is not None and bars not in BARS:
             raise ApiError("bars must be 4, 8, 16 or 32", 422)
         mixplan = _module("mixplan")
+        if style is not None and style not in getattr(mixplan, "STYLES", ()):
+            raise ApiError(f"unknown style {style!r}", 422)
         self.crates.want_analyses(pair.a_dir, [pair.a])  # both start now, so a 409 retry finds both done
         self.crates.want_analyses(pair.b_dir, [pair.b])
         a_an = self.crates.ready_analysis(pair.a_dir, pair.a, wait_s)
         b_an = self.crates.ready_analysis(pair.b_dir, pair.b, wait_s)
         a, b = pair.a, pair.b
         transition = transitions.suggest(a.track, a_an, b.track, b_an, bpm_tol=self.crates.bpm_tol)
+        extra = {"style": style, "recent": pair.recent} if engine.accepts(mixplan.generate, "recent") else {}
         try:
             plan = mixplan.generate(a.track, a_an, b.track, b_an, pair.key, technique=technique, bars=bars,
-                                    transition=transition)  # fmt: skip
+                                    transition=transition, **extra)  # fmt: skip
         except ValueError as e:
             raise ApiError(f"can't plan this transition: {e}", 422) from e
         return {**plan, "edited": False}
+
+    # --- style chains ---------------------------------------------------------------------------------------------
+
+    def crate_styles(self, folder: str) -> list[str | None]:
+        """The planned style of each consecutive transition of a crate's set order (None: can't be planned)."""
+        seed_dir = resolve_crate(self.crates.root, folder)
+        return self.chain(self.crate_pairs(seed_dir, self.crates.files(seed_dir)))
+
+    def with_chain(self, pairs: list[Pair]) -> list[Pair]:
+        """Set each pair's `recent` (the styles of the transitions before it) from the set's chain; `pairs` are a
+        set's consecutive transitions in play order."""
+        styles = self.chain(pairs)
+        for k, p in enumerate(pairs):
+            p.recent = [s for s in styles[max(0, k - CHAIN_RECENT) : k] if s]
+        return pairs
+
+    def chain(self, pairs: list[Pair]) -> list[str | None]:
+        """The style of every transition of a set (mixplan.plan_styles): a saved plan keeps its own, the others are
+        each the best fit for their two songs given the styles before them. Uses the analyses known now (nothing
+        waits; missing ones are queued) and is remembered until the order, an analysis or a saved plan changes."""
+        mixplan = engine.optional("mixplan")
+        if mixplan is None or not hasattr(mixplan, "plan_styles") or not pairs:
+            return [None] * len(pairs)
+        known: dict[tuple[str, str], dict | None] = {}
+        for d in dict.fromkeys(x for p in pairs for x in (p.a_dir, p.b_dir)):
+            files = list({f.track.id: f for p in pairs for dd, f in ((p.a_dir, p.a), (p.b_dir, p.b)) if dd == d}.values())
+            for tid, an in self.crates.analyses_now(d, files).items():
+                known[str(d), tid] = an
+
+        def an_of(d: Path, f: SetFile) -> dict | None:
+            return known.get((str(d), f.track.id))
+
+        saved = [_mtime(p.saved) for p in pairs]
+        key = (tuple((str(p.a_dir), p.a.track.id, str(p.b_dir), p.b.track.id, str(p.saved)) for p in pairs),
+               tuple(saved), tuple(an_of(p.a_dir, p.a) is not None for p in pairs) + (an_of(pairs[-1].b_dir,
+               pairs[-1].b) is not None,), self.crates.bpm_tol)  # fmt: skip
+        with self._lock:
+            hit = self._chains.get(key)
+        if hit is not None:
+            return hit
+        fixed = [((self._load_saved(p.saved) or {}).get("style") if mt else None) for p, mt in zip(pairs, saved)]
+        rows = []
+        for p in pairs:
+            a_an, b_an = an_of(p.a_dir, p.a), an_of(p.b_dir, p.b)
+            tr = transitions.suggest(p.a.track, a_an, p.b.track, b_an, bpm_tol=self.crates.bpm_tol)
+            rows.append((p.a.track, a_an, p.b.track, b_an, tr))
+        try:
+            out = list(mixplan.plan_styles(rows, fixed))
+        except Exception:  # noqa: BLE001 - every plan still works without the chain
+            log.exception("planning the style chain failed")
+            out = [None] * len(pairs)
+        with self._lock:
+            self._chains[key] = out
+            while len(self._chains) > CHAIN_CACHE:
+                self._chains.pop(next(iter(self._chains)))
+        return out
 
     def _load_saved(self, path: Path) -> dict | None:
         try:
