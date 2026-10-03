@@ -3,49 +3,40 @@
  * technique on the master beat timeline (beat 0 = B in), saved edits per pair, and a fake render (progress events,
  * a beat map from the tempo lane, a synthesised audio file at the master tempo — see mock/audio.ts).
  */
-import type { BlendStyle, DeckLoop, DeckPlan, Keyframe, LaneId, MixMarker, MixPlan, MixRender, MixStyle, MixTechnique, ServerEvent, StyleFit, Track, TrackAnalysis, Transition } from "@/api/types";
+import type { ChillStyle, DeckPlan, Keyframe, LaneId, MixMarker, MixPlan, MixRender, MixStyle, MixTechnique, ServerEvent, StyleFit, SwapKind, Track, TrackAnalysis, Transition } from "@/api/types";
 import { LANE_RANGES } from "@/api/types";
 
-const LANE_IDS: LaneId[] = ["volume", "eq_low", "eq_mid", "eq_high", "filter", "echo_send", "echo_feedback", "reverb_send"];
-const NEUTRAL: Record<LaneId, number> = { volume: 1, eq_low: 0, eq_mid: 0, eq_high: 0, filter: 0, echo_send: 0, echo_feedback: 0.5, reverb_send: 0 };
-const TECHS: MixTechnique[] = ["long blend", "bass swap", "filter sweep", "echo out", "loop roll", "phrase blend", "drop swap", "slam", "quick cut", "brake", "spinback", "double drop"];
+const LANE_IDS: LaneId[] = ["volume", "eq_low", "eq_mid", "eq_high", "filter", "vocals", "instrumental", "echo_send", "echo_feedback", "reverb_send"];
+const NEUTRAL: Record<LaneId, number> = { volume: 1, eq_low: 0, eq_mid: 0, eq_high: 0, filter: 0, vocals: 1, instrumental: 1, echo_send: 0, echo_feedback: 0.5, reverb_send: 0 };
+const CHILL: ChillStyle[] = ["phrase mix", "acapella", "filter fade", "double drop", "quick cut"];
+const SWAPS: SwapKind[] = ["hard", "quick", "slow"];
 
-/** The blend flavour (asked for, else a stable mostly-phrase-mix pick per pair); other techniques are their own style. */
-export function mockStyle(tech: MixTechnique, key: string, asked?: string | null): MixStyle {
-  if (!["long blend", "phrase blend", "bass swap"].includes(tech)) return tech as MixStyle;
-  if (asked && (BLEND_FLAVOURS as string[]).concat("roll", "dub echo").includes(asked)) return asked as BlendStyle;
-  let h = 0;
+function hash(key: string, seed = 7): number {
+  let h = seed;
   for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return BLEND_FLAVOURS[h % BLEND_FLAVOURS.length];
+  return h;
 }
 
-const MOCK_WHY: Partial<Record<MixStyle, string>> = {
-  "phrase mix": "the smooth, safe default",
-  "vocal throw": "A finishes a sung phrase over an instrumental part of B",
-  "echo exit": "A's last bars are sung: its last word can trail off",
-  "swell in": "B opens on pads / atmosphere",
-  "wash exit": "A ends soft and tonal: a wash dissolves it",
-  "filter wash": "A is still full (bass and music) over B's drums-only intro",
-  "dub echo": "sparse drums at A's end",
-  roll: "B's drop lands where A leaves",
-  "echo out": "a safe exit over any ending",
-  slam: "B has a drop to slam into",
-  "quick cut": "a clean bar line to cut on",
-  brake: "B doesn't start quiet enough for a power-down",
-  spinback: "nothing big to spin into",
-  "drop swap": "the drops don't line up",
+/** The chill style the mock planner picks for a pair (asked for, else mostly the phrase mix, sometimes another). */
+export function mockStyle(tech: MixTechnique | string, key: string, asked?: string | null): MixStyle {
+  if (asked && (CHILL as string[]).includes(asked)) return asked as ChillStyle;
+  if (tech === "quick cut" || tech === "drop swap") return "quick cut";
+  const pool: ChillStyle[] = ["phrase mix", "phrase mix", "phrase mix", "filter fade", "phrase mix", "acapella", "phrase mix", "double drop"];
+  return pool[hash(key) % pool.length];
+}
+
+const MOCK_WHY: Record<ChillStyle, string> = {
+  "phrase mix": "the smooth default: B's highs, then its mids, then the bass",
+  acapella: "A sings over the bass swap and the keys match: its vocal can ride over B's beat",
+  "filter fade": "both songs are full arrangements here: a filter fade melts one into the other",
+  "double drop": "both drops line up in key at the same tempo",
+  "quick cut": "the songs can blend, so a cut would be abrupt",
 };
 
 /** Plausible fit scores for the mock editor: the planned style on top, the rest spread below it. */
-function mockFit(tech: MixTechnique, style: MixStyle, key: string): StyleFit[] {
-  const blend = ["long blend", "phrase blend", "bass swap"].includes(tech);
-  const cut = ["quick cut", "drop swap", "slam", "brake", "spinback", "echo out"].includes(tech);
-  if (!blend && !cut) return [];
-  const pool: MixStyle[] = blend ? ["phrase mix", "vocal throw", "echo exit", "swell in", "wash exit", "filter wash", "dub echo", "roll"] : ["echo out", "slam", "quick cut", "brake", "spinback", "drop swap"];
-  let h = 7;
-  for (const ch of key) h = (h * 33 + ch.charCodeAt(0)) >>> 0;
-  return pool
-    .map((s, i) => ({ style: s, fit: s === style ? 0.74 : Math.round((((h >> i) % 40) / 100 + 0.25) * 100) / 100, why: MOCK_WHY[s] ?? "" }))
+function mockFit(style: MixStyle, key: string): StyleFit[] {
+  const h = hash(key, 13);
+  return CHILL.map((s, i) => ({ style: s, fit: s === style ? 0.72 : s === "quick cut" ? 0.3 : Math.round((((h >> i) % 30) / 100 + 0.3) * 100) / 100, why: MOCK_WHY[s] }))
     .sort((x, y) => y.fit - x.fit);
 }
 
@@ -55,16 +46,21 @@ function lanes(over: Partial<Record<LaneId, Keyframe[]>>): Record<LaneId, Keyfra
   return Object.fromEntries(LANE_IDS.map((id) => [id, over[id] ?? [kf(0, NEUTRAL[id])]])) as Record<LaneId, Keyframe[]>;
 }
 
-function deck(track: Track, an: TrackAnalysis | null, beat0_s: number, from: number, to: number, l: Partial<Record<LaneId, Keyframe[]>>, loops: DeckLoop[] = [], echo = 0.75): DeckPlan {
-  return { track_id: track.id, beat0_s, native_bpm: an?.bpm ?? track.bpm, play_from_beat: from, play_to_beat: to, echo_beats: echo, loops, lanes: lanes(l) };
+function deck(track: Track, an: TrackAnalysis | null, beat0_s: number, from: number, to: number, l: Partial<Record<LaneId, Keyframe[]>>): DeckPlan {
+  return { track_id: track.id, beat0_s, native_bpm: an?.bpm ?? track.bpm, play_from_beat: from, play_to_beat: to, echo_beats: 0.75, loops: [], fx: [], lanes: lanes(l) };
 }
 
-const BLEND_FLAVOURS: BlendStyle[] = ["phrase mix", "phrase mix", "vocal throw", "phrase mix", "phrase mix", "echo exit", "phrase mix", "swell in", "phrase mix", "wash exit", "filter wash"];
+function swapLanes(kind: SwapKind, s: number): { a: Keyframe[]; b: Keyframe[] } {
+  if (kind === "quick") return { a: [kf(s - 4, 0), kf(s - 2, -3, "ease"), kf(s, -30, "hold")], b: [kf(s - 4, -30, "ease"), kf(s - 2, -3), kf(s, 0, "hold")] };
+  if (kind === "slow") return { a: [kf(s - 8, 0), kf(s, -3, "ease"), kf(s + 8, -30, "hold")], b: [kf(s - 8, -30, "ease"), kf(s, -3), kf(s + 8, 0, "hold")] };
+  return { a: [kf(0, 0, "hold"), kf(s, -30, "hold")], b: [kf(0, -30, "hold"), kf(s, 0, "hold")] };
+}
 
-export function generateMixPlan(folder: string, a: Track, aAn: TrackAnalysis | null, b: Track, bAn: TrackAnalysis | null, t: Transition, technique?: string | null, bars?: number | null, style?: string | null): MixPlan {
-  const tech = (TECHS.includes(technique as MixTechnique) ? technique : t.technique === "quick cut" ? "quick cut" : t.technique ?? "phrase blend") as MixTechnique;
-  const cut = tech === "quick cut" || tech === "drop swap" || tech === "slam" || tech === "brake" || tech === "spinback";
-  const L = ([4, 8, 16, 32].includes(bars ?? 0) ? bars : Math.max(4, Math.min(32, t.overlap_bars || 16))) as 4 | 8 | 16 | 32;
+export function generateMixPlan(folder: string, a: Track, aAn: TrackAnalysis | null, b: Track, bAn: TrackAnalysis | null, t: Transition, technique?: string | null, bars?: number | null, style?: string | null, swap?: string | null): MixPlan {
+  const key = a.id + b.id;
+  const st = mockStyle(technique ?? t.technique ?? "phrase blend", key, style) as ChillStyle;
+  const cut = st === "quick cut";
+  const L = (st === "double drop" ? 16 : [4, 8, 16, 32].includes(bars ?? 0) ? bars : 16) as 4 | 8 | 16 | 32;
   const n = cut ? 0 : L * 4; // blend length in beats
   const aBpm = aAn?.bpm ?? a.bpm;
   const bBpm = bAn?.bpm ?? b.bpm;
@@ -72,83 +68,56 @@ export function generateMixPlan(folder: string, a: Track, aAn: TrackAnalysis | n
   const inS = t.in_start_s ?? bAn?.first_downbeat_s ?? 0;
   const start = -32;
   const end = Math.max(n, 16) + 32;
-  const ramp = Math.max(64, n);
-  const tempo = [kf(start, aBpm, "hold"), kf(0, aBpm, "ease"), kf(ramp, bBpm, "linear")];
-  const half = Math.round(n / 2 / 4) * 4;
-  const markers: MixMarker[] = [{ beat: 0, label: "B in" }];
+  const tempo = Math.abs(aBpm - bBpm) > 0.05 ? [kf(start, aBpm, "hold"), kf(n, aBpm, "ease"), kf(n + 64, bBpm, "hold")] : [kf(start, aBpm, "hold")];
+  const half = n / 2;
+  const kind: SwapKind = SWAPS.includes(swap as SwapKind) ? (swap as SwapKind) : st === "acapella" ? "hard" : SWAPS[hash(key, 3) % 3];
+  const markers: MixMarker[] = [{ beat: 0, label: cut ? "cut" : "B in" }];
   const notes: string[] = [];
   let A: DeckPlan;
   let B: DeckPlan;
-  switch (tech) {
-    case "filter sweep":
-      A = deck(a, aAn, out, start, n, { volume: [kf(0, 1, "linear"), kf(n - 4, 1, "ease"), kf(n, 0)], filter: [kf(0, 0, "ease"), kf(n, 0.85)], reverb_send: [kf(n - 8, 0, "linear"), kf(n, 0.5)] });
-      B = deck(b, bAn, inS, 0, end, { volume: [kf(0, 0.0, "ease"), kf(8, 0.9, "linear"), kf(half, 1)], filter: [kf(0, -0.85, "ease"), kf(n, 0)] });
-      notes.push(`Open a high-pass on A over ${L} bars while B's low-pass opens — the two swap places in the spectrum.`);
-      markers.push({ beat: n, label: "A out" });
-      break;
-    case "echo out":
-      A = deck(a, aAn, out, start, n, { volume: [kf(0, 1, "hold"), kf(n, 0)], echo_send: [kf(n - 4, 0, "hold"), kf(n - 1, 1, "hold"), kf(n + 4, 0)], echo_feedback: [kf(0, 0.6)] });
-      B = deck(b, bAn, inS, 0, end, { volume: [kf(0, 0.6, "linear"), kf(n, 1)], eq_low: [kf(0, -30, "hold"), kf(n, 0)] });
-      markers.push({ beat: n - 1, label: "echo throw" }, { beat: n, label: "A out" });
-      notes.push(`Ride B in under A with its lows cut, throw A's last beat into a dotted-8th echo and pull A's fader on the 1.`);
-      break;
-    case "loop roll": {
-      const loops: DeckLoop[] = [
-        { start_beat: n - 16, end_beat: n - 8, source_beat: n - 16, length_beats: 4 },
-        { start_beat: n - 8, end_beat: n - 4, source_beat: n - 8, length_beats: 2 },
-        { start_beat: n - 4, end_beat: n, source_beat: n - 4, length_beats: 1 },
-      ];
-      A = deck(a, aAn, out, start, n, { volume: [kf(0, 1, "hold"), kf(n, 0)], filter: [kf(n - 16, 0, "ease"), kf(n, 0.6)], echo_send: [kf(n - 2, 0, "linear"), kf(n, 0.8, "hold"), kf(n + 4, 0)] }, loops);
-      B = deck(b, bAn, inS, 0, end, { volume: [kf(0, 0, "ease"), kf(n - 16, 0.8, "linear"), kf(n, 1)], eq_low: [kf(0, -30, "hold"), kf(n, 0)] });
-      markers.push({ beat: n - 16, label: "loop" }, { beat: n, label: "A out" });
-      notes.push("Roll A's last phrase down 4 → 2 → 1 beat loops with a rising high-pass, then drop B's bass on the 1.");
-      break;
+  if (cut) {
+    A = deck(a, aAn, out, start, 0, { volume: [kf(-4, 1, "hold"), kf(0, 0, "hold")] });
+    B = deck(b, bAn, inS, 0, end, {});
+    notes.push("Clean cut on the 1 at the phrase into B, no FX.");
+  } else if (st === "double drop") {
+    A = deck(a, aAn, out, start, n, { eq_low: [kf(30, 0), kf(31, -30, "hold"), kf(32, 0, "hold"), kf(48, 0), kf(49, -30, "hold")], eq_mid: [kf(48, 0, "ease"), kf(64, -12, "hold")], volume: [kf(56, 1, "ease"), kf(64, 0, "hold")] });
+    B = deck(b, bAn, inS, 0, end, { volume: [kf(0, 0, "ease"), kf(24, 0.8), kf(48, 1, "hold")], eq_low: [kf(0, -30, "hold"), kf(48, -30), kf(49, 0, "hold")] });
+    markers.push({ beat: 32, label: "double drop" }, { beat: 48, label: "bass swap" });
+    notes.push("Double drop: B comes in under A's build, both drop together on the 1, the bass goes to B 4 bars later.");
+  } else {
+    const sw = swapLanes(kind, half);
+    if (st === "filter fade") {
+      A = deck(a, aAn, out, start, n, { eq_low: sw.a, filter: [kf(n / 4, 0, "ease"), kf(n, 0.6, "hold")], volume: [kf(n - n / 8, 1, "ease"), kf(n, 0, "hold")] });
+      B = deck(b, bAn, inS, 0, end, { eq_low: sw.b, volume: [kf(0, 0, "ease"), kf(n / 4, 1, "hold")], filter: [kf(0, -0.7, "ease"), kf(0.75 * n, 0, "hold")] });
+      notes.push(`${L}-bar filter fade: B rises out of a closed low-pass while A slides up into a high-pass; the bass still changes hands.`);
+    } else {
+      const rest = n - half;
+      const aLanes: Partial<Record<LaneId, Keyframe[]>> = { eq_low: sw.a, eq_mid: [kf(half + rest / 4, 0, "ease"), kf(half + 0.625 * rest, -30, "hold")], eq_high: [kf(n - rest / 2, 0, "ease"), kf(n, -30, "hold")], volume: [kf(n - rest / 4, 1, "ease"), kf(n, 0, "hold")], filter: [kf(n - rest / 2, 0, "ease"), kf(n, 0.45, "hold")] };
+      if (st === "acapella") {
+        Object.assign(aLanes, { instrumental: [kf(half - 0.5, 1, "ease"), kf(half, 0, "hold")], vocals: [kf(half + 21, 1, "ease"), kf(half + 22, 0, "hold")], eq_mid: [kf(0, 0)], eq_high: [kf(0, 0)], filter: [kf(0, 0)], volume: [kf(half + 22, 1, "ease"), kf(half + 23, 0, "hold")] });
+        markers.push({ beat: half, label: "acapella" });
+      }
+      A = deck(a, aAn, out, start, n, aLanes);
+      B = deck(b, bAn, inS, 0, end, { eq_low: sw.b, eq_high: [kf(0, -30, "ease"), kf(n / 4, 0, "hold")], eq_mid: [kf(half / 2, -30, "ease"), kf(half, 0, "hold")] });
+      notes.push(st === "acapella"
+        ? `${L}-bar acapella blend: on the 1 of bar ${half / 4 + 1} A's beat drops out and its vocal rides over B's until the line ends.`
+        : `${L}-bar phrase mix: B's highs open first, then its mids, a ${kind} bass swap on bar ${half / 4 + 1}, then A's mids and highs leave under a touch of high-pass.`);
     }
-    case "brake":
-    case "spinback": {
-      const n0 = tech === "brake" ? 4 : 2;
-      A = deck(a, aAn, out, start, 0, { reverb_send: [kf(-n0, 0, "linear"), kf(-0.5, tech === "brake" ? 0.45 : 0.45, "hold"), kf(0.5, 0)], filter: tech === "spinback" ? [kf(-8, 0, "ease"), kf(-2, 0.25, "hold")] : undefined });
-      A.fx = [{ kind: tech, beat: -n0, beats: n0 }];
-      B = deck(b, bAn, inS, 0, end, {});
-      markers.push({ beat: -n0, label: tech }, { beat: 0, label: "cut" });
-      notes.push(tech === "brake" ? "Brake: A powers down like a turntable switched off over its last bar; B starts on the 1." : "Spinback: A is spun back on its last 2 beats into a big reverb wash, and B slams in on the 1.");
-      break;
-    }
-    case "quick cut":
-    case "drop swap":
-    case "slam": {
-      A = deck(a, aAn, out, start, 0, { echo_send: [kf(-2, 0, "linear"), kf(0, 0.45, "hold"), kf(4, 0)], filter: tech === "quick cut" ? undefined : [kf(tech === "slam" ? -16 : -8, 0, "ease"), kf(0, tech === "slam" ? 0.45 : 0.35)], eq_low: tech === "quick cut" ? undefined : [kf(-2, 0, "linear"), kf(-1, -30, "hold")] });
-      B = deck(b, bAn, inS, 0, end, {});
-      markers.push({ beat: -2, label: "echo throw" }, { beat: 0, label: "cut" });
-      notes.push(tech === "slam" ? "Slam: a high-pass riser, A's bass out for its last beat, an echo throw, and B's drop on the 1." : tech === "drop swap" ? "Drop swap: A's build cuts straight into B's drop on the 1." : "Quick cut on the 1, A's last beats in a short echo.");
-      break;
-    }
-    default: {
-      // long blend / phrase blend / bass swap: B eases in, the bass swaps on the 1, A eases out (no FX: the style adds them)
-      const swap = tech === "bass swap" ? Math.min(n, (t.swap_bar ?? L / 2 + 1) * 4 - 4) : half;
-      A = deck(a, aAn, out, start, n, {
-        volume: [kf(0, 1, "linear"), kf(n - Math.max(8, (3 * n) / 8), 1, "ease"), kf(n, 0)],
-        eq_low: [kf(swap, 0, "hold"), kf(swap, -30)],
-        eq_high: [kf(half, 0, "linear"), kf(n, -10)],
-        filter: [kf(n / 4, 0, "ease"), kf(n, 0.25, "hold")],
-      });
-      B = deck(b, bAn, inS, 0, end, { volume: [kf(0, 0, "ease"), kf(Math.max(4, half), 1)], eq_low: [kf(0, -30, "hold"), kf(swap, 0)], eq_high: [kf(0, -12, "ease"), kf(half, 0)] });
-      markers.push({ beat: swap, label: "bass swap" }, { beat: n, label: "A out" });
-      notes.push(`${L}-bar ${tech}: bring B in on the phrase with its lows cut, swap the bass on bar ${swap / 4 + 1}, ease A out by bar ${L + 1}.`);
-    }
+    markers.push({ beat: half, label: "bass swap" }, { beat: n, label: "A out" });
   }
-  if (Math.abs(aBpm - bBpm) > 0.05) {
-    markers.push({ beat: 0, label: "tempo ramp" });
-    notes.push(`Master tempo eases from ${aBpm.toFixed(1)} to ${bBpm.toFixed(1)} BPM over ${ramp / 4} bars (key lock on).`);
+  if (tempo.length > 1) {
+    markers.push({ beat: n, label: "tempo ramp" });
+    notes.push(`The tempo glides from ${aBpm.toFixed(1)} to ${bBpm.toFixed(1)} BPM over 16 bars once A is out (key lock on).`);
   }
   notes.push(`B starts at ${fmt(inS)} in its file; A's ${fmt(out)} lands on master beat 0.`);
+  const split = hash(key, 5) % 4 !== 0;
   return {
-    version: 1,
+    version: 4,
     folder,
     from_id: a.id,
     to_id: b.id,
-    technique: tech,
-    bars: L,
+    technique: (cut ? "quick cut" : st === "double drop" ? "double drop" : st === "filter fade" ? "filter sweep" : "bass swap") as MixTechnique,
+    bars: cut ? 4 : L,
     key_lock: true,
     window: { start_beat: start, end_beat: end },
     tempo,
@@ -157,8 +126,10 @@ export function generateMixPlan(folder: string, a: Track, aAn: TrackAnalysis | n
     markers: markers.sort((x, y) => x.beat - y.beat),
     notes,
     edited: false,
-    style: mockStyle(tech, a.id + b.id, style),
-    style_fit: mockFit(tech, mockStyle(tech, a.id + b.id, style), a.id + b.id),
+    style: st,
+    style_fit: mockFit(st, key),
+    swap_kind: cut || st === "double drop" ? null : kind,
+    vocal_stems: { a: split, b: split },
   };
 }
 

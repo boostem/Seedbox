@@ -187,6 +187,7 @@ class SetlistService:
         """Setlist (types.ts): its crates as blocks of set tracks, and the crate-to-crate links between them."""
         data = self._load(sid)
         blocks, seen, total_s = [], set(), 0.0
+        wanted: list[tuple[Path, list[SetFile]]] = []  # an open setlist's songs are split first, in play order
         for folder in data["crates"]:
             found = self._crate(folder)
             if found is None:
@@ -196,6 +197,7 @@ class SetlistService:
             files = [f for f in files if f.track.id not in seen]
             seen.update(f.track.id for f in files)
             _an, states = self.crates._analyses(seed_dir, files, budget_s=1.0)
+            wanted.append((seed_dir, files))
             tracks = []
             for n, f in enumerate(files, 1):
                 tracks.append({
@@ -207,6 +209,8 @@ class SetlistService:
                 total_s += f.track.duration_s or 0
             blocks.append({"folder": seed_dir.name, "seed": track_json(library.load_crate_seed(seed_dir)),
                            "missing": False, "tracks": tracks, "_files": files, "_dir": seed_dir})
+        for seed_dir, files in reversed(wanted):
+            self.crates.want_stems(seed_dir, files, front=True)
         links = []
         live = [b for b in blocks if b["tracks"]]
         for x, y in zip(live, live[1:]):

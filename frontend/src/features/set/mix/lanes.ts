@@ -2,7 +2,7 @@
  * MixPlan model helpers (mirrors musicreco/mixplan.py): lane metadata (range, colour, snapping, formatting),
  * keyframe interpolation, master beat → deck file time (loops honoured), and render-audio time ↔ master beat.
  */
-import type { BlendStyle, Curve, DeckPlan, Keyframe, LaneId, MixPlan, MixRender, MixStyle, MixTechnique } from "@/api/types";
+import type { BlendStyle, ChillStyle, Curve, DeckPlan, Keyframe, LaneId, MixPlan, MixRender, MixStyle, MixTechnique, SwapKind } from "@/api/types";
 import { LANE_RANGES } from "@/api/types";
 
 export type DeckId = "a" | "b";
@@ -40,6 +40,13 @@ export const LANES: LaneMeta[] = [
     bipolar: true,
     fmt: (v) => (Math.abs(v) < 0.005 ? "off" : v < 0 ? `LPF ${Math.round(-v * 100)}%` : `HPF ${Math.round(v * 100)}%`),
   },
+  // the deck's vocal stem and everything else (only act once the track's vocals are split)
+  { id: "vocals", label: "Vocals", short: "VOX", color: "var(--color-accent)", step: 0.05, fine: 0.01, neutral: 1, fmt: (v) => (v <= 0.005 ? "out" : pct(v)) },
+  { id: "instrumental", label: "Instrumental", short: "INST", color: "var(--color-move-relative)", step: 0.05, fine: 0.01, neutral: 1, fmt: (v) => (v <= 0.005 ? "out" : pct(v)) },
+];
+
+/** The FX planner's send lanes: off in chill mixes, never shown in the editor (kept so older plans still type-check). */
+const FX_LANES: LaneMeta[] = [
   { id: "echo_send", label: "Echo send", short: "ECHO", color: "var(--color-move-boost)", step: 0.05, fine: 0.01, neutral: 0, fmt: pct },
   { id: "echo_feedback", label: "Echo feedback", short: "FB", color: "var(--color-move-boost)", step: 0.05, fine: 0.01, neutral: 0.5, fmt: pct },
   { id: "reverb_send", label: "Reverb send", short: "VERB", color: "var(--color-ok)", step: 0.05, fine: 0.01, neutral: 0, fmt: pct },
@@ -47,7 +54,16 @@ export const LANES: LaneMeta[] = [
 
 export const TEMPO_META: LaneMeta = { id: "tempo", label: "Tempo", short: "BPM", color: "var(--color-warn)", step: 0.1, fine: 0.01, neutral: 120, fmt: (v) => `${v.toFixed(1)} BPM` };
 
-export const LANE_META: Record<LaneId | "tempo", LaneMeta> = Object.fromEntries([...LANES, TEMPO_META].map((m) => [m.id, m])) as Record<LaneId | "tempo", LaneMeta>;
+export const LANE_META: Record<LaneId | "tempo", LaneMeta> = Object.fromEntries([...LANES, ...FX_LANES, TEMPO_META].map((m) => [m.id, m])) as Record<LaneId | "tempo", LaneMeta>;
+
+/** True when a (saved) plan still uses the FX planner's echo / reverb sends or turntable FX. */
+export function usesFx(plan: MixPlan): boolean {
+  return (["a", "b"] as const).some((d) => {
+    const deck = plan[d];
+    if (deck.fx?.length) return true;
+    return (["echo_send", "reverb_send"] as const).some((l) => (deck.lanes[l] ?? []).some((k) => k.value > 0.001));
+  });
+}
 
 /** [min, max] of a lane; the tempo range is derived from the plan (±6 BPM around its keyframes). */
 export function laneRange(key: LaneKey, plan: MixPlan): [number, number] {
@@ -177,14 +193,32 @@ export function fitLabel(style: MixStyle, fit: number | undefined): string | nul
   return "weak";
 }
 
+/** The chill styles (the only ones the planner picks or offers), the default first, with what each one does. */
+export const CHILL_STYLES: { id: ChillStyle; hint: string }[] = [
+  { id: "phrase mix", hint: "16 bars of EQ: B's highs come in first, then its mids, the bass swaps halfway, then A's mids and highs leave under a touch of high-pass." },
+  { id: "acapella", hint: "A's beat drops out at the bass swap and its vocal rides over B's until the line ends. Needs A's vocals split." },
+  { id: "filter fade", hint: "B rises out of a closed low-pass while A slides up into a high-pass; the bass still swaps." },
+  { id: "double drop", hint: "Both drops land on the same 1 with B's bass held back, then the bass goes to B. EQ only." },
+  { id: "quick cut", hint: "A clean cut on the 1 of a phrase, no FX: for songs that can't blend." },
+];
+export const isChillStyle = (s: MixStyle): s is ChillStyle => CHILL_STYLES.some((c) => c.id === s);
+/** The styles a bass swap choice applies to. */
+export const SWAP_STYLES: readonly MixStyle[] = ["phrase mix", "filter fade"];
+
+/** How the lows change hands in a chill blend. */
+export const SWAP_OPTIONS: { id: SwapKind; label: string; hint: string }[] = [
+  { id: "hard", label: "Hard swap", hint: "A's bass cuts and B's lands on the same 1: punchy, never muddy." },
+  { id: "quick", label: "Quick swap", hint: "The lows cross over during one bar: softer than a hard cut, still clean." },
+  { id: "slow", label: "Slow blend", hint: "The lows crossfade over 4 bars: smoothest, best when one side's low end is soft." },
+];
+
 export const STYLE_HINTS: Record<MixStyle, string> = {
   ...(Object.fromEntries(BLEND_STYLES.map((s) => [s.id, s.hint])) as Record<BlendStyle, string>),
+  ...(Object.fromEntries(CHILL_STYLES.map((s) => [s.id, s.hint])) as Record<ChillStyle, string>),
   "filter sweep": "A rides a high-pass sweep out while B's low-pass opens: hides a key change.",
   "loop roll": "Only when you pick it: A loops and rolls 8 → 4 → 2 → 1 → ½ beat into the 1 where B's bass drops in.",
-  "double drop": "Both drops land on the same 1, then the bass goes to B.",
   "echo out": "A's last beats fly off into an echo and B starts on the 1.",
   slam: "A high-pass riser, A's bass out for a beat, and B slams in on the 1.",
-  "quick cut": "A clean cut into B on the 1, A's last beats in a short echo.",
   "drop swap": "A's build cuts straight into B's drop.",
   brake: "A powers down like a turntable switched off; B starts on the 1.",
   spinback: "A is spun back and B lands on the 1: hides a big tempo jump.",

@@ -15,7 +15,10 @@ a phrase shows up as phrase_offset != 0 (e.g. 7: the first full bar is the 2nd b
 ends where the music does (a quiet decay tail is excluded). An intro/outro of 0 bars means the track starts/ends
 full-on; its drums_only/has_vocals then describe the first/last 8 bars. vocal_per_bar is a heuristic (harmonic,
 pitch-fluctuating 300 Hz-3.4 kHz energy): synth leads/arps can read as vocals, spoken or heavily chopped vocals
-can be missed.
+can be missed (once a track's vocal stem is split, musicreco.stems replaces it with the stem's own activity).
+kick_per_bar is the kick's presence (0-1, beat-rate low-band pulses on the track's kick phase); bass_per_bar is how
+much the low end fills the gaps between the kicks (0 = kick-only lows, 1 = a rolling bassline or a long sub that
+never lets go; 0 where the bar has no real low end).
 """
 
 from __future__ import annotations
@@ -38,7 +41,7 @@ from .paths import ffmpeg_path
 
 log = logging.getLogger(__name__)
 
-ANALYSIS_VERSION = 4  # bump whenever the algorithm or output changes: older cache entries are recomputed
+ANALYSIS_VERSION = 5  # bump whenever the algorithm or output changes: older cache entries are recomputed
 SR = 22050
 DECODE_TIMEOUT_S = 300
 MIN_DURATION_S = 8.0
@@ -465,6 +468,9 @@ def _analyze_samples(x: np.ndarray, sr: int, bpm_hint: float | None, track_id: s
     e_db, vocal_bar = feats["e_db"], feats["vocal"]
     energy_bar = _db_to_unit(e_db, float(np.percentile(e_db, 95)), 18.0)
     low_bar = _db_to_unit(feats["low_db"], float(np.percentile(feats["low_db"], 95)), 24.0)
+    kick_bar = np.clip(feats["kick"], 0.0, 1.0)
+    # between-kick low level vs the bar's whole low level: -15 dB (kick-only) .. -3 dB (the bass never lets go)
+    bass_bar = np.clip((feats["bass_db"] - feats["low_db"] + 15.0) / 12.0, 0.0, 1.0) * (low_bar >= 0.2)
 
     def t(bar: int) -> float:
         return round(min(first_db + bar * bar_s, duration), 3)
@@ -488,6 +494,8 @@ def _analyze_samples(x: np.ndarray, sr: int, bpm_hint: float | None, track_id: s
         "energy_per_bar": _r(energy_bar),
         "low_per_bar": _r(low_bar),
         "vocal_per_bar": _r(vocal_bar),
+        "kick_per_bar": _r(kick_bar),
+        "bass_per_bar": _r(bass_bar),
         "sections": sec_out,
         "intro": intro,
         "outro": outro,

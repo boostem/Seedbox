@@ -31,19 +31,28 @@ Other flags:
 
 ### Transitions, full mixes and setlists
 
-- **Transitions you can hear.** Every pair in the set builder has a rendered transition with editable automation
-  (fader, 3-band EQ, filter, echo, reverb, loops, tempo). Most are **phrase mixes**: B eases in and A eases out over
-  whole phrases with the bass swapped on the 1, like most DJ mixes. Where a pair suits something flashier it gets it:
-  a **vocal throw** when A sings out over B's instrumental, a reverb **swell** for a pad intro, a **double drop**
-  when two drops line up, a **brake** into a quiet intro, a **spinback** over a big tempo jump, and more. Each is the
-  best fit for its two songs, and no flashy style runs more than three times in a row. Every track plays straight
-  through (nothing is looped), and when two vocals would clash the outgoing one is ducked and thrown into the echo.
-  Loop rolls only happen if you pick *Loop roll* or the *Roll* style in the mix editor.
-- **Presets that adapt to the songs.** The mix editor's Style menu ranks the presets for the two songs in front of
-  it ("great fit", "good fit", "won't fit") with the reason, and suggests the other strong options as one-click
-  chips. Picking a preset doesn't paste fixed settings: the echo time follows the tempo, the echo's level follows how
-  loud B comes in (B's mids dip so the repeats cut through), its repeats ring out before B's next vocal or drop,
-  throws land on A's last sung word, and swells, washes and filter climbs are sized to the intro, ending and blend.
+- **Chill mixes.** Every pair in the set builder has a rendered transition with editable automation (fader, 3-band
+  EQ, filter, vocals, instrumental, tempo). Most are **phrase mixes**: a 16-bar blend done with the EQ alone. B's
+  fader comes up with its EQ shut, its highs (the hats) open first, then its mids. The bass changes hands halfway.
+  When both songs have steady kicks and tight bass it's a hard swap on the 1. A soft low end gets a slow 4-bar
+  blend, and a long rolling bassline or a broken beat gets a quick 1-bar swap. Then A's mids and highs leave under
+  a touch of high-pass. There is no echo, no reverb and no loop rolls.
+- **Vocal stems.** Each song's vocals are split from the rest by a RoFormer model, in the background. Songs you're
+  using go first: an open transition, a setlist or a set mix. With the stems:
+  - Two vocals never sound at once: the outgoing vocal is muted while A plays on as an instrumental.
+  - When A's clean ending is too short for a 16-bar blend, its last 8 bars repeat under B with the vocal taken out of
+    the repeat.
+  - Where it really fits (A singing across the swap, keys that sit together), A's vocal rides over B's beat as an
+    **acapella**.
+
+  The model (about 200 MB) downloads the first time it's needed. Until a song is split, vocal clashes are handled by
+  ducking A's mids.
+- **Other styles, only when the songs need them.** A **filter fade** for two full arrangements or keys a step apart,
+  a **double drop** (EQ only) when two drops line up, and a clean **quick cut** on the phrase when the tempos are too
+  far apart to glide. Clashing keys get an 8-bar blend with A's melody and vocal out early. Tempo gaps up to 12%
+  glide across the blend with key lock. The Style menu ranks these for the two songs in front of it, and *Bass swap*
+  lets you pick hard, quick or slow yourself. The echo, reverb and turntable styles from earlier versions are
+  switched off (`SEEDBOX_MIX_MODE=fx` brings that planner back).
 - **Full mix.** *Full mix* on the set builder renders the whole set as one continuous MP3 (320 kbps) using every
   transition exactly as planned (saved edits included), with tempo moves spread across each track so the set flows.
   It lands in `<crates folder>/Mixes/<name>/` with a `.cue` sheet, a `.txt` tracklist and ID3 chapters. Rendering

@@ -2,7 +2,9 @@
 with DJ-mixer EQ, filter, echo and reverb, summed, levelled, limited and encoded to AAC.
 
 Signal flow per deck: decode (ffmpeg, stereo) -> source audio for the window in master-beat order (loops spliced at
-beat-accurate seams with 5 ms equal-power crossfades) -> Rubber Band time stretch (key lock) driven by the master
+beat-accurate seams with 5 ms equal-power crossfades) -> stem balance when the deck's vocals / instrumental lanes move
+and its vocal stem is split (instrumental * g_i + vocals * g_v, with instrumental = track - vocals: both at 1 is the
+original track sample for sample) -> Rubber Band time stretch (key lock) driven by the master
 tempo curve, then a sub-sample timing correction (a pilot click track stretched with the same ratios measures where
 every source sample actually landed; a 32-tap windowed-sinc warp moves it to the exact master time) -> auto gain to a
 common loudness -> deck FX (turntable brake / spinback: varispeed reads of the deck) -> bipolar 24 dB/oct resonant
@@ -33,16 +35,19 @@ from scipy import ndimage, signal
 
 from .paths import ffmpeg_path
 
-RENDER_VERSION = 3  # bump whenever the output for the same plan + files changes (invalidates cached renders)
+RENDER_VERSION = 4  # bump whenever the output for the same plan + files changes (invalidates cached renders)
 SR = 44100
 
-LANES = ("volume", "eq_low", "eq_mid", "eq_high", "filter", "echo_send", "echo_feedback", "reverb_send")
+LANES = ("volume", "eq_low", "eq_mid", "eq_high", "filter", "vocals", "instrumental", "echo_send", "echo_feedback",
+         "reverb_send")
+STEM_LANES = ("vocals", "instrumental")
 LANE_RANGES: dict[str, tuple[float, float]] = {
     "volume": (0.0, 1.0), "eq_low": (-30.0, 6.0), "eq_mid": (-30.0, 6.0), "eq_high": (-30.0, 6.0),
-    "filter": (-1.0, 1.0), "echo_send": (0.0, 1.0), "echo_feedback": (0.0, 0.95), "reverb_send": (0.0, 1.0),
+    "filter": (-1.0, 1.0), "vocals": (0.0, 1.0), "instrumental": (0.0, 1.0), "echo_send": (0.0, 1.0),
+    "echo_feedback": (0.0, 0.95), "reverb_send": (0.0, 1.0),
 }
-LANE_DEFAULTS = {"volume": 1.0, "eq_low": 0.0, "eq_mid": 0.0, "eq_high": 0.0, "filter": 0.0, "echo_send": 0.0,
-                 "echo_feedback": 0.5, "reverb_send": 0.0}
+LANE_DEFAULTS = {"volume": 1.0, "eq_low": 0.0, "eq_mid": 0.0, "eq_high": 0.0, "filter": 0.0, "vocals": 1.0,
+                 "instrumental": 1.0, "echo_send": 0.0, "echo_feedback": 0.5, "reverb_send": 0.0}
 CURVES = ("linear", "hold", "ease")
 
 DECODE_TIMEOUT_S = 300
@@ -218,14 +223,25 @@ def _file_identity(path: Path) -> list:
         return [str(p), None, None]
 
 
-def plan_hash(plan: dict, a_path: Path, b_path: Path) -> str:
+def uses_stems(deck: dict) -> bool:
+    """The deck's vocals / instrumental lanes move away from 1 somewhere (its vocal stem matters for the render)."""
+    lanes = deck.get("lanes") if isinstance(deck.get("lanes"), dict) else {}
+    return any(isinstance(k, dict) and abs(float(k.get("value", 1.0)) - 1.0) > 1e-6
+               for lane in STEM_LANES for k in (lanes.get(lane) or []))
+
+
+def plan_hash(plan: dict, a_path: Path, b_path: Path, stems: dict[str, Path | None] | None = None) -> str:
     """Stable cache key: the normalised audio-relevant plan (notes, markers, edited... ignored) + both files' path,
-    size and mtime + RENDER_VERSION. 24 hex chars."""
+    size and mtime + the vocal stems a deck's lanes use + RENDER_VERSION. 24 hex chars."""
     try:
         norm: object = _round_floats(_normalise(plan))
     except ValueError:
         norm = {"invalid": json.dumps(plan, sort_keys=True, default=str)}
     payload = {"v": RENDER_VERSION, "plan": norm, "a": _file_identity(a_path), "b": _file_identity(b_path)}
+    for name in ("a", "b"):
+        st = (stems or {}).get(name)
+        if st is not None and isinstance(plan.get(name), dict) and uses_stems(plan[name]):
+            payload[f"{name}_vocals"] = _file_identity(Path(st))
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:24]
 
 
@@ -429,6 +445,24 @@ def _source(audio: np.ndarray, deck: dict, b0: float, b1: float, sr: int) -> tup
             out[:, i0 - seam:i0] = out[:, i0 - seam:i0] * f_out + take(f0 - seam, seam) * f_in
         prev_end_file = f0 + (i1 - i0)
     return out, warn
+
+
+def stem_balance(src: np.ndarray, voc: np.ndarray, lanes: dict, b0: float, per_beat: float, sr: int) -> np.ndarray:
+    """A deck's source audio (master beat b0 + j / per_beat at sample j, see _source) with its stems rebalanced from
+    the vocals / instrumental lanes: g_i * (track - vocals) + g_v * vocals. `voc` is the vocal stem read through the
+    same _source call; steps are softened like any lane (~10 ms)."""
+    n = src.shape[1]
+    j = np.arange(0, n + CTL, CTL, dtype=float)
+    beats = b0 + j / per_beat
+    w = max(1, int(round(STEP_RAMP_S * sr / CTL)))
+    out = []
+    for lane in ("vocals", "instrumental"):
+        v = np.asarray(lane_value(lanes[lane], beats), dtype=float)
+        if w > 1 and np.ptp(v) > 0:
+            v = ndimage.uniform_filter1d(v, w, mode="nearest")
+        out.append(np.interp(np.arange(n), j, v).astype(np.float32))
+    gv, gi = out
+    return (gi * src + (gv - gi) * voc[:, :n]).astype(np.float32)
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -746,8 +780,9 @@ def _limit(x: np.ndarray, ceiling_db: float) -> tuple[np.ndarray, float]:
 
 
 def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _Clock, w0: float, w1: float,
-                m_total: int, sr: int, key_lock: bool) -> dict | None:
-    """One deck through stretch, EQ, filter; returns its post-filter signal, fader gain and send gains."""
+                m_total: int, sr: int, key_lock: bool, vocal: np.ndarray | None = None) -> dict | None:
+    """One deck through stem balance, stretch, EQ, filter; returns its post-filter signal, fader gain and send gains.
+    `vocal`: the deck's vocal stem (same length and timing as `audio`), None when it isn't split."""
     p0, p1 = max(deck["play_from_beat"], w0), min(deck["play_to_beat"], w1)
     if p1 <= p0:
         return None
@@ -756,6 +791,13 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
     s0, s1 = p0 - 2.0, p1 + 1.0
     src, w = _source(audio, deck, s0, s1, sr)
     warn += w
+    if uses_stems(deck):
+        if vocal is None:
+            warn.append("its vocal stem isn't split yet, so its vocals / instrumental lanes are ignored")
+        else:
+            voc, _ = _source(vocal, deck, s0, s1, sr)
+            src = stem_balance(src, voc, deck["lanes"], s0, sr * spb, sr)
+            del voc
     ft = np.asarray(deck_time(deck, np.linspace(p0, p1, 64)), dtype=float)
     if ft.min() < -0.05 or ft.max() > audio.shape[1] / sr + 0.05:
         warn.append("plays outside its audio file (silence there)")
@@ -813,9 +855,25 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
     return out
 
 
+def _vocal_stem(path: Path | None, audio: np.ndarray, sr: int) -> np.ndarray | None:
+    """A deck's vocal stem decoded and fitted to its track's length (None when there is none or it can't be read)."""
+    if path is None or not Path(path).is_file():
+        return None
+    try:
+        voc = decode_stereo(Path(path), sr)
+    except ValueError:
+        return None
+    n = audio.shape[1]
+    if voc.shape[1] < n:
+        voc = np.pad(voc, ((0, 0), (0, n - voc.shape[1])))
+    return np.ascontiguousarray(voc[:, :n])
+
+
 def _render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
-                  progress: Callable[[float], None] | None = None) -> dict:
-    """Everything render() does except encoding; also returns the master mix and per-deck stems (for tests)."""
+                  progress: Callable[[float], None] | None = None,
+                  stems: dict[str, Path | None] | None = None) -> dict:
+    """Everything render() does except encoding; also returns the master mix and per-deck stems (for tests).
+    `stems`: {"a": vocal stem file or None, "b": ...}."""
     def report(f: float) -> None:
         if progress is not None:
             try:
@@ -839,11 +897,13 @@ def _render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
         audios = list(pool.map(lambda p: decode_stereo(Path(p), sr), (a_path, b_path)))
         trims = [10 ** (_clamp(DECK_LUFS - _track_lufs(Path(p), au, sr), -TRIM_LIMIT_DB, TRIM_LIMIT_DB) / 20)
                  for p, au in zip((a_path, b_path), audios)]
+        vocals = [_vocal_stem((stems or {}).get(k), au, sr) if uses_stems(d) else None
+                  for k, d, au in zip(("a", "b"), decks, audios)]
         report(0.1)
-        futs = [pool.submit(_deck_stage, nm, d, au, tr, clock, w0, w1, m_total, sr, norm["key_lock"])
-                for nm, d, au, tr in zip(("A", "B"), decks, audios, trims)]
+        futs = [pool.submit(_deck_stage, nm, d, au, tr, clock, w0, w1, m_total, sr, norm["key_lock"], vo)
+                for nm, d, au, tr, vo in zip(("A", "B"), decks, audios, trims, vocals)]
         stages = [f.result() for f in futs]
-    del audios
+    del audios, vocals
     report(0.7)
     mix = np.zeros((2, m_total), np.float32)
     stems: dict[str, np.ndarray] = {}
@@ -907,10 +967,11 @@ def _render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
 
 
 def render(plan: dict, a_path: Path, b_path: Path, out_path: Path, sr: int = SR,
-           progress: Callable[[float], None] | None = None) -> dict:
-    """Render `plan` (deck a from a_path, deck b from b_path) to an AAC m4a at out_path. Returns the MixRender
-    fields except audio_url / render_id. ValueError for an unusable plan or undecodable audio."""
-    r = _render_audio(plan, a_path, b_path, sr, progress)
+           progress: Callable[[float], None] | None = None, stems: dict[str, Path | None] | None = None) -> dict:
+    """Render `plan` (deck a from a_path, deck b from b_path; `stems` = their vocal stem files, when split) to an AAC
+    m4a at out_path. Returns the MixRender fields except audio_url / render_id. ValueError for an unusable plan or
+    undecodable audio."""
+    r = _render_audio(plan, a_path, b_path, sr, progress, stems)
     encode_m4a(r["mix"], sr, Path(out_path))
     if progress is not None:
         try:

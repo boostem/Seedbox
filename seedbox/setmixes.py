@@ -236,6 +236,11 @@ class SetMixService:
             raise NotFound("the mix file is gone (moved or deleted?)")
         return p
 
+    def busy(self) -> bool:
+        """A set mix is being prepared or rendered."""
+        with self._lock:
+            return any(j.state in ("preparing", "rendering") for j in self._jobs.values())
+
     def shutdown(self) -> None:
         with self._lock:
             for j in self._jobs.values():
@@ -313,9 +318,12 @@ class SetMixService:
         if n < 2:
             raise ApiError("a set mix needs at least two tracks")
 
-        # every track analysed (front of the queue), waiting in short steps so a cancel lands quickly
+        # every track analysed (front of the queue), waiting in short steps so a cancel lands quickly; their vocals
+        # are split at the front of the stems queue too (the render uses the stems that are ready by then)
         for d in dict.fromkeys(d for d, _ in seq):
             self.crates.want_analyses(d, [f for dd, f in seq if dd == d])
+        for d, f in reversed(seq):  # in play order at the very front
+            self.crates.want_stems(d, [f], front=True)
         analyses: dict[str, dict] = {}
         deadline = time.monotonic() + ANALYSIS_WAIT_S
         for k, (d, f) in enumerate(seq):
@@ -338,7 +346,9 @@ class SetMixService:
             self._set(job, progress=0.02 + 0.02 * k / max(1, len(pairs)),
                       message=f"Planning transition {k + 1}/{len(pairs)}")
             plans.append(self.mixes.plan_pair(p, wait_s=PLAN_WAIT_S))
-        entries = [setmix.SetEntry(f.track, f.path, analyses.get(f.track.id), d.name) for d, f in seq]
+        entries = [setmix.SetEntry(f.track, f.path, analyses.get(f.track.id), d.name, self.crates.vocal_path(d, f))
+                   for d, f in seq]
+        unsplit = sum(1 for e in entries if e.vocal_path is None)
         notes: list[str] = []
         for _round in range(6):
             tl = setmix.build(entries, plans)
@@ -384,6 +394,9 @@ class SetMixService:
         finally:
             tmp.unlink(missing_ok=True)
         cue, txt = setmix.write_sidecars(r, title, final)
+        if unsplit and self.crates.stems is not None and self.crates.stems.available()[0]:
+            notes.append(f"{unsplit} of {n} songs didn't have their vocals split yet, so their transitions handle "
+                         "vocals with the EQ; render again once splitting is done for cleaner vocal handoffs")
         r["warnings"] = notes + list(r.get("warnings") or [])
         job.result = serializers.clean({**r, "audio_url": f"/api/setmix/{job.mix_id}/audio", "path": str(final),
                                         "cue_path": str(cue), "txt_path": str(txt)})

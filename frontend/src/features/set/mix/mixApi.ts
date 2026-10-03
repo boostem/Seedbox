@@ -3,7 +3,7 @@
  * `request` so errors/toasts/mock routing behave like every other call.
  */
 import { request, type RequestOptions } from "@/api/client";
-import type { MixPlan, MixRender, MixStyle, MixTechnique } from "@/api/types";
+import type { MixPlan, MixRender, MixStyle, MixTechnique, SwapKind } from "@/api/types";
 
 const enc = encodeURIComponent;
 /** `scope` is a crate folder, or "setlist:<id>" for a setlist's crate-to-crate link (folder names never hold ":"). */
@@ -13,12 +13,13 @@ const base = (scope: string, from: string, to: string) =>
     : `/api/crates/${enc(scope)}/mix/${enc(from)}/${enc(to)}`;
 
 export const mixApi = {
-  /** Saved edits when present (and no technique/bars/style given), else a freshly generated plan. */
-  plan(folder: string, from: string, to: string, gen: { technique?: MixTechnique; bars?: number; style?: MixStyle } = {}, opts?: RequestOptions): Promise<MixPlan> {
+  /** Saved edits when present (and no technique/bars/style/swap given), else a freshly generated plan. */
+  plan(folder: string, from: string, to: string, gen: { technique?: MixTechnique; bars?: number; style?: MixStyle; swap?: SwapKind } = {}, opts?: RequestOptions): Promise<MixPlan> {
     const q = new URLSearchParams();
     if (gen.technique) q.set("technique", gen.technique);
     if (gen.bars) q.set("bars", String(gen.bars));
     if (gen.style) q.set("style", gen.style);
+    if (gen.swap) q.set("swap", gen.swap);
     const qs = q.toString();
     return request<MixPlan>("GET", `${base(folder, from, to)}${qs ? `?${qs}` : ""}`, undefined, opts);
   },

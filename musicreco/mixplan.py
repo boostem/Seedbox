@@ -17,33 +17,43 @@ its last word goes into the echo. Loop rolls (8 -> 4 -> 2 -> 1 -> 1/2 beat) only
 roll" technique and the "roll" style.
 
 Every transition has a STYLE. The default is the phrase mix: B eases in and A eases out over whole phrases, the way
-most DJ mixes are built, and it can repeat as often as it suits the songs. The technical styles (vocal throw, roll
-into the drop, swell, wash, dub echo, slam, brake, spinback, double drop, ...) are each scored on how well they fit
-this pair (vocals, energy, what B lands on, keys, tempo jump), the best one wins, and in a set a technical style is
-never used more than three times in a row (plan_styles; a style used lately, or one that sounds like it, loses a
-little score, so close calls vary).
+most DJ mixes are built, and it can repeat as often as it suits the songs.
+
+Two planners share this module (MODE, env SEEDBOX_MIX_MODE). "chill", the default, shapes every transition with the
+EQ, the filter and the vocal stems alone (see "chill planner" below). "fx" is the earlier planner, kept intact but
+switched off: technical styles (vocal throw, roll into the drop, swell, wash, dub echo, slam, brake, spinback,
+double drop, ...) scored on how well they fit the pair, at most three of one in a row (plan_styles), with echo and
+reverb sends.
 """
 
 from __future__ import annotations
 
 import copy
 import math
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 
 import numpy as np
 
 from . import mixing, transitions
 from .models import Track
 
-PLAN_VERSION = 3
+PLAN_VERSION = 4
+MODE = "fx" if os.environ.get("SEEDBOX_MIX_MODE", "").strip().lower() == "fx" else "chill"
 
-LANES = ("volume", "eq_low", "eq_mid", "eq_high", "filter", "echo_send", "echo_feedback", "reverb_send")
+# vocals / instrumental: the deck's vocal stem and the rest of the track (mix minus vocals), 0-1 each; both at 1 is
+# the original track. They only act once the track's vocals are split (musicreco.stems), else the track plays whole.
+LANES = ("volume", "eq_low", "eq_mid", "eq_high", "filter", "vocals", "instrumental", "echo_send", "echo_feedback",
+         "reverb_send")
+STEM_LANES = ("vocals", "instrumental")
+FX_LANES = ("echo_send", "echo_feedback", "reverb_send")  # the FX planner's sends (never written by the chill one)
 LANE_RANGES: dict[str, tuple[float, float]] = {
     "volume": (0.0, 1.0), "eq_low": (-30.0, 6.0), "eq_mid": (-30.0, 6.0), "eq_high": (-30.0, 6.0),
-    "filter": (-1.0, 1.0), "echo_send": (0.0, 1.0), "echo_feedback": (0.0, 0.95), "reverb_send": (0.0, 1.0),
+    "filter": (-1.0, 1.0), "vocals": (0.0, 1.0), "instrumental": (0.0, 1.0), "echo_send": (0.0, 1.0),
+    "echo_feedback": (0.0, 0.95), "reverb_send": (0.0, 1.0),
 }  # fmt: skip
 LANE_DEFAULTS: dict[str, float] = {
-    "volume": 1.0, "eq_low": 0.0, "eq_mid": 0.0, "eq_high": 0.0, "filter": 0.0,
+    "volume": 1.0, "eq_low": 0.0, "eq_mid": 0.0, "eq_high": 0.0, "filter": 0.0, "vocals": 1.0, "instrumental": 1.0,
     "echo_send": 0.0, "echo_feedback": 0.55, "reverb_send": 0.0,
 }  # fmt: skip
 CURVES = ("linear", "hold", "ease")
@@ -282,6 +292,9 @@ def validate(plan: dict) -> dict:
         "style": p["style"] if p.get("style") in STYLES
         else p["technique"] if p["technique"] in STYLES else DEFAULT_STYLE,
         "style_fit": fit,
+        "swap_kind": p["swap_kind"] if p.get("swap_kind") in SWAP_KINDS else None,
+        "vocal_stems": {d: bool((p.get("vocal_stems") or {}).get(d)) for d in ("a", "b")}
+        if isinstance(p.get("vocal_stems"), dict) else {"a": False, "b": False},
     }  # fmt: skip
 
 
@@ -317,6 +330,8 @@ class _Mix:
     tr: dict | None  # transitions.suggest output (both analysed only)
     a_dur: float
     b_dur: float
+    stems_a: bool = False  # A's vocal stem is split: vocal_per_bar is the stem's own activity, the vocals lane acts
+    stems_b: bool = False
 
 
 def _fake_grid(bpm: float, duration_s: float) -> _Grid:
@@ -352,7 +367,8 @@ def _mix(a: Track, a_an: dict | None, b: Track, b_an: dict | None, transition: d
     return _Mix(
         a=a, b=b, ga=ga, gb=gb, real_a=real_a, real_b=real_b, a_bpm=a_bpm, b_bpm=b_bpm * factor,
         b_raw_bpm=b_bpm, factor=factor, move=mixing._camelot_move(a.camelot, b.camelot), tr=tr, a_dur=a_dur,
-        b_dur=b_dur,
+        b_dur=b_dur, stems_a=real_a and (a_an or {}).get("vocal_source") == "stems",
+        stems_b=real_b and (b_an or {}).get("vocal_source") == "stems",
     )  # fmt: skip
 
 
@@ -580,7 +596,7 @@ def _double_drop_lanes(A: dict, B: dict) -> dict:
 DEFAULT_STYLE = "phrase mix"
 BLEND_STYLES = ("phrase mix", "vocal throw", "echo exit", "roll", "swell in", "wash exit", "filter wash", "dub echo")
 STYLES = (*BLEND_STYLES, "filter sweep", "loop roll", "double drop", "echo out", "slam", "quick cut", "drop swap",
-          "brake", "spinback")
+          "brake", "spinback", "acapella", "filter fade")
 _BLENDS = ("long blend", "phrase blend", "bass swap")  # the phrase-mixing family (its style is its flavour)
 _MANUAL_ONLY = ("roll", "loop roll")  # loop-based: only when asked for
 _MAX_STREAK = 3
@@ -732,7 +748,7 @@ def _tempo(m: _Mix, end: float, cut: bool) -> _Tempo:
     if cut and abs(gap) > _CUT_JUMP_GAP:
         return _Tempo([(-1.0, a, "hold"), (0.0, b, "hold")], None, None, a,
                       f"{half}A plays at its own {a:.1f} BPM and B starts at its own {b:.1f} BPM after the cut "
-                      f"({gap * 100:+.1f}%) — the cut hides the tempo change.")
+                      f"({gap * 100:+.1f}%): the cut hides the tempo change.")
     if abs(gap) <= _SMALL_GAP:
         post = _ramp_bars(gap)
         what = "the blend" if not cut else "the cut"
@@ -742,7 +758,8 @@ def _tempo(m: _Mix, end: float, cut: bool) -> _Tempo:
     meet = a * math.sqrt(b / a)
     pre, post = _ramp_bars(meet / a - 1), _ramp_bars(b / meet - 1)
     kf = [(-4.0 * pre, a, "ease"), (0.0, meet, "hold"), (end, meet, "ease"), (end + 4 * post, b, "hold")]
-    loud = " Big tempo change — these ramps will be audible; an echo out hides it better." \
+    loud = (" Big tempo change: these ramps will be audible" + ("; an echo out hides it better." if MODE == "fx"
+                                                               else ", key lock keeps the pitch.")) \
         if abs(gap) > _MAX_BLEND_GAP else ""
     return _Tempo(kf, -4.0 * pre, end + 4 * post, meet,
                   f"{half}Tempo gap {gap * 100:+.1f}%: A drifts from {a:.1f} to {meet:.1f} BPM over the {pre} bars "
@@ -1333,6 +1350,663 @@ def _fx(raw: object, what: str) -> list[dict]:
     return sorted(out, key=lambda f: f["beat"])
 
 
+# --- chill planner ---------------------------------------------------------------------------------------------------
+#
+# MODE "chill": every transition is shaped with the EQ, the filter and, once a track's vocals are split, its vocal
+# stem; no echo, reverb, loop rolls, brakes or spinbacks. The default phrase mix runs 16 bars: B's fader is up with its
+# EQ shut, its highs open first, then its mids, the bass changes hands halfway (a hard swap on the 1, a quick 1-bar
+# swap or a slow 4-bar blend, picked from the two low ends), then A's mids and highs leave under a touch of high-pass.
+# Two vocals never sound at once (with stems the outgoing vocal is muted, without them A's mids duck). When A's clean
+# ending is too short for the blend, its last 8 bars repeat under B with the vocal taken out of the repeat. The other
+# styles only step in when the songs call for them: an acapella where A's vocal can ride over B's beat, a filter fade
+# for two full arrangements or keys a step apart, a double drop where the drops line up, and a clean cut on the
+# phrase when the two can't blend. Clashing keys get an 8-bar blend with A's melody out early. There is no variety
+# rule: the same style can run a whole set when it's what the songs want.
+
+CHILL_STYLES = ("phrase mix", "acapella", "filter fade", "double drop", "quick cut")
+SWAP_KINDS = ("hard", "quick", "slow")
+_CHILL_BARS = 16
+_CLASH_BARS = 8
+_CHILL_MAX_GAP = 0.12  # wider tempo gaps can't glide inside a blend: a clean cut on the phrase instead
+_HPF_TOUCH = 0.45  # A's high-pass by the end of a blend (~330 Hz): it thins out rather than just getting quieter
+_ROOM_DB = -4.0  # A's highs / mids dip this much while B's open, so the overlap doesn't bump up in level
+_LOOP_BARS = 8
+_MILD_KEYS = ("+2 boost", "+7 boost", "diagonal")
+_FOUR_FLOOR = 0.75  # kick_per_bar at/above this = a steady kick on every beat
+_SOFT_LOW = 0.45  # low_per_bar below this = a soft low end (blends slowly without mud)
+_LONG_BASS = 0.85  # bass_per_bar at/above this = a bassline that never lets go (808, reese): no hard cut
+_TECH_STYLE = {"filter sweep": "filter fade", "double drop": "double drop", "quick cut": "quick cut",
+               "drop swap": "quick cut", "slam": "quick cut", "brake": "quick cut", "spinback": "quick cut"}
+_SWAP_HOW = {"hard": "hard bass swap on the 1 of bar {bar}", "quick": "quick 1-bar bass swap into bar {bar}",
+             "slow": "slow 4-bar bass blend around bar {bar}"}  # fmt: skip
+_SWAP_NAME = {"hard": "a hard swap on the 1", "quick": "a quick 1-bar swap", "slow": "a slow 4-bar blend"}
+
+
+@dataclass
+class _Chill:
+    style: str
+    tech: str
+    place: _Place
+    bars: int
+    sw: int = 0  # overlap bar of the bass swap: the EQ stagger turns around it
+    swap_kind: str = "hard"  # hard | quick | slow, or carry (B brings no bass yet: A's lows ride to the end)
+    swap_why: str = ""
+    key_mode: str = "normal"  # normal | mild (a step apart on the wheel) | clash
+    loop: dict | None = None  # A's repeat, a slip loop on the master timeline
+    loop_sung: bool = False  # the repeated bars have a vocal in them (taken out of the repeat when split)
+    clean_tail: int = 0  # bars of A's ending after its last vocal (loop note)
+    into_drop: bool = False  # B is cued so its drop lands where A leaves: the lows change hands there
+    acapella_end: int | None = None  # overlap bar where A's vocal line ends (acapella)
+    notes: list[str] = field(default_factory=list)
+    fit: list[_Choice] = field(default_factory=list)
+
+
+def _art(word: str) -> str:
+    return "an" if word[:1].lower() in "aeiou" else "a"
+
+
+def _key_mode(m: _Mix) -> str:
+    return "clash" if m.move == "clash" else "mild" if m.move in _MILD_KEYS else "normal"
+
+
+def _probe(m: _Mix, loop: dict | None) -> dict:
+    """A stand-in for deck A (its grid and loop) to read its bars through a repeat."""
+    return {"beat0_s": 0.0, "native_bpm": m.a_bpm, "loops": [loop] if loop else []}
+
+
+def _overlap_vocals(m: _Mix, place: _Place, loop: dict | None, strip: bool) -> tuple[list[float], list[float]]:
+    """Vocal level per overlap bar on both decks; A is read through its repeat, which is silent when `strip` (the
+    vocal is taken out of it)."""
+    probe = _probe(m, loop)
+    va, vb = [], []
+    for k in range(place.overlap):
+        ab, bb = _a_bar(m, probe, place, k), _b_bar(place, k)
+        x = m.ga.vocal[ab] if 0 <= ab < m.ga.n else 0.0
+        if strip and loop is not None and loop["start_beat"] <= 4.0 * k < loop["end_beat"]:
+            x = 0.0
+        va.append(x)
+        vb.append(m.gb.vocal[bb] if 0 <= bb < m.gb.n else 0.0)
+    return va, vb
+
+
+def _loop_place(m: _Mix, place: _Place, L: int) -> tuple[_Place, dict, bool, int] | None:
+    """When A's clean ending (after its last sung bar, on its 4-bar grid) is shorter than the blend and the blend
+    would otherwise run over A's vocals or past its end: start the blend on that clean ending and repeat A's last 8
+    bars under B until A is out. Needs a steady ending (drums all the way, no fade) and, when those 8 bars are sung,
+    A's vocal stem (the repeat drops the vocal). Returns (placement, loop, the repeat is sung, clean bars) or None."""
+    ga, gb = m.ga, m.gb
+    ON = transitions._VOCAL_ON
+    if not (m.real_a and m.real_b) or L < _LOOP_BARS:
+        return None
+    q = ga.off + (ga.end - ga.off) // 4 * 4  # A's music end on its 4-bar grid
+    if q < 2 * _LOOP_BARS:
+        return None
+    sung = [k for k in range(min(q, ga.n)) if ga.vocal[k] >= ON]
+    t0 = sung[-1] + 1 if sung else 0
+    t0 = min(q, ga.off - (-(t0 - ga.off) // 4) * 4)
+    clean = q - t0
+    if clean >= L:
+        return None
+    sung_in = sum(1 for k in range(place.a0, place.a0 + L) if 0 <= k < ga.n and ga.vocal[k] >= ON)
+    if sung_in < 2 and place.a0 + L <= ga.end:
+        return None
+    blk = (q - _LOOP_BARS, q)
+    en, lo = ga.energy[blk[0] : blk[1]], ga.low[blk[0] : blk[1]]
+    if not en or min(en) < 0.55 * max(en) or sum(lo) / len(lo) < 0.35:
+        return None
+    blk_sung = any(ga.vocal[k] >= ON for k in range(*blk))
+    if blk_sung and not m.stems_a:
+        return None
+    a0 = t0 if clean >= _LOOP_BARS else q - _LOOP_BARS
+    first = q - a0  # bars A plays before the repeat starts
+    if first >= L or place.b0 + L > gb.n:
+        return None
+    loop = {"start_beat": 4.0 * first, "end_beat": 4.0 * L, "source_beat": 4.0 * (blk[0] - a0),
+            "length_beats": 4.0 * _LOOP_BARS}
+    return _Place(a0, place.b0, L, _swap(gb, place.b0, L)), loop, blk_sung, clean
+
+
+def _base_place(m: _Mix, eng: tuple[str, _Place], L: int) -> tuple[_Place, list[str]]:
+    """The engine's / the best phrase-aligned window of L bars, not over A's breakdown before its last drop."""
+    place = _blend_place(m, L, eng)
+    place, note = _clear_a_drop(m, place)
+    return place, [note] if note else []
+
+
+def _chill_place(m: _Mix, base: _Place, L: int) -> tuple[_Place, dict | None, bool, int, bool, list[str]]:
+    """Where a chill blend of L bars goes from the base window: A's ending repeated when it's too short (see
+    _loop_place), and B cued so a drop just after the blend lands where A leaves. Returns (placement, loop, repeat
+    sung, clean tail bars, into B's drop, notes)."""
+    notes: list[str] = []
+    place = base
+    loop, sung, clean = None, False, 0
+    if (lp := _loop_place(m, place, L)) is not None:
+        place, loop, sung, clean = lp
+    place2, note = _land_on_drop(m, place, fixed_len=True)
+    if note is not None:
+        notes.append(note)
+        if loop is None:
+            place = place2
+        elif place2.b0 + L <= m.gb.n:
+            place = _Place(place.a0, place2.b0, L, None)
+    return place, loop, sung, clean, note is not None, notes
+
+
+def _swap_kind(m: _Mix, place: _Place, sw: int) -> tuple[str, str]:
+    """hard / quick / slow, from the two low ends around overlap bar `sw`: a soft low end on either side blends slowly
+    without mud; steady kicks with tight bass on both sides swap on the 1; a bassline that never lets go between the
+    kicks, or a kick that isn't on every beat, crosses over one bar so two basslines never stack for long."""
+    ga, gb = m.ga, m.gb
+    if not (m.real_a and m.real_b):
+        return "hard", "The bass swaps on the 1 (the songs aren't analysed yet, so this is the safe default)."
+    ar = (place.a0 + max(0, sw - 4), place.a0 + max(1, sw))
+    br = (place.b0 + sw, place.b0 + sw + 4)
+    a_low, b_low = _mean(ga.low, *ar), _mean(gb.low, *br)
+    if min(a_low, b_low) < _SOFT_LOW:
+        who = "A's" if a_low <= b_low else "B's"
+        return "slow", f"{who} low end is soft here, so the lows blend over 4 bars without getting muddy."
+    a_bass = _mean(ga.bass, *ar) if ga.bass else 0.0
+    b_bass = _mean(gb.bass, *br) if gb.bass else 0.0
+    if max(a_bass, b_bass) >= _LONG_BASS:
+        who = "A's" if a_bass >= b_bass else "B's"
+        return "quick", f"{who} bassline barely lets go between the kicks, so the lows cross over one bar instead of " \
+            "being chopped on the 1."
+    a_kick = _mean(ga.kick, *ar) if ga.kick else 1.0
+    b_kick = _mean(gb.kick, *br) if gb.kick else 1.0
+    if min(a_kick, b_kick) >= _FOUR_FLOOR:
+        return "hard", "Steady kicks and tight bass on both sides, so the bass swaps right on the 1."
+    who = "A's" if a_kick <= b_kick else "B's"
+    return "quick", f"{who} kick isn't on every beat, so the lows cross over one bar rather than switching on the 1."
+
+
+def _acapella_fit(m: _Mix, va: list[float], vb: list[float], sw: int) -> tuple[float, str, int | None]:
+    """(score, why, overlap bar where A's line ends): A sings across the bass swap (a line running at the swap, or
+    starting within a bar of it, that ends inside the blend at least 2 bars after the swap), the keys sit together, the
+    tempos match, A's vocal is split, and B doesn't sing before A's line is over (or B's vocal can wait: split too)."""
+    ON = transitions._VOCAL_ON
+    L = len(va)
+    if not (m.real_a and m.real_b):
+        return 0.0, "needs both songs analysed", None
+    if not m.stems_a:
+        return 0.0, "needs A's vocal stem (splitting runs in the background)", None
+    if m.move not in _GOOD_KEYS:
+        return 0.0, "the keys don't sit together, so A's vocal would clash with B's music", None
+    if abs(m.b_bpm / m.a_bpm - 1) > _SMALL_GAP:
+        return 0.0, "the tempos are too far apart for A's vocal to sit on B's beat", None
+    start = next((k for k in range(max(0, sw - 1), min(L, sw + 2)) if va[k] >= ON), None)
+    if start is None:
+        return 0.0, "A isn't singing where its beat would drop out", None
+    end = next((j for j in range(start, L) if va[j] < ON), None)
+    if end is None:
+        return 0.0, "A's vocal line runs past the end of the blend", None
+    if end - max(start, sw) < 2:
+        return 0.0, "A's line ends right at the swap", None
+    if any(vb[k] >= ON for k in range(min(L, end + 1))) and not m.stems_b:
+        return 0.0, "B sings before A's line is over (and B's vocal isn't split yet to wait)", None
+    return 0.76, f"A sings over the bass swap (to bar {end}) and the keys match: its vocal can ride over B's beat", end
+
+
+def _chill_choices(m: _Mix, place: _Place, key_mode: str, va: list[float], vb: list[float], sw: int, gap: float,
+                   can_blend: bool) -> tuple[list[_Choice], int | None]:
+    """How well each chill style fits this pair (the phrase mix is the baseline; the others need a reason), plus the
+    overlap bar where A's line ends for an acapella."""
+    ga, gb = m.ga, m.gb
+    L = place.overlap
+    dd = _double_drop_place(m)
+    dd_choice = _Choice("double drop", *((_double_drop_score(m, dd), "both drops line up in key at the same tempo")
+                                         if dd is not None else (0.0, "no pair of drops lines up in key at the same "
+                                                                       "tempo")))
+    if not can_blend:
+        why = f"the tempos are {gap * 100:.0f}% apart, too far to glide inside a blend"
+        return [_Choice("quick cut", 0.9, f"{why}: a clean cut on the phrase"), _Choice(DEFAULT_STYLE, 0.0, why),
+                _Choice("acapella", 0.0, why), _Choice("filter fade", 0.0, why), dd_choice], None
+    real = m.real_a and m.real_b
+    clean = real and ga.outro_drums and place.a0 >= ga.outro[0] and gb.intro_drums and place.b0 + L <= gb.intro[1]
+    if key_mode == "clash":
+        base = (0.62, "the keys clash, so it's a short blend with A's melody out early")
+    elif clean:
+        base = (0.68, "a clean drums-on-drums blend: nothing to hide")
+    else:
+        base = (0.62, "the smooth default: B's highs, then its mids, then the bass")
+    a_score, a_why, a_end = _acapella_fit(m, va, vb, sw)
+    a_full = real and not any(ga.perc[k] for k in range(place.a0, place.a0 + L) if 0 <= k < ga.n)
+    b_full = real and not any(gb.perc[k] for k in range(place.b0, place.b0 + L) if 0 <= k < gb.n)
+    if key_mode == "clash":
+        ff = (0.3, "the keys clash: even a filter fade would show it, a short EQ blend hides it better")
+    elif a_full and b_full:
+        ff = (0.66, "both songs are full arrangements here (no drums-only intro or outro): a filter fade melts one "
+                    "into the other")
+    elif key_mode == "mild":
+        ff = (0.64, "the keys are a step apart: the filter softens the change")
+    else:
+        ff = (0.4, "a drums-only intro or outro blends cleanly with the EQ alone")
+    return [
+        _Choice(DEFAULT_STYLE, *base),
+        _Choice("acapella", a_score, a_why),
+        _Choice("filter fade", *ff),
+        dd_choice,
+        _Choice("quick cut", 0.3, "the songs can blend, so a cut would be abrupt"),
+    ], a_end
+
+
+def _decide_chill(m: _Mix, eng: tuple[str, _Place], technique: str | None, bars: int | None, style: str | None,
+                  swap: str | None) -> _Chill:
+    """Style, placement, bass swap and key handling for this pair: the best fit for the two songs, or what was asked
+    for when it's possible here."""
+    e_tech, _e = eng
+    if style is not None and style not in STYLES:
+        raise ValueError(f"unknown style {style!r}")
+    if swap is not None and swap not in SWAP_KINDS:
+        raise ValueError(f"unknown bass swap {swap!r}")
+    notes: list[str] = []
+    gap = abs(m.b_bpm / m.a_bpm - 1)
+    can_blend = gap <= _CHILL_MAX_GAP
+    key_mode = _key_mode(m)
+    want = None
+    if style in CHILL_STYLES:
+        want = style
+    elif style is not None:
+        notes.append(f"{_art(style).capitalize()} {style} is one of the FX styles, which are switched off in chill "
+                     "mixes.")
+    elif technique is not None:
+        want = _TECH_STYLE.get(technique, DEFAULT_STYLE)
+    L = bars or (_CLASH_BARS if key_mode == "clash" else _CHILL_BARS)
+    base, pnotes = _base_place(m, eng, L)
+
+    def halfway(p: _Place) -> int:
+        return p.swap if p.swap is not None and L // 4 <= p.swap <= (3 * L) // 4 else L // 2
+
+    # an acapella rides A's vocal across the swap of the plain window: it wins over repeating A's ending
+    va, vb = _overlap_vocals(m, base, None, strip=False)
+    a_score, a_why, a_end = _acapella_fit(m, va, vb, halfway(base))
+    loop, sung, clean, into_drop = None, False, 0, False
+    if can_blend and a_score > 0 and want in (None, "acapella"):
+        place = base
+    else:
+        place, loop, sung, clean, into_drop, more = _chill_place(m, base, L)
+        pnotes += more
+        va, vb = _overlap_vocals(m, place, loop, strip=m.stems_a)
+    sw = halfway(place)
+    choices, _a_end = _chill_choices(m, place, key_mode, va, vb, sw, gap, can_blend)
+    if loop is None and place is base:
+        choices = [c if c.style != "acapella" else _Choice("acapella", a_score, a_why) for c in choices]
+    best = max(choices, key=lambda c: (c.score, c.style == DEFAULT_STYLE))
+    pick = best
+    if want is not None:
+        asked = next(c for c in choices if c.style == want)
+        if asked.score > 0 or want == "quick cut":
+            pick = asked
+        else:
+            notes.append(f"{_art(want).capitalize()} {want} doesn't fit this pair ({asked.why}), so it's "
+                         f"{_art(best.style)} {best.style}.")
+    d = _Chill(pick.style, "quick cut", place, L, sw=sw, key_mode=key_mode, notes=notes, fit=choices)
+    if pick.style == "quick cut":
+        d.place = _cut_place(m, "drop swap" if e_tech == "drop swap" else "quick cut", eng)
+        d.bars = bars or 4
+        if not can_blend:
+            d.notes.append(f"The tempos are {gap * 100:.0f}% apart, too far to glide inside a blend, so A cuts to B "
+                           "on the phrase.")
+        return d
+    if pick.style == "double drop":
+        d.tech, d.place, d.bars, d.sw = "double drop", _double_drop_place(m), 16, 12
+        return d
+    d.tech = {"filter fade": "filter sweep", "acapella": "bass swap"}.get(pick.style) or _blend_kind(m, place)
+    d.loop, d.loop_sung, d.clean_tail, d.into_drop = loop, sung, clean, into_drop
+    d.notes += pnotes
+    if pick.style == "acapella":
+        d.acapella_end, d.swap_kind = a_end, "hard"
+    elif swap is not None:
+        d.swap_kind, d.swap_why = swap, f"Bass swap picked by hand: {_SWAP_NAME[swap]}."
+    elif into_drop:
+        d.swap_kind, d.swap_why = "hard", "A's bass rides to the end and B's comes in with its drop on the 1."
+    elif place.swap is None:
+        d.swap_kind, d.swap_why = "carry", "B brings no bass during the blend, so A's lows carry it and leave with A."
+    else:
+        d.swap_kind, d.swap_why = _swap_kind(m, place, sw)
+    return d
+
+
+def _swap_lanes(A: dict, B: dict, at: float, kind: str, E: float) -> None:
+    """The lows change hands at master beat `at`: hard (on the 1), quick (over the bar before it, -3 dB each at the
+    crossing), slow (over the 4 bars around it), or carry (B brings no bass yet: A's lows ride to the end and B's open
+    up over the second half)."""
+    if kind == "quick":
+        A["eq_low"] = [(at - 4.0, 0.0, "linear"), (at - 2.0, -3.0, "ease"), (at, _KILL, "hold")]
+        B["eq_low"] = [(at - 4.0, _KILL, "ease"), (at - 2.0, -3.0, "linear"), (at, 0.0, "hold")]
+    elif kind == "slow":
+        A["eq_low"] = [(at - 8.0, 0.0, "linear"), (at, -3.0, "ease"), (at + 8.0, _KILL, "hold")]
+        B["eq_low"] = [(at - 8.0, _KILL, "ease"), (at, -3.0, "linear"), (at + 8.0, 0.0, "hold")]
+    elif kind == "carry":
+        A["eq_low"] = [(E - 8.0, 0.0, "ease"), (E, _KILL, "hold")]
+        B["eq_low"] = [(E / 2, _KILL, "ease"), (E, 0.0, "hold")]
+    else:
+        A["eq_low"] = [(0.0, 0.0, "hold"), (at, _KILL, "hold")]
+        B["eq_low"] = [(0.0, _KILL, "hold"), (at, 0.0, "hold")]
+
+
+def _b_in(B: dict, half: float, E: float) -> None:
+    """B's fader is up from the start with its EQ shut: its highs open over the first quarter (the hats come in
+    first), its mids over the second (up to `half`, where the bass changes hands)."""
+    B["volume"] = [(0.0, 1.0, "hold")]
+    B["eq_high"] = [(0.0, _KILL, "ease"), (max(4.0, min(E / 4, half)), 0.0, "hold")]
+    B["eq_mid"] = [(half / 2, _KILL, "ease"), (max(half / 2 + 4.0, half), 0.0, "hold")]
+
+
+def _a_out(A: dict, half: float, E: float, key_mode: str) -> None:
+    """A makes room as B's bands come in (its highs dip _ROOM_DB while B's open, its mids while B's do), then after the
+    swap at `half` its mids leave (a quarter of the way into the rest; right at the swap when the keys are a step
+    apart), then its highs; its fader eases down over the last quarter of the rest and a touch of high-pass thins it
+    out over the last half."""
+    rest = max(8.0, E - half)
+    m0 = half if key_mode == "mild" else half + 0.25 * rest
+    hi_in = max(4.0, min(E / 4, half))
+    A["eq_mid"] = [(half / 2, 0.0, "ease"), (max(half / 2 + 4.0, half), _ROOM_DB, "hold"), (m0, _ROOM_DB, "ease"),
+                   (min(E, m0 + 0.375 * rest), _KILL, "hold")]
+    A["eq_high"] = [(0.0, 0.0, "ease"), (hi_in, _ROOM_DB, "hold"), (E - 0.5 * rest, _ROOM_DB, "ease"), (E, _KILL, "hold")]
+    A["volume"] = [(E - max(4.0, 0.25 * rest), 1.0, "ease"), (E, 0.0, "hold")]
+    A["filter"] = [(E - 0.5 * rest, 0.0, "ease"), (E, _HPF_TOUCH, "hold")]
+
+
+def _clash_shape(A: dict, B: dict, E: float) -> None:
+    """Clashing keys: A's mids (chords and melody) leave in the blend's first quarter and B's only open once they're
+    gone, so mostly drums overlap (A's vocal leaves with its mids, see _generate_chill)."""
+    A["eq_mid"] = [(E / 8, 0.0, "ease"), (3 * E / 8, _KILL, "hold")]
+    B["eq_mid"] = [(3 * E / 8, _KILL, "ease"), (5 * E / 8, 0.0, "hold")]
+
+
+def _filter_fade(A: dict, B: dict, E: float) -> None:
+    """B rises out of a closed low-pass that opens over the first three quarters while A slides up into a high-pass
+    over everything after the first quarter; the bass still swaps (_swap_lanes)."""
+    B["volume"] = [(0.0, 0.0, "ease"), (E / 4, 1.0, "hold")]
+    B["filter"] = [(0.0, -0.7, "ease"), (0.75 * E, 0.0, "hold")]
+    A["filter"] = [(E / 4, 0.0, "ease"), (E, 0.6, "hold")]
+    A["volume"] = [(E - E / 8, 1.0, "ease"), (E, 0.0, "hold")]
+
+
+def _acapella(A: dict, B: dict, s: float, e: float) -> None:
+    """From the swap at `s` A's beat drops out (its instrumental stem, on the 1) and its vocal rides over B until the
+    line ends at `e`, ringing a beat after; A's mids and highs stay open for the vocal, its lows went at the swap."""
+    A["instrumental"] = [(s - 0.5, 1.0, "ease"), (s, 0.0, "hold")]
+    A["vocals"] = [(e + 1.0, 1.0, "ease"), (e + 2.0, 0.0, "hold")]
+    A["eq_mid"], A["eq_high"], A["filter"] = [], [], []
+    A["volume"] = [(e + 2.0, 1.0, "ease"), (e + 3.0, 0.0, "hold")]
+
+
+def _handoff(m: _Mix, va: list[float], vb: list[float], sw: int) -> tuple[tuple[float, float] | None, float | None,
+                                                                            int | None, str | None]:
+    """Never two vocals at once. Returns (A's vocal muted from beat t after an f-beat fade, B's vocal held back until
+    beat t, overlap bar where A's mids duck instead because the vocal to quiet isn't split yet, note).
+
+    B starts singing while A is between lines: A's vocal is muted there (inaudible) so its next line never starts.
+    B starts singing mid-line before the bass swap: B's vocal waits for A's line to end, at the latest for the swap,
+    where the vocals change hands with the bass. Later: A's vocal fades out just before its line, or over the 2 beats
+    before B's, unless A's line ends within 2 bars (then B's vocal waits for it)."""
+    ON = transitions._VOCAL_ON
+    L = len(va)
+    kb = next((k for k in range(L) if vb[k] >= ON), None)
+    if kb is None:
+        return None, None, None, None
+    later = [j for j in range(kb, L) if va[j] >= ON]
+    if not later:
+        return None, None, None, None
+    if va[kb] < ON:
+        if m.stems_a:
+            return (4.0 * kb, 1.0), None, None, \
+                f"A's next vocal line (bar {later[0] + 1}) would land on B's, so A's vocal is muted from bar " \
+                f"{kb + 1}, where A is between lines, and A plays on as an instrumental."
+        return None, None, later[0], None
+    end = next((j for j in range(kb, L) if va[j] < ON), L)
+    if m.stems_b and (kb < sw or end <= kb + 2):
+        t = min(end, sw) if kb < sw else end
+        a_off = m.stems_a and any(va[j] >= ON for j in range(t, L))
+        if t < end:
+            note = f"B starts singing in bar {kb + 1} while A is mid-line, so the vocals change hands with the bass " \
+                   f"(bar {t + 1}): A's vocal goes out as B's comes in."
+        else:
+            note = f"B starts singing in bar {kb + 1} while A is mid-line, so B's vocal waits until A's line ends " \
+                   f"(bar {t + 1})" + (" and A's vocal stays out after that." if a_off else ".")
+        return ((4.0 * t, 1.0) if a_off else None), 4.0 * t, None, note
+    if m.stems_a:
+        gap = next((j for j in range(kb - 1, max(-1, kb - 5), -1) if va[j] < ON), None)
+        if gap is not None:
+            t, f, where = 4.0 * (gap + 1), 1.0, f"just before its line in bar {gap + 2}"
+        else:
+            t, f, where = 4.0 * kb, 2.0, f"over the 2 beats before bar {kb + 1}"
+        return (t, f), None, None, \
+            f"B starts singing in bar {kb + 1}, so A's vocal fades out {where} and A plays on as an instrumental."
+    return None, None, kb, None
+
+
+def _duck_a_mids(A: dict, k0: int, E: float) -> float:
+    """No vocal stem to mute: A's mids duck to -18 dB over the 2 bars before overlap bar k0 (A's vocal lives there),
+    then go on down with A's own fade. Returns the beat where the duck lands."""
+    at = max(8.0, 4.0 * k0)
+    end = max((p[0] for p in A["eq_mid"]), default=E)
+    pts = [(at - 8.0, 0.0, "ease"), (at, _VOCAL_CUT, "hold")]
+    if end > at + 4.0:
+        pts += [(end - 4.0, _VOCAL_CUT, "ease"), (end, _KILL, "hold")]
+    A["eq_mid"] = pts
+    return at
+
+
+def _decks(m: _Mix, place: _Place, E: float) -> tuple[dict, dict]:
+    """Deck A (beat 0 = its bar a0, plays from its start to E) and deck B (cued at bar b0, plays to its end)."""
+    ga, gb = m.ga, m.gb
+    a_deck = {
+        "track_id": m.a.id, "beat0_s": round(ga.fd + place.a0 * ga.bar_s, 4), "native_bpm": m.a_bpm,
+        "play_from_beat": 0.0, "play_to_beat": E, "echo_beats": 0.75, "loops": [], "fx": [], "lanes": {},
+    }  # fmt: skip
+    b_beat0 = gb.fd + place.b0 * gb.bar_s
+    b_deck = {
+        "track_id": m.b.id, "beat0_s": round(b_beat0, 4), "native_bpm": m.b_bpm,
+        "play_from_beat": max(0.0, round(-b_beat0 * m.b_bpm / 60.0, 4)), "play_to_beat": 0.0,
+        "echo_beats": 0.75, "fx": [], "lanes": {}, "loops": [],
+    }  # fmt: skip
+    a_deck["play_from_beat"] = round(min(-1.0, -a_deck["beat0_s"] * m.a_bpm / 60.0), 4)
+    b_end_s = m.b_dur if m.b_dur > 0 else gb.fd + gb.n * gb.bar_s
+    b_deck["play_to_beat"] = round(max(E + 8.0, (b_end_s - b_beat0) * m.b_bpm / 60.0), 4)
+    return a_deck, b_deck
+
+
+def _preview(tempo: _Tempo, a_deck: dict, b_deck: dict, L: int, E: float) -> tuple[float, float]:
+    """Preview window: 8-16 bars before B, 8-16 bars after A is out, ~90 s at most (pre-ramps shown when they fit)."""
+    pre, post = (16 if L <= 8 else 8), (16 if L == 0 else 8)
+    if tempo.pre_start is not None:
+        pre = max(pre, int(-tempo.pre_start // 4))
+    tk = [{"beat": bt, "value": v, "curve": c} for bt, v, c in tempo.keyframes]
+    lo_beat = math.ceil(a_deck["play_from_beat"])
+    hi_beat = math.floor(b_deck["play_to_beat"])
+
+    def bounds(pre_bars: int, post_bars: int) -> tuple[float, float]:
+        return max(lo_beat, -4.0 * pre_bars), min(hi_beat, E + 4.0 * post_bars)
+
+    while master_seconds(tk, bounds(pre, post)[1], bounds(pre, post)[0]) > _MAX_PREVIEW_S:
+        if pre > 8:
+            pre -= 4
+        elif post > 8:
+            post -= 4
+        elif post > 4:
+            post -= 4
+        elif pre > 4:
+            pre -= 4
+        elif pre > 2 or post > 2:
+            pre, post = max(2, pre - 2), max(2, post - 2)
+        else:
+            break
+    return bounds(pre, post)
+
+
+def _chill_headline(m: _Mix, d: _Chill) -> str:
+    ga, gb = m.ga, m.gb
+    p = d.place
+    a0, b0, L = p.a0, p.b0, p.overlap
+    t0, tb, te = _mmss(ga, a0), _mmss(gb, b0), _mmss(ga, a0 + L)
+    if d.style == "quick cut":
+        what = f"clean cut on the 1 at A {t0} (bar {a0 + 1}) into B from {tb}"
+    elif d.style == "double drop":
+        what = f"double drop: B comes in under A's build 8 bars before A's last drop (A {t0}, bar {a0 + 1}); both " \
+               f"drop together on the 1 at A {_mmss(ga, a0 + 8)} with B's bass held back, the bass goes to B 4 bars " \
+               f"later and A is out by {te}"
+    else:
+        name = {"filter fade": "filter fade", "acapella": "acapella blend"}.get(d.style, "phrase mix")
+        if d.into_drop:
+            swap = f"A's bass rides to the end and B's lands with its drop on the 1 at A {te}"
+        elif d.swap_kind == "carry":
+            swap = "A's bass carries the blend (B brings none yet)"
+        else:
+            swap = _SWAP_HOW[d.swap_kind].format(bar=d.sw + 1) + f" (A {_mmss(ga, a0 + d.sw)})"
+        out = f"A out by {te}" if d.loop is None else "A out once its repeat ends"
+        what = f"{L}-bar {name}: B in at A {t0} (bar {a0 + 1}, on the phrase) from B {tb}, {swap}, {out}"
+    edges = ""
+    if m.tr is not None and m.tr.get("notes"):
+        first = str(m.tr["notes"][0])
+        if " → " in first:
+            edges = first.split(" → ", 1)[0] + " → "
+    text = edges + what + "."
+    return text[0].upper() + text[1:]
+
+
+def _chill_eq_note(m: _Mix, d: _Chill) -> str | None:
+    L = d.place.overlap
+    if d.style == "filter fade":
+        return "B rises out of a closed low-pass that opens over the first three quarters while A slides up into a " \
+               "high-pass; the bass still changes hands, no echo or reverb."
+    if d.style != DEFAULT_STYLE or not L:
+        return None
+    if d.key_mode == "clash":
+        keys = f" ({m.a.camelot} → {m.b.camelot})" if m.a.camelot and m.b.camelot else ""
+        return f"The keys clash{keys}, so the blend is {L} bars and mostly drums overlap: A's mids (its chords and " \
+               "melody) and its vocal leave in the first bars, and B's mids only open after they're gone."
+    q = max(1, L // 4)
+    mild = " (right at the swap: the keys are a step apart)" if d.key_mode == "mild" else ""
+    return f"B's fader is up with its EQ shut: its highs (the hats) open over the first {q} bars and its mids over " \
+           f"the next {q}, A's dipping a little to make room; after the swap A's mids leave{mild}, then its highs, " \
+           "under a touch of high-pass."
+
+
+def _generate_chill(a: Track, a_an: dict | None, b: Track, b_an: dict | None, folder: str, technique: str | None,
+                    bars: int | None, transition: dict | None, style: str | None, swap: str | None) -> dict:
+    m = _mix(a, a_an, b, b_an, transition)
+    eng = _engine(m)
+    d = _decide_chill(m, eng, technique, bars, style, swap)
+    place = d.place
+    L = place.overlap
+    E = 4.0 * L
+    ga = m.ga
+    a_deck, b_deck = _decks(m, place, E)
+    A, B = _lanes(), _lanes()
+    body: list[str] = []  # notes on the loop, the vocals and A's ending
+    markers = [{"beat": 0.0, "label": "B in" if L else "cut"}]
+    a_mute: list[tuple[float, float]] = []  # (beat, fade): A's vocal is muted from there on
+    b_wait: float | None = None
+    if d.style == "quick cut":
+        A["volume"] = [(-4.0, 1.0, "hold"), (0.0, 0.0, "hold")]
+    elif d.style == "double drop":
+        _double_drop_lanes(A, B)
+        markers += [{"beat": 32.0, "label": "double drop"}, {"beat": 48.0, "label": "bass swap"}]
+    else:
+        half = 4.0 * d.sw
+        low_at = E if d.into_drop else half
+        if d.style == "filter fade":
+            _filter_fade(A, B, E)
+        else:
+            _b_in(B, half, E)
+            _a_out(A, half, E, d.key_mode)
+        _swap_lanes(A, B, low_at, d.swap_kind, E)
+        if d.swap_kind != "carry":
+            markers.append({"beat": low_at, "label": "bass swap"})
+        va, vb = _overlap_vocals(m, place, d.loop, strip=m.stems_a)
+        if d.loop is not None:
+            a_deck["loops"] = [d.loop]
+            markers.append({"beat": d.loop["start_beat"], "label": "loop"})
+            if d.loop_sung:
+                a_mute.append((d.loop["start_beat"], 0.25))
+            more = round(L - d.loop["start_beat"] / 4)
+            again = "once" if more == _LOOP_BARS else f"for {more} more bars"
+            clean = f"only {d.clean_tail} bars" if d.clean_tail else "sung right to the end"
+            body.append(f"A's ending after its last vocal is {clean}, so its last {_LOOP_BARS} bars repeat {again} "
+                        f"under B to give the blend its {L} bars" +
+                        (" (the vocal is taken out of the repeat)." if d.loop_sung else "."))
+        if d.style == "acapella" and d.acapella_end is not None:
+            e = 4.0 * d.acapella_end
+            _acapella(A, B, half, e)
+            a_deck["play_to_beat"] = max(E, e + 4.0)
+            if m.stems_b and any(x >= transitions._VOCAL_ON for x in vb):
+                b_wait = e + 2.0
+            markers.append({"beat": half, "label": "acapella"})
+            body.append(f"Acapella: on the 1 of bar {d.sw + 1} A's beat drops out and its vocal rides over B's "
+                        f"until the line ends (bar {d.acapella_end})" +
+                        ("; B's vocal waits until then." if b_wait is not None else "."))
+        else:
+            clash_keys = d.key_mode == "clash" and d.style == DEFAULT_STYLE
+            if clash_keys:
+                _clash_shape(A, B, E)
+                if m.stems_a and any(x >= transitions._VOCAL_ON for x in va):
+                    a_mute.append((E / 4, E / 8))
+            mute, wait, duck, note = _handoff(m, va, vb, d.sw)
+            if mute is not None:
+                a_mute.append(mute)
+            if wait is not None:
+                b_wait = wait
+            if note:
+                body.append(note)
+            if duck is not None and not clash_keys:
+                _duck_a_mids(A, duck, E)
+                body.append(f"Vocals on both decks from bar {duck + 1}: A's vocal stem isn't split yet, so A's mids "
+                            f"duck to {_VOCAL_CUT:.0f} dB there instead (just the vocal goes once splitting is done).")
+        a_end = 4.0 * (ga.end - place.a0)  # A's music stops here
+        if m.real_a and d.loop is None and a_end < E and d.style != "acapella":
+            A["volume"] = [(max(0.0, a_end - 8.0), 1.0, "ease"), (max(1.0, a_end), 0.0, "hold")]
+            body.append(f"A's music ends {round((E - a_end) / 4)} bars before the blend does, so A fades out early: "
+                        "a shorter blend fits better.")
+    if a_mute:
+        t, f = min(a_mute)
+        A["vocals"] = [(max(-4.0, t - f), 1.0, "ease"), (t, 0.0, "hold")]
+        if not any(mk["label"] == "loop" and abs(mk["beat"] - t) < 1e-6 for mk in markers):
+            markers.append({"beat": t, "label": "A vocal out"})
+    if b_wait is not None:
+        B["vocals"] = [(0.0, 0.0, "hold"), (b_wait, 0.0, "ease"), (b_wait + 2.0, 1.0, "hold")]
+        markers.append({"beat": b_wait + 2.0, "label": "B vocal in"})
+    tempo = _tempo(m, E, cut=L == 0)
+    ws, we = _preview(tempo, a_deck, b_deck, L, E)
+    a_deck["lanes"] = {lane: _kf(A[lane], ws, lane) for lane in LANES}
+    b_deck["lanes"] = {lane: _kf(B[lane], ws, lane) for lane in LANES}
+    tempo_kf = _kf(tempo.keyframes, ws, "volume")
+    for k in tempo_kf:
+        k["value"] = round(k["value"], 3)
+    if L:
+        markers.append({"beat": E, "label": "A out"})
+    if tempo.pre_start is not None:
+        markers.append({"beat": tempo.pre_start, "label": "tempo ramp"})
+    if tempo.post_end is not None:
+        markers.append({"beat": E, "label": "tempo ramp"})
+    notes = [_chill_headline(m, d)]
+    if (eq := _chill_eq_note(m, d)) is not None:
+        notes.append(eq)
+    if L and d.style != "double drop" and d.swap_why:
+        notes.append(d.swap_why)
+    notes += body + [tempo.note] + d.notes
+    if not (m.real_a and m.real_b):
+        missing = " and ".join(n for n, ok in (("A", m.real_a), ("B", m.real_b)) if not ok)
+        notes.append(f"Rough plan from tag BPMs: {missing} {'is' if ' and ' not in missing else 'are'} not "
+                     "analysed yet, so beats and phrases may not line up.")
+    elif L and not (m.stems_a and m.stems_b):
+        missing = " and ".join(n for n, ok in (("A", m.stems_a), ("B", m.stems_b)) if not ok)
+        notes.append(f"Vocal stems for {missing} aren't split yet (that runs in the background); reopen this "
+                     "transition afterwards for the cleaner vocal handoffs.")
+    plan = {
+        "version": PLAN_VERSION, "folder": folder, "from_id": a.id, "to_id": b.id, "technique": d.tech,
+        "bars": d.bars, "key_lock": True, "window": {"start_beat": ws, "end_beat": we}, "tempo": tempo_kf,
+        "a": a_deck, "b": b_deck, "markers": sorted(markers, key=lambda mk: mk["beat"]), "notes": notes,
+        "style": d.style, "edited": False,
+        "style_fit": [{"style": c.style, "fit": round(c.score, 2), "why": c.why}
+                      for c in sorted(d.fit, key=lambda c: -c.score)],
+        "swap_kind": d.swap_kind if d.swap_kind in SWAP_KINDS and L and d.style != "double drop" else None,
+        "vocal_stems": {"a": m.stems_a, "b": m.stems_b},
+    }  # fmt: skip
+    return validate(plan)
+
+
 # --- public API ----------------------------------------------------------------------------------------------------
 
 
@@ -1463,9 +2137,9 @@ def _variety_note(choices: list[_Choice], pick: _Choice, recent: list[str], note
 
 def plan_styles(pairs: list[tuple[Track, dict | None, Track, dict | None, dict | None]],
                 fixed: list[str | None] | None = None) -> list[str]:
-    """The style of every transition of a set, in order: each pair's best fit given the styles before it (no flashy
-    style more than three times in a row; phrase mixes repeat freely). `pairs` are (a, a_an, b, b_an, transition);
-    fixed[k] = the style of a saved plan (it stays)."""
+    """The style of every transition of a set, in order: each pair's best fit (FX mode: given the styles before it, no
+    flashy style more than three times in a row; phrase mixes repeat freely). `pairs` are (a, a_an, b, b_an,
+    transition); fixed[k] = the style of a saved plan (it stays)."""
     out: list[str] = []
     for k, (a, a_an, b, b_an, tr) in enumerate(pairs):
         if fixed and k < len(fixed) and fixed[k]:
@@ -1473,7 +2147,10 @@ def plan_styles(pairs: list[tuple[Track, dict | None, Track, dict | None, dict |
             continue
         try:
             m = _mix(a, a_an, b, b_an, tr)
-            out.append(_decide(m, _engine(m), None, None, None, out[-4:]).style)
+            if MODE == "chill":
+                out.append(_decide_chill(m, _engine(m), None, None, None, None).style)
+            else:
+                out.append(_decide(m, _engine(m), None, None, None, out[-4:]).style)
         except Exception:  # noqa: BLE001 - a pair that can't be planned keeps the chain going
             out.append(DEFAULT_STYLE)
     return out
@@ -1490,15 +2167,24 @@ def generate(
     transition: dict | None = None,
     style: str | None = None,
     recent: list[str] | None = None,
+    swap: str | None = None,
 ) -> dict:
     """MixPlan (types.ts) for A → B: the best-fitting technique and style for the two songs (or the requested ones)
-    as beat-locked lane automation, loops, deck FX, tempo moves and a preview window. `recent` = the styles of the
-    transitions before this one in its set (see plan_styles); `style` forces one. Works without analyses (rough plan
-    from tag BPMs)."""
+    as beat-locked lane automation, loops, tempo moves and a preview window. `style` forces a style, `swap` a bass
+    swap (chill mode: hard / quick / slow); `recent` = the styles of the transitions before this one in its set (FX
+    mode only, see plan_styles). Works without analyses (rough plan from tag BPMs)."""
     if technique is not None and technique not in TECHNIQUES:
         raise ValueError(f"unknown technique {technique!r}")
     if bars is not None and bars not in BARS:
         raise ValueError(f"bars must be one of {BARS}")
+    if MODE == "chill":
+        return _generate_chill(a, a_an, b, b_an, folder, technique, bars, transition, style, swap)
+    return _generate_fx(a, a_an, b, b_an, folder, technique, bars, transition, style, recent)
+
+
+def _generate_fx(a: Track, a_an: dict | None, b: Track, b_an: dict | None, folder: str, technique: str | None,
+                 bars: int | None, transition: dict | None, style: str | None, recent: list[str] | None) -> dict:
+    """The FX planner's MixPlan (MODE "fx"): styles with echo / reverb sends, loop rolls and deck FX."""
     m = _mix(a, a_an, b, b_an, transition)
     eng = _engine(m)
     d = _decide(m, eng, technique, bars, style, recent)

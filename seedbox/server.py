@@ -53,6 +53,7 @@ from .mixes import MixService
 from .serializers import JSON
 from .setlists import SetlistService
 from .setmixes import SetMixService
+from .stems_queue import StemQueue
 from .tunebat_service import TunebatService
 
 log = logging.getLogger(__name__)
@@ -152,6 +153,9 @@ class AppState:
         self.mixes = MixService(self.crates, self.bus, lambda: self.cache_dir)
         self.setlists = SetlistService(self.crates, self.mixes, self.bus)
         self.setmixes = SetMixService(self.crates, self.mixes, self.setlists, self.bus)
+        # vocal splitting: songs in use first; the rest of a crate only while nothing renders
+        self.stems = StemQueue(self.bus, idle=lambda: not (self.mixes.busy() or self.setmixes.busy()))
+        self.crates.stems = self.stems
         self._lock = threading.RLock()
         self._previews: Any = None
         self._last_preload: list[Track] = []
@@ -242,6 +246,7 @@ class AppState:
             self.settings = new
             if Path(new.output_root) != Path(old.output_root):
                 self.analysis.forget()
+                self.stems.forget()
             self._apply_preview_settings(old, new)
         return new
 
@@ -272,6 +277,7 @@ class AppState:
         self.bus.close()
         self.jobs.shutdown(timeout=2.0)
         self.analysis.shutdown(timeout=1.0)
+        self.stems.shutdown(timeout=1.0)
         self.setmixes.shutdown()
         self.mixes.shutdown()
         with self._lock:
@@ -526,6 +532,10 @@ def create_app(
     def crate_auto_order(folder: str) -> Response:
         return JSON(with_styles(state.crates.auto_order(folder)))
 
+    @app.get("/api/crates/{folder}/stems")
+    def crate_stems(folder: str) -> Response:
+        return JSON(state.crates.stems_status(folder))
+
     @app.get("/api/crates/{folder}/partners/{track_id}")
     def crate_partners(folder: str, track_id: str, direction: str = Query("out")) -> Response:
         return JSON(state.crates.partners(folder, track_id, direction))
@@ -534,8 +544,9 @@ def create_app(
 
     @app.get("/api/crates/{folder}/mix/{from_id}/{to_id}")
     def mix_plan(folder: str, from_id: str, to_id: str, technique: str | None = Query(None),
-                 bars: int | None = Query(None), style: str | None = Query(None)) -> Response:  # fmt: skip
-        return JSON(state.mixes.plan(folder, from_id, to_id, technique, bars, style))
+                 bars: int | None = Query(None), style: str | None = Query(None),
+                 swap: str | None = Query(None)) -> Response:  # fmt: skip
+        return JSON(state.mixes.plan(folder, from_id, to_id, technique, bars, style, swap))
 
     @app.put("/api/crates/{folder}/mix/{from_id}/{to_id}")
     def mix_save(folder: str, from_id: str, to_id: str, body: Any = Body(...)) -> Response:  # noqa: B008
@@ -608,8 +619,10 @@ def create_app(
 
     @app.get("/api/setlists/{sid}/mix/{from_id}/{to_id}")
     def setlist_mix_plan(sid: str, from_id: str, to_id: str, technique: str | None = Query(None),
-                         bars: int | None = Query(None), style: str | None = Query(None)) -> Response:  # fmt: skip
-        return JSON(state.mixes.plan_pair(state.setlists.pair(sid, from_id, to_id), technique, bars, style=style))
+                         bars: int | None = Query(None), style: str | None = Query(None),
+                         swap: str | None = Query(None)) -> Response:  # fmt: skip
+        return JSON(state.mixes.plan_pair(state.setlists.pair(sid, from_id, to_id), technique, bars, style=style,
+                                          swap=swap))
 
     @app.put("/api/setlists/{sid}/mix/{from_id}/{to_id}")
     def setlist_mix_save(sid: str, from_id: str, to_id: str, body: Any = Body(...)) -> Response:  # noqa: B008

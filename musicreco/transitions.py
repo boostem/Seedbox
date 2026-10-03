@@ -105,6 +105,8 @@ class _Grid:
     drops: tuple[int, ...]  # starts of drop sections
     end: int  # bar where the music ends (end of the outro)
     off: int  # phrase-grid offset: bars of pickup before the first phrase
+    kick: tuple[float, ...] = ()  # kick presence per bar (empty: analysed before kick_per_bar existed)
+    bass: tuple[float, ...] = ()  # how much the bass fills the gaps between the kicks, per bar (same)
 
     def t(self, bar: float) -> float:
         return round(self.fd + bar * self.bar_s, 3)
@@ -193,6 +195,8 @@ def _grid(an: dict | None, scale: float = 1.0) -> _Grid | None:
         phrases=tuple(sorted(p for p in pts if 0 <= p <= end)),
         drops=tuple(sorted({s0 for kind, s0, _ in sections if kind == "drop"})),
         end=end, off=off,
+        kick=per_bar("kick_per_bar") if isinstance(an.get("kick_per_bar"), list) else (),
+        bass=per_bar("bass_per_bar") if isinstance(an.get("bass_per_bar"), list) else (),
     )  # fmt: skip
 
 

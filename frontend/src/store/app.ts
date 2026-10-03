@@ -7,11 +7,16 @@ import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { api, MOCK } from "@/api/client";
-import type { CrateSummary, FinalStatus, Job, JobItem, PreviewStatus, ServerEvent, SetMix, Settings, SetTrack, SystemStatus, Track } from "@/api/types";
+import type { CrateSummary, FinalStatus, Job, JobItem, PreviewStatus, ServerEvent, SetMix, Settings, SetTrack, StemState, StemsStatus, SystemStatus, Track } from "@/api/types";
 import { toast } from "./toasts";
 
 export type ConnectionState = "connecting" | "live" | "reconnecting" | "offline";
 export type AnalysisState = SetTrack["analysis_state"];
+export interface StemEntry {
+  state: StemState;
+  progress: number;
+  error?: string | null;
+}
 
 /** What Space plays: the row the user last selected on any screen. */
 export type Selection =
@@ -30,6 +35,10 @@ export interface AppState {
   jobs: Record<string, Job>;
   /** analysis[folder][track_id] = state (from `analysis` events; seed it from CrateSet with seedAnalysis). */
   analysis: Record<string, Record<string, AnalysisState>>;
+  /** stems[folder][track_id] = vocal splitting state + progress (from `stems` events; seed with seedStems). */
+  stems: Record<string, Record<string, StemEntry>>;
+  /** stemsAvailable[folder] = whether this install can split vocals (from the stems status), and why not. */
+  stemsAvailable: Record<string, { available: boolean; reason: string | null }>;
   /** setVersion[folder] bumps on `set_changed` — include in deps to refetch a CrateSet. */
   setVersion: Record<string, number>;
   /** setmixes[target] = the latest SetMix seen for "crate:<folder>" / "setlist:<id>" (from `setmix` events). */
@@ -50,6 +59,9 @@ export interface AppState {
   /** GET /api/jobs/{id} and merge it into the store (quiet; returns null on failure). */
   refreshJob: (jobId: string) => Promise<Job | null>;
   seedAnalysis: (folder: string, tracks: Pick<SetTrack, "track" | "analysis_state">[]) => void;
+  seedStems: (folder: string, status: StemsStatus) => void;
+  /** GET the crate's vocal splitting state and seed it (quiet; older engines without the endpoint are ignored). */
+  loadStems: (folder: string) => Promise<void>;
   upsertSetMix: (m: SetMix) => void;
   select: (sel: Selection | null) => void;
   handleEvent: (ev: ServerEvent) => void;
@@ -93,6 +105,8 @@ export const useApp = create<AppState>()((set, get) => ({
   previews: {},
   jobs: {},
   analysis: {},
+  stems: {},
+  stemsAvailable: {},
   setVersion: {},
   setmixes: {},
   setlistVersion: {},
@@ -133,6 +147,18 @@ export const useApp = create<AppState>()((set, get) => ({
         [folder]: { ...s.analysis[folder], ...Object.fromEntries(tracks.map((t) => [t.track.id, t.analysis_state])) },
       },
     })),
+  seedStems: (folder, status) =>
+    set((s) => ({
+      stems: { ...s.stems, [folder]: { ...s.stems[folder], ...status.tracks } },
+      stemsAvailable: { ...s.stemsAvailable, [folder]: { available: status.available, reason: status.reason } },
+    })),
+  loadStems: async (folder) => {
+    try {
+      get().seedStems(folder, await api.crateStems(folder, { quiet: true }));
+    } catch {
+      /* no stems endpoint / offline: the editor just shows nothing */
+    }
+  },
   select: (selection) => set({ selection }),
   upsertSetMix: (m) =>
     set((s) => {
@@ -181,6 +207,11 @@ export const useApp = create<AppState>()((set, get) => ({
       case "analysis": {
         const { folder, track_id, state } = ev.data;
         set((s) => ({ analysis: { ...s.analysis, [folder]: { ...s.analysis[folder], [track_id]: state } } }));
+        break;
+      }
+      case "stems": {
+        const { folder, track_id, state, progress, error } = ev.data;
+        set((s) => ({ stems: { ...s.stems, [folder]: { ...s.stems[folder], [track_id]: { state, progress, error: error ?? null } } } }));
         break;
       }
       case "set_changed": {
@@ -267,6 +298,27 @@ export const useAnalysisState = (folder: string, trackId: string): AnalysisState
 
 export const useSetVersion = (folder: string): number => useApp((s) => s.setVersion[folder] ?? 0);
 
+export const useStemState = (folder: string, trackId: string): StemEntry | undefined => useApp((s) => s.stems[folder]?.[trackId]);
+
+/** How many of `trackIds` (all of the crate's known tracks when omitted) have their vocals split / are splitting. */
+export function useStemsSummary(folder: string, trackIds?: string[]): { ready: number; running: StemEntry | null; total: number; available: boolean; reason: string | null } {
+  return useApp(
+    useShallow((s) => {
+      const rows = s.stems[folder] ?? {};
+      const ids = trackIds ?? Object.keys(rows);
+      let ready = 0;
+      let running: StemEntry | null = null;
+      for (const id of ids) {
+        const r = rows[id];
+        if (r?.state === "ready") ready += 1;
+        else if (r?.state === "running") running = r;
+      }
+      const av = s.stemsAvailable[folder];
+      return { ready, running, total: ids.length, available: av?.available ?? true, reason: av?.reason ?? null };
+    }),
+  );
+}
+
 export const useSelection = (): Selection | null => useApp((s) => s.selection);
 
 export const useSetMixLive = (target: string): SetMix | undefined => useApp((s) => s.setmixes[target]);
@@ -279,13 +331,14 @@ export const useActiveJobs = (): Job[] =>
 
 /**
  * Refetch key for a crate's set: changes (debounced, default 400 ms) after `set_changed` or when any of the
- * crate's analyses finishes (ready/error). The server sends bursts (queued/running/ready per track), so put this in
+ * crate's analyses finishes (ready/error) or a track's vocals finish splitting. The server sends bursts (queued/running/ready per track), so put this in
  * your effect deps instead of reacting to every event: useAsync(() => api.crateSet(folder), [folder, key]).
  */
 export function useSetRefreshKey(folder: string, delayMs = 400): number {
   const raw = useApp((s) => {
     const done = Object.values(s.analysis[folder] ?? {}).filter((x) => x === "ready" || x === "error").length;
-    return (s.setVersion[folder] ?? 0) * 100000 + done + s.epoch * 1e9;
+    const split = Object.values(s.stems[folder] ?? {}).filter((x) => x.state === "ready").length; // vocals feed the plans
+    return (s.setVersion[folder] ?? 0) * 100000 + done + split * 1000 + s.epoch * 1e9;
   });
   return useDebounced(raw, delayMs);
 }

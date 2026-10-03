@@ -176,7 +176,10 @@ export interface TrackAnalysis {
   phrase_offset: number; // 0-7: bar index where the 8-bar phrase grid starts (phrases begin at bars phrase_offset + 8k)
   energy_per_bar: number[]; // 0-1 overall
   low_per_bar: number[]; // kick/bass presence 0-1
-  vocal_per_bar: number[]; // vocal likelihood 0-1 (heuristic)
+  vocal_per_bar: number[]; // vocal level 0-1: from the vocal stem once it's split (vocal_source "stems"), else a heuristic
+  kick_per_bar?: number[]; // kick presence 0-1 (analyses from before it existed lack it)
+  bass_per_bar?: number[]; // how much the bass fills the gaps between the kicks, 0-1
+  vocal_source?: "stems"; // set when vocal_per_bar comes from the track's vocal stem
   sections: Section[];
   intro: Edge;
   outro: Edge;
@@ -219,6 +222,7 @@ export type ServerEvent =
   | { type: "job_state"; data: { job_id: string; state: Job["state"] } } // running -> finalizing etc.
   | { type: "job_done"; data: Job }
   | { type: "analysis"; data: { folder: string; track_id: string; state: SetTrack["analysis_state"] } }
+  | { type: "stems"; data: { folder: string; track_id: string; state: StemState; progress: number; error?: string } }
   | { type: "set_changed"; data: { folder: string } }
   | { type: "render"; data: { render_id: string; folder: string; from_id: string; to_id: string; state: "running" | "done" | "error"; progress: number; error?: string } } // folder = crate folder, or "setlist:<id>" for a crate-to-crate link
   | { type: "setmix"; data: SetMix }
@@ -235,7 +239,7 @@ export interface PickFolderResult { path: string | null } // null = cancelled; 5
 // on A's phrase grid). Each deck maps master beats to its own file time via its beat grid (+ loops), and is
 // time-stretched with key lock so its beats land on the master clock, whose tempo follows `tempo`.
 
-export type LaneId = "volume" | "eq_low" | "eq_mid" | "eq_high" | "filter" | "echo_send" | "echo_feedback" | "reverb_send";
+export type LaneId = "volume" | "eq_low" | "eq_mid" | "eq_high" | "filter" | "vocals" | "instrumental" | "echo_send" | "echo_feedback" | "reverb_send";
 
 export type Curve = "linear" | "hold" | "ease"; // shape from this keyframe to the next ("hold" = step at the next keyframe)
 
@@ -249,12 +253,14 @@ export interface Keyframe {
 //   volume        0..1   linear fader gain (1 = unity)
 //   eq_low/mid/high  -30..+6 dB, 0 = flat, -30 = kill (DJ isolator, crossovers ~200 Hz / ~2.5 kHz)
 //   filter        -1..1  bipolar DJ filter: <0 low-pass closing (−1 ≈ 80 Hz), >0 high-pass opening (+1 ≈ 10 kHz), 0 = bypass
-//   echo_send     0..1   pre-fader send into the deck's beat-synced echo (its tail keeps ringing after the fader is down)
+//   vocals        0..1   the deck's vocal stem level (1 = as recorded); only acts once the track's vocals are split
+//   instrumental  0..1   everything but the vocals (0 + vocals 1 = an acapella); same
+//   echo_send     0..1   pre-fader send into the deck's beat-synced echo (FX planner only: off in chill mixes)
 //   echo_feedback 0..0.95
-//   reverb_send   0..1   pre-fader send into a wash reverb
+//   reverb_send   0..1   pre-fader send into a wash reverb (FX planner only)
 export const LANE_RANGES: Record<LaneId, [number, number]> = {
-  volume: [0, 1], eq_low: [-30, 6], eq_mid: [-30, 6], eq_high: [-30, 6], filter: [-1, 1],
-  echo_send: [0, 1], echo_feedback: [0, 0.95], reverb_send: [0, 1],
+  volume: [0, 1], eq_low: [-30, 6], eq_mid: [-30, 6], eq_high: [-30, 6], filter: [-1, 1], vocals: [0, 1],
+  instrumental: [0, 1], echo_send: [0, 1], echo_feedback: [0, 0.95], reverb_send: [0, 1],
 };
 
 export interface DeckLoop {
@@ -291,7 +297,11 @@ export type MixTechnique = Technique | "filter sweep" | "loop roll" | "slam" | "
  * phrases. The blend flavours ride on a long blend / phrase blend / bass swap; every other style is its technique.
  */
 export type BlendStyle = "phrase mix" | "vocal throw" | "echo exit" | "roll" | "swell in" | "wash exit" | "filter wash" | "dub echo";
-export type MixStyle = BlendStyle | "filter sweep" | "loop roll" | "double drop" | "echo out" | "slam" | "quick cut" | "drop swap" | "brake" | "spinback";
+/** The chill planner's styles (mixplan.CHILL_STYLES): the only ones it picks or offers. */
+export type ChillStyle = "phrase mix" | "acapella" | "filter fade" | "double drop" | "quick cut";
+export type MixStyle = BlendStyle | ChillStyle | "filter sweep" | "loop roll" | "echo out" | "slam" | "drop swap" | "brake" | "spinback";
+/** How the lows change hands in a chill blend: on the 1, over one bar, or over four. */
+export type SwapKind = "hard" | "quick" | "slow";
 
 /** How well a style fits this pair of songs (0-1) and why, from the planner's scoring. */
 export interface StyleFit {
@@ -320,8 +330,20 @@ export interface MixPlan {
   markers: MixMarker[];
   notes: string[]; // plain-language explanation of the plan
   edited: boolean; // true = user-saved edits (from .seedbox/mixplans), false = freshly generated
-  style: MixStyle; // picked for the two songs and the transitions before it in the set (or asked for)
-  style_fit?: StyleFit[]; // the alternatives ranked for these two songs: blend styles for a blend, exits for a cut
+  style: MixStyle; // picked for the two songs (or asked for)
+  style_fit?: StyleFit[]; // the alternatives ranked for these two songs
+  swap_kind?: SwapKind | null; // the bass swap of a chill blend (null for cuts, double drops and older plans)
+  vocal_stems?: { a: boolean; b: boolean }; // whose vocals were split when this plan was made
+}
+
+/** Vocal splitting state of a crate (GET /api/crates/{folder}/stems). */
+export type StemState = "missing" | "queued" | "running" | "ready" | "error";
+export interface StemsStatus {
+  available: boolean; // false: this install can't split (reason says why)
+  reason: string | null;
+  tracks: Record<string, { state: StemState; progress: number; error: string | null }>;
+  ready: number;
+  total: number;
 }
 
 export interface MixRender {

@@ -38,6 +38,7 @@ CHAIN_RECENT = 4  # styles before a transition that its plan sees
 PROGRESS_STEP = 0.05  # publish render progress in steps of at least this much
 TECHNIQUES = ("long blend", "phrase blend", "bass swap", "drop swap", "quick cut", "echo out", "filter sweep",
               "loop roll", "slam", "brake", "spinback", "double drop")  # fmt: skip
+SWAPS = ("hard", "quick", "slow")
 BARS = (4, 8, 16, 32)
 _ID = re.compile(r"^[A-Za-z0-9]{1,64}$")
 _RENDER_ID = re.compile(r"^[A-Za-z0-9_-]{6,128}$")
@@ -134,18 +135,19 @@ class MixService:
         return seed_dir / ".seedbox" / "mixplans" / f"{from_id}__{to_id}.json"
 
     def plan(self, folder: str, from_id: str, to_id: str, technique: str | None = None, bars: int | None = None,
-             style: str | None = None) -> dict:
-        """Saved edits (when no technique/bars/style are asked for), else a freshly generated MixPlan."""
-        return self.plan_pair(self.pair(folder, from_id, to_id), technique, bars, style=style)
+             style: str | None = None, swap: str | None = None) -> dict:
+        """Saved edits (when no technique/bars/style/swap are asked for), else a freshly generated MixPlan."""
+        return self.plan_pair(self.pair(folder, from_id, to_id), technique, bars, style=style, swap=swap)
 
     def plan_pair(self, pair: Pair, technique: str | None = None, bars: int | None = None,
-                  wait_s: float | None = None, style: str | None = None) -> dict:
-        if technique is None and bars is None and style is None and (saved := self._load_saved(pair.saved)) is not None:
+                  wait_s: float | None = None, style: str | None = None, swap: str | None = None) -> dict:
+        if technique is None and bars is None and style is None and swap is None \
+                and (saved := self._load_saved(pair.saved)) is not None:
             return saved
-        return self._generate(pair, technique, bars, wait_s, style)
+        return self._generate(pair, technique, bars, wait_s, style, swap)
 
     def _generate(self, pair: Pair, technique: str | None, bars: int | None, wait_s: float | None = None,
-                  style: str | None = None) -> dict:
+                  style: str | None = None, swap: str | None = None) -> dict:
         if technique is not None and technique not in TECHNIQUES:
             raise ApiError(f"unknown technique {technique!r}", 422)
         if bars is not None and bars not in BARS:
@@ -155,11 +157,17 @@ class MixService:
             raise ApiError(f"unknown style {style!r}", 422)
         self.crates.want_analyses(pair.a_dir, [pair.a])  # both start now, so a 409 retry finds both done
         self.crates.want_analyses(pair.b_dir, [pair.b])
+        self.crates.want_stems(pair.a_dir, [pair.a], front=True)  # songs in use split first
+        self.crates.want_stems(pair.b_dir, [pair.b], front=True)
         a_an = self.crates.ready_analysis(pair.a_dir, pair.a, wait_s)
         b_an = self.crates.ready_analysis(pair.b_dir, pair.b, wait_s)
         a, b = pair.a, pair.b
         transition = transitions.suggest(a.track, a_an, b.track, b_an, bpm_tol=self.crates.bpm_tol)
         extra = {"style": style, "recent": pair.recent} if engine.accepts(mixplan.generate, "recent") else {}
+        if swap is not None:
+            if swap not in getattr(mixplan, "SWAP_KINDS", ()):
+                raise ApiError(f"unknown bass swap {swap!r}", 422)
+            extra["swap"] = swap
         try:
             plan = mixplan.generate(a.track, a_an, b.track, b_an, pair.key, technique=technique, bars=bars,
                                     transition=transition, **extra)  # fmt: skip
@@ -280,7 +288,10 @@ class MixService:
         else:
             plan = self.plan_pair(pair)
         mixrender = _module("mixrender")
-        render_id = str(mixrender.plan_hash(plan, a.path, b.path))
+        stems = {"a": self.crates.vocal_path(pair.a_dir, a), "b": self.crates.vocal_path(pair.b_dir, b)}
+        use_stems = engine.accepts(mixrender.render, "stems")
+        render_id = str(mixrender.plan_hash(plan, a.path, b.path, stems) if use_stems
+                        else mixrender.plan_hash(plan, a.path, b.path))
         if not _RENDER_ID.match(render_id):
             raise ApiError("renderer returned an unusable id", 500)
         if (hit := self._cached(render_id)) is not None:
@@ -291,7 +302,7 @@ class MixService:
                 if (hit := self._cached(render_id)) is not None:  # finished between the check above and now
                     return hit
                 fut = self._pool.submit(self._render, mixrender, render_id, plan, a.path, b.path, pair.key,
-                                        from_id, to_id)  # fmt: skip
+                                        from_id, to_id, stems if use_stems else None)  # fmt: skip
                 self._inflight[render_id] = fut
         try:
             return fut.result()
@@ -329,8 +340,13 @@ class MixService:
             except OSError:
                 pass
 
+    def busy(self) -> bool:
+        """A transition is being rendered right now."""
+        with self._lock:
+            return bool(self._inflight)
+
     def _render(self, mixrender: Any, render_id: str, plan: dict, a_path: Path, b_path: Path, folder: str,
-                from_id: str, to_id: str) -> dict:  # fmt: skip
+                from_id: str, to_id: str, stems: dict | None = None) -> dict:  # fmt: skip
         event = {"render_id": render_id, "folder": folder, "from_id": from_id, "to_id": to_id}
         last = [0.0]
 
@@ -344,7 +360,7 @@ class MixService:
         out_dir = self.renders_dir
         tmp = out_dir / f".{render_id}.{uuid.uuid4().hex[:8]}.part.m4a"
         try:
-            kwargs = {}
+            kwargs: dict[str, Any] = {"stems": stems} if stems is not None else {}
             for name in ("progress", "on_progress"):
                 if engine.accepts(mixrender.render, name):
                     kwargs[name] = progress

@@ -284,3 +284,53 @@ set_hash(entries, plans) -> str; cue_sheet(result, title, name) / tracklist(resu
 SSE: `{type: "setmix", data: SetMix}` on every state / progress change, `{type: "setlist_changed", data: {id}}`.
 Render events of a link carry `folder: "setlist:<id>"`. Mixes are written to `<root>/Mixes/<name>/` (skipped by
 `library.list_crates`), indexed in `<root>/.seedbox/setmixes.json`; setlists live in `<root>/.seedbox/setlists/`.
+
+# v6: chill mixes + vocal stems (branch claude/chill-mixes, 2026-10-03)
+
+Contract: `LaneId` gains `vocals` / `instrumental`; `MixPlan.swap_kind` / `vocal_stems`; `ChillStyle`, `SwapKind`,
+`StemsStatus`, the `stems` SSE event and `TrackAnalysis.kick_per_bar` / `bass_per_bar` / `vocal_source` in
+`frontend/src/api/types.ts`.
+
+## Planner (musicreco/mixplan.py)
+- `MODE` = `"chill"` (default) or `"fx"` (env `SEEDBOX_MIX_MODE=fx`: the v5 planner, kept intact). `PLAN_VERSION = 4`.
+- Chill styles (`CHILL_STYLES`): `phrase mix` (default), `acapella`, `filter fade`, `double drop`, `quick cut`. No
+  echo / reverb sends, no deck FX, no loop rolls; any other style asked for falls back with a note. No variety rule:
+  each pair gets its own best fit (ties go to the phrase mix).
+- Phrase mix: 16 bars (8 when the keys clash). B's fader up with its EQ shut; highs open over bars 1-4, mids over
+  5-8; the lows change hands at the swap bar (B's main section on a phrase inside the blend, else halfway); after it A's
+  mids leave (from a quarter of the way through the rest, right at the swap for keys a step apart), then its highs,
+  its fader over the last quarter, a high-pass rising to 0.45 (~330 Hz) over the last half.
+- Bass swap (`swap_kind`, `generate(swap=)` / `?swap=`): `hard` (on the 1), `quick` (over the bar before, -3 dB each at
+  the crossing), `slow` (over 4 bars around it). By the songs: a soft low end on either side (low_per_bar < 0.45) →
+  slow; a bassline that never lets go (bass_per_bar ≥ 0.85) or a kick not on every beat (kick_per_bar < 0.75) → quick;
+  else hard. B without bass in the blend: A's lows carry it (`swap_kind` null); into B's drop: hard at the blend end.
+- Loops only when needed: when A's clean ending (after its last sung bar, 4-bar grid) is shorter than the blend and
+  the plain window would run over A's vocals or past its end, the blend starts on that ending and A's last 8 bars
+  repeat (slip loop) until A is out; the repeat's vocal is muted (needs A's stems when those bars are sung; a fading
+  or drum-less ending is never looped).
+- Two vocals never at once (`_handoff`, needs the stem of the deck that goes quiet; else A's mids duck to -18 dB): B
+  starts singing while A is between lines → A's vocal muted there; mid-line before the swap → B's vocal waits for A's
+  line to end, at the latest the swap (the vocals change hands with the bass); later → A's vocal fades just before its
+  line (or over the 2 beats before B's) unless A's line ends within 2 bars.
+- Acapella (score 0.76): A's vocal split, keys same / ±1 / relative, tempo gap ≤ 2%, A singing across the swap bar on
+  the plain window (a line running there or starting within a bar) that ends ≥ 2 bars after it inside the blend, and
+  B not singing before then (or B split: its vocal waits). A's instrumental drops out on the 1 of the swap, its vocal
+  rides on with its mids / highs open, then fades a beat after the line.
+- Filter fade (0.66 for two full arrangements, 0.64 for keys a step apart): B low-pass -0.7 opening over 3/4 of the
+  blend, A high-pass to 0.6 from the first quarter; the bass still swaps. Double drop: as v5 (EQ + filter only).
+  Quick cut: A out on the 1, nothing else (tempo gaps over 12% or when asked).
+- Clashing keys: 8 bars, A's mids out over bars 2-3 (its vocal with them), B's mids in over bars 4-5.
+
+## Stems (musicreco/stems.py, musicreco/separator.py, seedbox/stems_queue.py)
+- `<crate>/.seedbox/stems/<id>.flac`: the vocal stem (44.1 kHz stereo 16-bit FLAC, sample-aligned with
+  `mixrender.decode_stereo`); `<id>.json`: cache key (size, mtime, STEMS_VERSION, model id, audio fingerprint),
+  `vocal_db` / `mix_db` loudness envelopes at 20 fps. `vocal_per_bar(meta, analysis)` = share of a bar's frames with
+  the stem within 15 dB of the track and 32 dB of its own loud level, full at 35%; `enrich` puts it in the analysis
+  (`vocal_source: "stems"`, the heuristic kept as `vocal_per_bar_heuristic`).
+- One worker; songs in use (open transition, setlist, set mix) at the front in play order; the rest of a crate in
+  the background, started only while no transition or set mix renders. SSE `{type: "stems", data: {folder,
+  track_id, state, progress, error?}}`; `GET /api/crates/{folder}/stems` → StemsStatus.
+- Renderer: per deck, where its `vocals` / `instrumental` lanes move and the stem exists, the source becomes
+  `g_i * (track - vocals) + g_v * vocals` before the time stretch (both at 1 = the original samples). `plan_hash` /
+  `set_hash` include the stem file when a deck uses it. `RENDER_VERSION = 4`.
+- Analysis: `ANALYSIS_VERSION = 5` adds `kick_per_bar` and `bass_per_bar` (between-kick low level vs the bar's).

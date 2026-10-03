@@ -4,26 +4,7 @@
  * (then the caller handles it). With VITE_MOCK=1 the same calls are served by src/mock/server.ts.
  */
 import { toast } from "@/store/toasts";
-import type {
-  OkResponse,
-  PickFolderResult,
-  UpdateResult,
-  Crate,
-  CrateLinks,
-  CrateSet,
-  CrateSummary,
-  Job,
-  Partner,
-  PreviewStatus,
-  SearchPage,
-  Setlist,
-  SetlistSummary,
-  SetMix,
-  SetMixStatus,
-  Settings,
-  SystemStatus,
-  TrackAnalysis,
-} from "./types";
+import type { Crate, CrateLinks, CrateSet, CrateSummary, Job, OkResponse, Partner, PickFolderResult, PreviewStatus, SearchPage, Setlist, SetlistSummary, SetMix, SetMixStatus, Settings, StemsStatus, SystemStatus, TrackAnalysis, UpdateResult } from "./types";
 
 export const MOCK = import.meta.env.VITE_MOCK === "1";
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
@@ -167,6 +148,8 @@ export const api = {
   saveOrder: (folder: string, trackIds: string[], opts?: RequestOptions) =>
     put<CrateSet>(`/api/crates/${enc(folder)}/order`, { track_ids: trackIds }, opts),
   autoOrder: (folder: string, opts?: RequestOptions) => post<CrateSet>(`/api/crates/${enc(folder)}/auto-order`, undefined, opts),
+  /** Vocal splitting state of a crate's tracks (live updates arrive as `stems` events). */
+  crateStems: (folder: string, opts?: RequestOptions) => get<StemsStatus>(`/api/crates/${enc(folder)}/stems`, opts),
   partners: (folder: string, trackId: string, direction: "out" | "in" = "out", opts?: RequestOptions) =>
     get<Partner[]>(`/api/crates/${enc(folder)}/partners/${enc(trackId)}?${qs({ direction })}`, opts),
   /**

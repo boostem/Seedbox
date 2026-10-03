@@ -21,7 +21,11 @@ export function useSetlist(id: string) {
     async (signal) => {
       const sl = await api.setlist(id, { signal, quiet: true });
       setFolders(sl.blocks.map((b) => b.folder));
-      for (const b of sl.blocks) if (b.tracks.length) useApp.getState().seedAnalysis(b.folder, b.tracks);
+      for (const b of sl.blocks) {
+        if (!b.tracks.length) continue;
+        useApp.getState().seedAnalysis(b.folder, b.tracks);
+        void useApp.getState().loadStems(b.folder);
+      }
       return sl;
     },
     [id, version, refresh],

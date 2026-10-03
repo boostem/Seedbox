@@ -69,6 +69,7 @@ class SetEntry:
     path: Path
     analysis: dict | None = None
     folder: str = ""
+    vocal_path: Path | None = None  # the track's vocal stem (musicreco.stems), when it's split
 
 
 @dataclass
@@ -280,7 +281,8 @@ def set_hash(entries: list[SetEntry], plans: list[dict]) -> str:
         except ValueError:
             norm.append({"invalid": json.dumps(p, sort_keys=True, default=str)})
     payload = {"v": [SETMIX_VERSION, mixrender.RENDER_VERSION, mixplan.PLAN_VERSION], "plans": norm,
-               "files": [mixrender._file_identity(e.path) for e in entries]}
+               "files": [mixrender._file_identity(e.path) for e in entries],
+               "vocals": [mixrender._file_identity(e.vocal_path) if e.vocal_path else None for e in entries]}
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:24]
 
 
@@ -564,9 +566,10 @@ def _runs(mask: np.ndarray) -> list[tuple[int, int]]:
 
 
 def _stretch_chunk(audio: np.ndarray, d: _Deck, clock: mixrender._Clock, edges: list[float], k: int, sr: int,
-                   key_lock: bool) -> tuple[int, int, np.ndarray]:
-    """Chunk k of a deck stretched onto the master clock: (first sample, end sample, audio). Every chunk but the
-    first starts XFADE samples before its beat line (spliced onto the previous chunk there)."""
+                   key_lock: bool, vocal: np.ndarray | None = None) -> tuple[int, int, np.ndarray]:
+    """Chunk k of a deck stretched onto the master clock: (first sample, end sample, audio), its stems rebalanced
+    first where its vocals / instrumental lanes move (`vocal` = its vocal stem). Every chunk but the first starts
+    XFADE samples before its beat line (spliced onto the previous chunk there)."""
     deck = d.deck
     nbpm = float(deck["native_bpm"])
     spb = 60.0 / nbpm
@@ -578,6 +581,9 @@ def _stretch_chunk(audio: np.ndarray, d: _Deck, clock: mixrender._Clock, edges: 
     q_end = int(math.ceil(t_p1)) + int(0.25 * sr) if last else int(round(float(clock.time(b1)) * sr))
     s0, s1 = b0 - 2.0, b1 + 1.0 + (0.5 if last else 0.0)
     src, _ = mixrender._source(audio, deck, s0, s1, sr)
+    if vocal is not None:
+        voc, _ = mixrender._source(vocal, deck, s0, s1, sr)
+        src = mixrender.stem_balance(src, voc, deck["lanes"], s0, sr * spb, sr)
     beats = s0 + np.arange(src.shape[1]) / (sr * spb)
     edge = 2 * mixrender._Clock.STEP
     speed = np.clip(clock.bpm(np.clip(beats, d.p0 + edge, d.p1 - edge)) / nbpm, 0.5, 2.0).astype(np.float64)
@@ -589,9 +595,10 @@ def _stretch_chunk(audio: np.ndarray, d: _Deck, clock: mixrender._Clock, edges: 
 
 def _render_deck(d: _Deck, audio: np.ndarray, trim: float, clock: mixrender._Clock, sr: int, acc: _Acc,
                  pool: ThreadPoolExecutor | None = None, key_lock: bool = True,
-                 cancel: threading.Event | None = None) -> Iterator[int]:
+                 cancel: threading.Event | None = None, vocal: np.ndarray | None = None) -> Iterator[int]:
     """Render one deck chunk by chunk into `acc` (dry signal + its echo / reverb returns), the stretches running
-    ahead on `pool`. Yields the global sample up to which this deck's dry signal is complete after each chunk."""
+    ahead on `pool`. Yields the global sample up to which this deck's dry signal is complete after each chunk.
+    `vocal`: the deck's vocal stem when its vocals / instrumental lanes move (else None)."""
     deck = d.deck
     t_p0, t_p1 = float(clock.time(d.p0)) * sr, float(clock.time(d.p1)) * sr
     fade_in, fade_out = int(round(0.003 * sr)), int(round(0.004 * sr))
@@ -606,7 +613,7 @@ def _render_deck(d: _Deck, audio: np.ndarray, trim: float, clock: mixrender._Clo
     def submit() -> None:
         nonlocal nxt
         while nxt < n_chunks and len(ahead) < (STRETCH_WORKERS + 1 if pool else 1):
-            args = (audio, d, clock, edges, nxt, sr, key_lock)
+            args = (audio, d, clock, edges, nxt, sr, key_lock, vocal)
             if pool is not None:
                 ahead.append(pool.submit(_stretch_chunk, *args))
             else:
@@ -719,7 +726,15 @@ def render(entries: list[SetEntry], plans: list[dict], out_path: Path, *, title:
     warnings = list(tl.warnings)
     pool = ThreadPoolExecutor(STRETCH_WORKERS, thread_name_prefix="setmix-stretch")
     loader = ThreadPoolExecutor(1, thread_name_prefix="setmix-decode")
-    decoded = loader.submit(mixrender.decode_stereo, tl.decks[0].entry.path, sr)
+    def load(d: _Deck) -> tuple[np.ndarray, np.ndarray | None]:
+        audio = mixrender.decode_stereo(d.entry.path, sr)
+        vocal = mixrender._vocal_stem(d.entry.vocal_path, audio, sr) if mixrender.uses_stems(d.deck) else None
+        if vocal is None and mixrender.uses_stems(d.deck):
+            warnings.append(f"{d.entry.track.display_name}: its vocal stem isn't split yet, so its vocals / "
+                            "instrumental lanes are ignored")
+        return audio, vocal
+
+    decoded = loader.submit(load, tl.decks[0])
     try:
         report(0.01, "Starting")
         for di, d in enumerate(tl.decks):
@@ -727,9 +742,9 @@ def render(entries: list[SetEntry], plans: list[dict], out_path: Path, *, title:
                 raise Cancelled()
             name = d.entry.track.display_name
             report(done_work / sum(work), f"Track {di + 1}/{len(tl.decks)} · {name}")
-            audio = decoded.result()
+            audio, vocal = decoded.result()
             if di + 1 < len(tl.decks):  # decode the next track while this one renders
-                decoded = loader.submit(mixrender.decode_stereo, tl.decks[di + 1].entry.path, sr)
+                decoded = loader.submit(load, tl.decks[di + 1])
             lufs = mixrender._track_lufs(d.entry.path, audio, sr)
             trim = 10 ** (mixrender._clamp(mixrender.DECK_LUFS - lufs, -mixrender.TRIM_LIMIT_DB,
                                            mixrender.TRIM_LIMIT_DB) / 20)
@@ -737,14 +752,14 @@ def render(entries: list[SetEntry], plans: list[dict], out_path: Path, *, title:
             next_q = int(math.floor(float(clock.time(nxt.p0)) * sr)) - SR if nxt else total
             t0 = float(clock.time(d.p0)) * sr
             t1 = float(clock.time(d.p1)) * sr
-            for upto in _render_deck(d, audio, trim, clock, sr, acc, pool=pool, cancel=cancel):
+            for upto in _render_deck(d, audio, trim, clock, sr, acc, pool=pool, cancel=cancel, vocal=vocal):
                 safe = min(upto, next_q) - int(0.5 * sr)
                 if safe > acc.base:
                     bus.feed(acc.pop(safe))
                 frac = (min(upto, t1) - t0) / max(1.0, t1 - t0)
                 report((done_work + work[di] * frac) / sum(work), f"Track {di + 1}/{len(tl.decks)} · {name}")
             done_work += work[di]
-            del audio
+            del audio, vocal
         report(0.98, "Finishing")
         bus.feed(acc.pop(total), final=True)
         enc.close()

@@ -58,6 +58,7 @@ export function useSetModel(folder: string): SetModel {
     if (!q.data) return;
     rememberTransitions(q.data.transitions);
     useApp.getState().seedAnalysis(folder, q.data.tracks);
+    void useApp.getState().loadStems(folder);
   }, [q.data, folder, rememberTransitions]);
 
   // drop the override once its grace period is over and no save is in flight

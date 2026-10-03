@@ -216,6 +216,7 @@ class CrateService:
         self._scans: dict[str, tuple[tuple, list[SetFile]]] = {}
         self._energy_done: set[str] = set()  # crates whose missing energy ratings were back-filled this session
         self._energy_exact: dict[str, dict[str, int]] = {}  # crate -> id -> exact 1-10 written (tags keep stars)
+        self.stems: Any = None  # StemQueue (stems_queue.py), set by the server: vocal stems + stem-based vocals
 
     @property
     def root(self) -> Path:
@@ -333,10 +334,40 @@ class CrateService:
                 else:
                     later.append(task)
                     st = "queued"
-            analyses[tid] = an
+            analyses[tid] = self.enrich(seed_dir, f, an)
             states[tid] = "ready" if an is not None else st
         aq.enqueue(later, front=True)
         return analyses, states
+
+    # --- vocal stems --------------------------------------------------------------------------------------------
+
+    def enrich(self, seed_dir: Path, f: SetFile, an: dict | None) -> dict | None:
+        """The analysis with its vocal_per_bar from the track's vocal stem once it's split (else unchanged)."""
+        if an is None or self.stems is None:
+            return an
+        return self.stems.enrich(seed_dir, f.track.id, f.path, an)
+
+    def want_stems(self, seed_dir: Path, files: list[SetFile], front: bool = False) -> None:
+        """Queue vocal splitting for `files` (front: songs in use, in order; else background, while idle)."""
+        if self.stems is None or not files:
+            return
+        from .stems_queue import StemTask
+
+        self.stems.enqueue([StemTask(seed_dir.name, seed_dir, f.track.id, f.path) for f in files
+                            if self.stems.meta(seed_dir, f.track.id, f.path) is None], front=front)
+
+    def vocal_path(self, seed_dir: Path, f: SetFile) -> Path | None:
+        """The track's vocal stem file when it's split and current."""
+        return None if self.stems is None else self.stems.vocal_path(seed_dir, f.track.id, f.path)
+
+    def stems_status(self, folder: str) -> dict:
+        """StemsStatus (types.ts) of a crate's tracks."""
+        seed_dir = resolve_crate(self.root, folder)
+        files = self.files(seed_dir)
+        if self.stems is None:
+            return {"available": False, "reason": "vocal stems aren't part of this build", "tracks": {}, "ready": 0,
+                    "total": len(files)}
+        return self.stems.status(seed_dir, files)
 
     def analyses_now(self, seed_dir: Path, files: list[SetFile]) -> dict[str, dict | None]:
         """Track id -> analysis for those known now (None for the rest, which are queued at the front)."""
@@ -348,6 +379,7 @@ class CrateService:
         files = self.files(seed_dir)
         self.backfill_energy(seed_dir, files)  # values served below; no-op after the first time
         analyses, states = self._analyses(seed_dir, files)
+        self.want_stems(seed_dir, files)  # the whole crate, in the background
         tracks = [f.track for f in files]
         return {
             "folder": seed_dir.name,
@@ -469,14 +501,14 @@ class CrateService:
         queued = False
         while True:
             if (hit := aq.cached(folder, tid)) is not None:
-                return hit
+                return self.enrich(seed_dir, f, hit)
             state = aq.state(folder, tid)
             if state == "error":
                 raise ApiError(f"analysis failed: {aq.error(folder, tid)}", 422)
             if state == "missing":
                 if disk_cache_path(seed_dir, tid).is_file():
                     try:
-                        return aq.load_now(task)
+                        return self.enrich(seed_dir, f, aq.load_now(task))
                     except Exception as e:  # noqa: BLE001
                         raise ApiError(f"analysis failed: {e}", 422) from e
                 if not queued:
@@ -490,9 +522,9 @@ class CrateService:
         """TrackAnalysis; 404 until it's ready, 422 if it failed, 503 without the analysis module."""
         seed_dir = resolve_crate(self.root, folder)
         aq = self.analysis
-        if hit := aq.cached(seed_dir.name, track_id):
-            return hit
         mine = next((f for f in self.files(seed_dir) if f.track.id == track_id), None)
+        if hit := aq.cached(seed_dir.name, track_id):
+            return self.enrich(seed_dir, mine, hit) if mine is not None else hit
         if mine is None:
             raise NotFound("track not in this crate")
         state = aq.state(seed_dir.name, track_id)
@@ -505,7 +537,7 @@ class CrateService:
         task = self.task(seed_dir, mine)
         if disk_cache_path(seed_dir, track_id).is_file():
             try:
-                return aq.load_now(task)
+                return self.enrich(seed_dir, mine, aq.load_now(task))
             except Exception as e:  # noqa: BLE001
                 raise ApiError(f"analysis failed: {e}", 422) from e
         aq.enqueue([task], front=True)

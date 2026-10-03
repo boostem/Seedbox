@@ -1,15 +1,17 @@
 /**
- * The v4 mix editor for one transition: technique / style / bars (re-generate), Edited badge, Save / Revert, undo/redo,
- * the rendered-preview transport (render progress, loop, LUFS/peak/warnings), the automation DAW, and (only with
- * `details`) the plan's notes + markers. Space plays/stops the rendered transition.
+ * The mix editor for one transition (chill mixes): style (ranked for the two songs) / bass swap / bars (re-generate),
+ * the vocal-stems state, Edited badge, Save / Revert, undo/redo, the rendered-preview transport (render progress,
+ * loop, LUFS/peak/warnings), the automation DAW, and (only with `details`) the plan's notes + markers. Space
+ * plays/stops the rendered transition.
  */
-import { AlertTriangle, Play, Redo2, Repeat, RotateCcw, Save, Sparkles, Square, Undo2 } from "lucide-react";
+import { AlertTriangle, AudioLines, Play, Redo2, Repeat, RotateCcw, Save, Sparkles, Square, Undo2 } from "lucide-react";
 import { useCallback, useMemo } from "react";
-import type { MixPlan, MixStyle, MixTechnique, SetTrack, TrackAnalysis } from "@/api/types";
+import type { MixPlan, MixStyle, SetTrack, SwapKind, TrackAnalysis } from "@/api/types";
 import { Badge, Button, IconButton, ProgressBar, Select, Spinner, Tabs, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { useHotkey } from "@/lib/hotkeys";
-import { barLabel, BAR_OPTIONS, BLEND_STYLES, fitLabel, isBlend, MANUAL_STYLES, STYLE_HINTS, TECHNIQUES } from "./lanes";
+import { type StemEntry, useApp, useStemState } from "@/store/app";
+import { barLabel, BAR_OPTIONS, CHILL_STYLES, fitLabel, isChillStyle, STYLE_HINTS, SWAP_OPTIONS, SWAP_STYLES, usesFx } from "./lanes";
 import { MixDaw } from "./MixDaw";
 import { usePlayRequests } from "./pending";
 import { markerColor } from "./paint";
@@ -27,6 +29,15 @@ export interface MixEditorProps {
   details?: boolean;
 }
 
+/** The styles that are blends (they keep their length when you switch between them). */
+const BLENDS: readonly MixStyle[] = ["phrase mix", "filter fade", "acapella"];
+
+/** A set track's crate folder (from its audio URL: /api/files/<folder>/<file>), for crate-to-crate links too. */
+function crateOf(t: SetTrack): string {
+  const parts = t.audio_url.split("/");
+  return parts.length > 3 ? decodeURIComponent(parts[3]) : "";
+}
+
 export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProps) {
   const plan = mp.plan;
   const r = useMixRender(folder, plan, a, b);
@@ -36,19 +47,19 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
   usePlayRequests(`${a.track.id}>${b.track.id}`, true, toggle);
 
   const rendering = r.status === "rendering";
-  const blend = isBlend(plan.technique);
   const fits = useMemo(() => new Map((plan.style_fit ?? []).map((f) => [f.style, f])), [plan.style_fit]);
-  // the presets ranked for these two songs (best fit first), and the strong alternatives as one-click chips
-  const blendStyles = useMemo(
-    () => [...BLEND_STYLES].sort((x, y) => (MANUAL_STYLES.includes(x.id) ? 1 : 0) - (MANUAL_STYLES.includes(y.id) ? 1 : 0) || (fits.get(y.id)?.fit ?? -1) - (fits.get(x.id)?.fit ?? -1)),
-    [fits],
-  );
-  const alsoFits = (plan.style_fit ?? []).filter((f) => f.style !== plan.style && f.fit >= 0.58 && !MANUAL_STYLES.includes(f.style)).slice(0, 3);
+  // the styles ranked for these two songs (best fit first), and the strong alternatives as one-click chips
+  const styles = useMemo(() => [...CHILL_STYLES].sort((x, y) => (fits.get(y.id)?.fit ?? -1) - (fits.get(x.id)?.fit ?? -1)), [fits]);
+  const alsoFits = (plan.style_fit ?? []).filter((f) => f.style !== plan.style && f.fit >= 0.58 && isChillStyle(f.style)).slice(0, 3);
   const current = fits.get(plan.style);
-  const styleTip = `${current?.why ? `Why ${plan.style}: ${current.why}. ` : ""}${STYLE_HINTS[plan.style] ?? "How the blend sounds"}`;
-  // a blend style rides on the current blend (or a fresh one); any other style is its own technique at its own length
-  const pick = (style: MixStyle) =>
-    void (BLEND_STYLES.some((s) => s.id === style) ? (blend ? mp.regenerate(plan.technique, plan.bars, style) : mp.regenerate("bass swap", undefined, style)) : mp.regenerate(style as MixTechnique));
+  const styleTip = `${current?.why ? `Why ${plan.style}: ${current.why}. ` : ""}${STYLE_HINTS[plan.style] ?? "How the transition sounds"}`;
+  const blend = BLENDS.includes(plan.style);
+  const pick = (style: MixStyle) => void mp.regenerate(undefined, BLENDS.includes(style) && blend ? plan.bars : undefined, style);
+  const swap = SWAP_OPTIONS.find((o) => o.id === plan.swap_kind);
+  const swapTip = swap ? swap.hint : "B brings no bass during this blend, so A's lows carry it and leave with A. Pick a swap to force one.";
+  const stA = useStemState(crateOf(a), a.track.id);
+  const stB = useStemState(crateOf(b), b.track.id);
+  const fx = usesFx(plan);
   return (
     <div className="flex flex-col gap-3">
       {/* toolbar */}
@@ -83,38 +94,43 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
             </span>
           </Tooltip>
         )}
-        <Tooltip content={blend ? "How B comes in and A goes out" : styleTip}>
-          <Select value={plan.technique} onChange={(e) => void mp.regenerate(e.target.value as MixTechnique, plan.bars)} aria-label="Technique" className="capitalize">
-            {TECHNIQUES.map((t) => {
-              const label = t === "loop roll" || !blend ? fitLabel(t as MixStyle, fits.get(t as MixStyle)?.fit) : null;
+        <Tooltip content={styleTip}>
+          <Select value={isChillStyle(plan.style) ? plan.style : "phrase mix"} onChange={(e) => pick(e.target.value as MixStyle)} aria-label="Style" className="capitalize">
+            {styles.map((st) => {
+              const label = fitLabel(st.id, fits.get(st.id)?.fit);
               return (
-                <option key={t} value={t}>
-                  {label ? `${t} · ${label}` : t}
+                <option key={st.id} value={st.id}>
+                  {label ? `${st.id} · ${label}` : st.id}
                 </option>
               );
             })}
           </Select>
         </Tooltip>
-        {blend && (
-          <Tooltip content={styleTip}>
-            <Select value={plan.style} onChange={(e) => pick(e.target.value as MixStyle)} aria-label="Style" className="capitalize">
-              {blendStyles.map((s) => {
-                const label = fitLabel(s.id, fits.get(s.id)?.fit);
-                return (
-                  <option key={s.id} value={s.id}>
-                    {label ? `${s.id} · ${label}` : s.id}
-                  </option>
-                );
-              })}
+        {SWAP_STYLES.includes(plan.style) && (
+          <Tooltip content={swapTip}>
+            <Select
+              value={plan.swap_kind ?? "auto"}
+              onChange={(e) => void mp.regenerate(undefined, plan.bars, plan.style, e.target.value === "auto" ? undefined : (e.target.value as SwapKind))}
+              aria-label="Bass swap"
+            >
+              <option value="auto">{plan.swap_kind ? "Swap: pick for the songs" : "A carries the bass"}</option>
+              {SWAP_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
             </Select>
           </Tooltip>
         )}
-        <Tabs
-          variant="segmented"
-          value={String(plan.bars)}
-          onChange={(v) => void mp.regenerate(plan.technique, Number(v), blend ? plan.style : undefined)}
-          items={BAR_OPTIONS.map((n) => ({ id: String(n), label: `${n} bars` }))}
-        />
+        {blend && (
+          <Tabs
+            variant="segmented"
+            value={String(plan.bars)}
+            onChange={(v) => void mp.regenerate(undefined, Number(v), plan.style)}
+            items={BAR_OPTIONS.map((n) => ({ id: String(n), label: `${n} bars` }))}
+          />
+        )}
+        <StemsBadge plan={plan} a={stA} b={stB} canRefresh={!plan.edited && !mp.dirty} onRefresh={mp.reload} />
         <span className="flex-1" />
         {mp.dirty ? <Badge tone="warn">Unsaved edits</Badge> : plan.edited ? <Badge tone="accent">Edited</Badge> : null}
         <IconButton icon={Undo2} label="Undo (⌘Z)" size="md" onClick={mp.undo} disabled={!mp.canUndo} />
@@ -127,7 +143,14 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
         </Button>
       </div>
 
-      {/* other presets that suit these two songs, one click away */}
+      {fx && (
+        <div className="-mt-1.5 flex items-center gap-1.5 px-1 text-2xs text-warn">
+          <AlertTriangle size={11} />
+          This transition was saved with echo or reverb from the FX version. Revert to make it a chill mix.
+        </div>
+      )}
+
+      {/* other styles that suit these two songs, one click away */}
       {alsoFits.length > 0 && (
         <div className="-mt-1.5 flex flex-wrap items-center gap-1.5 px-1 text-2xs text-fg-subtle">
           <Sparkles size={11} className="text-accent" />
@@ -167,8 +190,7 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <section className="rounded-md border border-line bg-surface px-3 py-2.5">
           <h3 className="label-caps mb-1.5 !text-fg-muted">
-            The plan · <span className="capitalize">{plan.bars}-bar {plan.technique}</span>
-            {blend && plan.style && <span className="capitalize"> · {plan.style}</span>}
+            The plan · <span className="capitalize">{blend ? `${plan.bars}-bar ${plan.style}` : plan.style}</span>
           </h3>
           <ul className="flex flex-col gap-1 text-sm select-text">
             {plan.notes.map((n, i) => (
@@ -192,5 +214,52 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
       </div>
       )}
     </div>
+  );
+}
+
+/** Whose vocals were split for this plan, live splitting progress for the rest, and a refresh once they're ready. */
+function StemsBadge({ plan, a, b, canRefresh, onRefresh }: { plan: MixPlan; a?: StemEntry; b?: StemEntry; canRefresh: boolean; onRefresh: () => void }) {
+  const split = plan.vocal_stems ?? { a: false, b: false };
+  const available = useApp((s) => Object.values(s.stemsAvailable).every((x) => x.available));
+  const reason = useApp((s) => Object.values(s.stemsAvailable).find((x) => !x.available)?.reason ?? null);
+  if (split.a && split.b) {
+    return (
+      <Tooltip content="Both songs' vocals are split: two vocals never sound at once, and acapellas and vocal-free loops are possible.">
+        <span className="inline-flex items-center gap-1 text-2xs text-ok">
+          <AudioLines size={12} /> Vocals split
+        </span>
+      </Tooltip>
+    );
+  }
+  if (!available) {
+    return (
+      <Tooltip content={reason ?? "Vocal splitting isn't available on this install."}>
+        <span className="inline-flex items-center gap-1 text-2xs text-fg-subtle">
+          <AudioLines size={12} /> No vocal stems
+        </span>
+      </Tooltip>
+    );
+  }
+  const live = (["a", "b"] as const).filter((d) => !split[d]).map((d) => ({ d, st: d === "a" ? a : b }));
+  const ready = live.filter((x) => x.st?.state === "ready");
+  if (ready.length === live.length && live.length > 0) {
+    return (
+      <Tooltip content={canRefresh ? "The vocals are split now: update the plan to use them." : "The vocals are split now: Revert to a generated plan to use them."}>
+        <Button variant="ghost" size="sm" icon={AudioLines} disabled={!canRefresh} onClick={onRefresh}>
+          Vocals ready: update
+        </Button>
+      </Tooltip>
+    );
+  }
+  const running = live.find((x) => x.st?.state === "running");
+  const failed = live.find((x) => x.st?.state === "error");
+  const text = running ? `Splitting vocals ${Math.round((running.st?.progress ?? 0) * 100)}%` : failed ? "Vocal split failed" : "Vocals not split yet";
+  const who = live.map((x) => x.d.toUpperCase()).join(" and ");
+  return (
+    <Tooltip content={failed?.st?.error ? `Splitting ${failed.d.toUpperCase()}'s vocals failed: ${failed.st.error}` : `${who}'s vocals are split in the background (songs you're using go first). Until then vocal clashes are handled with the EQ.`}>
+      <span className={cn("inline-flex items-center gap-1 text-2xs", failed ? "text-warn" : "text-fg-subtle")}>
+        {running ? <Spinner size={10} /> : <AudioLines size={12} />} {text}
+      </span>
+    </Tooltip>
   );
 }

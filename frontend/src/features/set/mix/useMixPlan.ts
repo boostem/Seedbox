@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "@/api/client";
-import type { MixPlan, MixStyle, MixTechnique } from "@/api/types";
+import type { MixPlan, MixStyle, MixTechnique, SwapKind } from "@/api/types";
 import { toast } from "@/store/toasts";
 import { mixApi } from "./mixApi";
 
@@ -25,9 +25,9 @@ export interface MixPlanApi {
   redo: () => void;
   canUndo: boolean;
   canRedo: boolean;
-  /** A fresh plan for this technique / length (and blend style; without one the planner picks the best fit; without
-   * a length it picks that too). */
-  regenerate: (technique: MixTechnique, bars?: number, style?: MixStyle) => Promise<void>;
+  /** A fresh plan for this technique / length / style / bass swap (whatever is left out, the planner picks for the
+   * two songs). */
+  regenerate: (technique: MixTechnique | undefined, bars?: number, style?: MixStyle, swap?: SwapKind) => Promise<void>;
   save: () => Promise<void>;
   revert: () => Promise<void>;
   reload: () => void;
@@ -108,9 +108,9 @@ export function useMixPlan(folder: string, from: string, to: string, enabled: bo
   }, []);
 
   const regenerate = useCallback(
-    async (technique: MixTechnique, bars?: number, style?: MixStyle) => {
+    async (technique: MixTechnique | undefined, bars?: number, style?: MixStyle, swap?: SwapKind) => {
       try {
-        const p = await mixApi.plan(folder, from, to, { technique, bars, style }, { quiet: true });
+        const p = await mixApi.plan(folder, from, to, { technique, bars, style, swap }, { quiet: true });
         update(p);
       } catch (e) {
         toast.error((e as Error).message, { title: "Couldn't generate that mix", key: "mixplan" });
