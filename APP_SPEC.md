@@ -313,7 +313,10 @@ with the "cut" advice reworded for blends.
 - Loops only when needed: when A's clean ending (after its last sung bar, 4-bar grid) is shorter than the blend and
   the plain window would run over A's vocals or past its end, the blend starts on that ending and A's last 8 bars
   repeat (slip loop) until A is out; the repeat's vocal is muted (needs A's stems when those bars are sung; a fading
-  or drum-less ending is never looped).
+  or drum-less ending is never looped). Else, when B would start singing inside a 16-bar blend and has 8 clean,
+  steady bars at its cue (`_hold_place`): B's intro hold, its first 8 bars play twice (deck B's timeline starts 8
+  bars earlier, one loop over master beats 0-32), so B's vocal and main section come in as A leaves. Never a loop
+  shorter than 8 bars, never both loops, no land-on-drop re-cue with a hold. Markers "B loop" / "B plays on".
 - Two vocals never at once (`_handoff`, needs the stem of the deck that goes quiet; else A's mids duck to -18 dB): B
   starts singing while A is between lines → A's vocal muted there; mid-line before the swap → B's vocal waits for A's
   line to end, at the latest the swap (the vocals change hands with the bass); later → A's vocal fades just before its

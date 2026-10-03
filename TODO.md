@@ -65,7 +65,8 @@
       FLAC + loudness envelopes; the stems replace the heuristic vocal detection. Per-deck *Vocals* / *Instrumental*
       lanes; two vocals never sound at once; acapella moments where A's vocal can ride over B's beat.
 - [x] **Loops only when needed**: A's last 8 bars repeat when its clean ending is too short for the blend, with the
-      vocal taken out of the repeat.
+      vocal taken out of the repeat; B's first 8 clean bars play twice when B would start singing over A (B's
+      intro hold, back from the FX version, 8-bar loops only).
 - [x] Chill styles only when the songs need them (filter fade, double drop EQ-only, quick cut), clashing keys get 8
       bars with A's melody out early, tempo gaps up to 12% glide, no variety rule.
 - [x] **The set view says what the mix will do**: transition notes come from the planned mix (`plan_notes`), not
@@ -132,7 +133,6 @@ NATTEN build issues), CLAP / MERT, TensorFlow builds (0.4-1.1 GB), and bundling 
       energy arc (warm-up → peak → cool-down), then order and render it.
 - [ ] **More stems**: drums / bass / other (a 4-stem model) for true drum and bass swaps and drums-only intros for
       tracks that don't have them (vocal swaps and acapellas are done).
-- [ ] **B's intro loop**: when B's intro is too short, repeat a clean 8-bar stretch of it (A's ending already does).
 - [ ] **Stems housekeeping**: a Settings switch to pause background splitting, and "Clear vocal stems" per crate
       (they take ~5 MB per minute of music).
 - [ ] **Faster splitting**: fp16 on the Apple GPU (est. 1.5-2x, unverified), or a lighter model for older Macs.

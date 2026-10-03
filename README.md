@@ -43,7 +43,8 @@ Other flags:
   - Two vocals never sound at once: A's vocal is muted while A plays on as an instrumental, or B's first line waits
     until A's is done.
   - When A's clean ending is too short for a 16-bar blend, its last 8 bars repeat under B with the vocal taken out of
-    the repeat.
+    the repeat. When B's clean intro is too short (B would start singing over A), its first 8 bars play twice so
+    its vocal comes in as A leaves.
   - Where it really fits (A singing across the swap, keys that sit together), A's vocal rides over B's beat as an
     **acapella**.
 

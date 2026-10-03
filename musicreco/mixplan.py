@@ -308,11 +308,20 @@ class _Place:
     b0: int  # B's cue: the B bar it starts from at master bar 0
     overlap: int  # bars both decks play (0 = cut on the 1 at master beat 0)
     swap: int | None  # 0-based overlap bar where B's low end replaces A's; None = B's lows come in as A leaves
+    hold: int = 0  # master bars B's first hold_size bars loop before B plays on from b0 (B's intro hold)
+    hold_size: int = 0
 
 
 def _b_bar(p: _Place, k: int) -> int:
-    """B bar sounding at master bar k."""
-    return p.b0 + k
+    """B bar sounding at master bar k (B's intro hold honoured)."""
+    if p.hold and k < p.hold:
+        return p.b0 + k % max(1, p.hold_size)
+    return p.b0 + k - p.hold
+
+
+def _b_end(p: _Place) -> int:
+    """The B bar (exclusive) the overlap reaches on B's side (B's intro hold honoured)."""
+    return _b_bar(p, p.overlap - 1) + 1 if p.overlap else p.b0
 
 
 @dataclass
@@ -674,10 +683,9 @@ def _blend_kind(m: _Mix, p: _Place) -> str:
     """The engine's name for a blend at `p`: long blend (drums-only outro over drums-only intro, 16+ bars), bass swap
     (both decks carry bass), else phrase blend."""
     ga, gb = m.ga, m.gb
-    if p.overlap >= 16 and ga.outro_drums and p.a0 >= ga.outro[0] and gb.intro_drums \
-            and p.b0 + p.overlap <= gb.intro[1]:
+    if p.overlap >= 16 and ga.outro_drums and p.a0 >= ga.outro[0] and gb.intro_drums and _b_end(p) <= gb.intro[1]:
         return "long blend"
-    if _mean(ga.low, p.a0, p.a0 + p.overlap) >= _BASS_LOW and _mean(gb.low, p.b0, p.b0 + p.overlap) >= _BASS_LOW:
+    if _mean(ga.low, p.a0, p.a0 + p.overlap) >= _BASS_LOW and _mean(gb.low, p.b0, _b_end(p)) >= _BASS_LOW:
         return "bass swap"
     return "phrase blend"
 
@@ -1372,6 +1380,7 @@ _CHILL_MAX_GAP = 0.12  # wider tempo gaps can't glide inside a blend: a clean cu
 _HPF_TOUCH = 0.45  # A's high-pass by the end of a blend (~330 Hz): it thins out rather than just getting quieter
 _ROOM_DB = -4.0  # A's highs / mids dip this much while B's open, so the overlap doesn't bump up in level
 _LOOP_BARS = 8
+_HOLD_BARS = 8  # B's intro hold loops its first 8 bars (no 1-4 bar loops)
 _MILD_KEYS = ("+2 boost", "+7 boost", "diagonal")
 _FOUR_FLOOR = 0.75  # kick_per_bar at/above this = a steady kick on every beat
 _SOFT_LOW = 0.45  # low_per_bar below this = a soft low end (blends slowly without mud)
@@ -1466,6 +1475,29 @@ def _loop_place(m: _Mix, place: _Place, L: int) -> tuple[_Place, dict, bool, int
     return _Place(a0, place.b0, L, _swap(gb, place.b0, L)), loop, blk_sung, clean
 
 
+def _hold_place(m: _Mix, place: _Place, L: int) -> tuple[_Place, int] | None:
+    """When B would start singing inside the blend because its clean intro at the cue (before its first sung bar and
+    its main section) is too short: hold B's intro, its first 8 bars playing twice, so B's vocal and main section come
+    in as A leaves. Needs 8 clean, steady bars at the cue (no build-up or fade-in) and a 16-bar blend; never a loop
+    shorter than 8 bars. Returns (placement, clean intro bars) or None."""
+    gb = m.gb
+    ON = transitions._VOCAL_ON
+    if not (m.real_a and m.real_b) or L < 2 * _HOLD_BARS or place.hold:
+        return None
+    b0 = place.b0
+    sung = [k for k in range(b0, min(gb.n, b0 + L)) if gb.vocal[k] >= ON]
+    if len(sung) < 2:  # B doesn't sing in the blend: its main section can come in with the bass
+        return None
+    clean = min(sung[0], max(gb.intro[1], b0)) - b0
+    if not _HOLD_BARS <= clean < L or b0 + L - _HOLD_BARS > gb.n:
+        return None
+    en = gb.energy[b0 : b0 + _HOLD_BARS]
+    if len(en) < _HOLD_BARS or min(en) < 0.55 * max(en):
+        return None
+    sw = None if _mean(gb.low, b0, b0 + _HOLD_BARS) < transitions._NO_BASS else L // 2
+    return _Place(place.a0, b0, L, sw, _HOLD_BARS, _HOLD_BARS), clean
+
+
 def _base_place(m: _Mix, eng: tuple[str, _Place], L: int) -> tuple[_Place, list[str]]:
     """The engine's / the best phrase-aligned window of L bars, not over A's breakdown before its last drop."""
     place = _blend_place(m, L, eng)
@@ -1475,13 +1507,18 @@ def _base_place(m: _Mix, eng: tuple[str, _Place], L: int) -> tuple[_Place, list[
 
 def _chill_place(m: _Mix, base: _Place, L: int) -> tuple[_Place, dict | None, bool, int, bool, list[str]]:
     """Where a chill blend of L bars goes from the base window: A's ending repeated when it's too short (see
-    _loop_place), and B cued so a drop just after the blend lands where A leaves. Returns (placement, loop, repeat
-    sung, clean tail bars, into B's drop, notes)."""
+    _loop_place), else B's intro held when it's too short (see _hold_place), and B cued so a drop just after the blend
+    lands where A leaves. Returns (placement, loop, repeat sung, clean tail bars, into B's drop, notes)."""
     notes: list[str] = []
     place = base
     loop, sung, clean = None, False, 0
     if (lp := _loop_place(m, place, L)) is not None:
         place, loop, sung, clean = lp
+    elif (held := _hold_place(m, place, L)) is not None:
+        place, b_clean = held
+        notes.append(f"B's intro has only {b_clean} clean bars before it starts singing, so its first {place.hold_size} "
+                     f"bars play twice: B's vocal comes in as A leaves.")
+        return place, loop, sung, clean, False, notes
     place2, note = _land_on_drop(m, place, fixed_len=True)
     if note is not None:
         notes.append(note)
@@ -1500,7 +1537,7 @@ def _swap_kind(m: _Mix, place: _Place, sw: int) -> tuple[str, str]:
     if not (m.real_a and m.real_b):
         return "hard", "The bass swaps on the 1 (the songs aren't analysed yet, so this is the safe default)."
     ar = (place.a0 + max(0, sw - 4), place.a0 + max(1, sw))
-    br = (place.b0 + sw, place.b0 + sw + 4)
+    br = (_b_bar(place, sw), _b_bar(place, sw) + 4)
     a_low, b_low = _mean(ga.low, *ar), _mean(gb.low, *br)
     if min(a_low, b_low) < _SOFT_LOW:
         who = "A's" if a_low <= b_low else "B's"
@@ -1555,7 +1592,7 @@ def _chill_choices(m: _Mix, place: _Place, key_mode: str, va: list[float], vb: l
         return [_Choice("quick cut", 0.9, f"{why}: a clean cut on the phrase"), _Choice(DEFAULT_STYLE, 0.0, why),
                 _Choice("acapella", 0.0, why), _Choice("filter fade", 0.0, why), dd_choice], None
     real = m.real_a and m.real_b
-    clean = real and ga.outro_drums and place.a0 >= ga.outro[0] and gb.intro_drums and place.b0 + L <= gb.intro[1]
+    clean = real and ga.outro_drums and place.a0 >= ga.outro[0] and gb.intro_drums and _b_end(place) <= gb.intro[1]
     if key_mode == "clash":
         base = (0.62, "the keys clash, so it's a short blend with A's melody out early")
     elif clean:
@@ -1566,7 +1603,7 @@ def _chill_choices(m: _Mix, place: _Place, key_mode: str, va: list[float], vb: l
     # two full arrangements colliding: A has no real outro (or the blend's first half is still in its main part)
     # and B's main part arrives in the first half (no real intro): the EQ alone would stack two whole songs
     a_full = real and (ga.outro_bars < 4 or place.a0 + L // 2 < ga.outro[0])
-    b_full = real and (gb.intro_bars < 4 or place.b0 + L // 2 > gb.intro[1])
+    b_full = real and (gb.intro_bars < 4 or _b_bar(place, L // 2) > gb.intro[1])
     if key_mode == "clash":
         ff = (0.3, "the keys clash: even a filter fade would show it, a short EQ blend hides it better")
     elif a_full and b_full:
@@ -1802,11 +1839,13 @@ def _decks(m: _Mix, place: _Place, E: float) -> tuple[dict, dict]:
         "track_id": m.a.id, "beat0_s": round(ga.fd + place.a0 * ga.bar_s, 4), "native_bpm": m.a_bpm,
         "play_from_beat": 0.0, "play_to_beat": E, "echo_beats": 0.75, "loops": [], "fx": [], "lanes": {},
     }  # fmt: skip
-    b_beat0 = gb.fd + place.b0 * gb.bar_s
+    b_beat0 = gb.fd + (place.b0 - place.hold) * gb.bar_s
     b_deck = {
         "track_id": m.b.id, "beat0_s": round(b_beat0, 4), "native_bpm": m.b_bpm,
-        "play_from_beat": max(0.0, round(-b_beat0 * m.b_bpm / 60.0, 4)), "play_to_beat": 0.0,
-        "echo_beats": 0.75, "fx": [], "lanes": {}, "loops": [],
+        "play_from_beat": 0.0 if place.hold else max(0.0, round(-b_beat0 * m.b_bpm / 60.0, 4)), "play_to_beat": 0.0,
+        "echo_beats": 0.75, "fx": [], "lanes": {},
+        "loops": [{"start_beat": 0.0, "end_beat": 4.0 * place.hold, "source_beat": 4.0 * place.hold,
+                   "length_beats": 4.0 * place.hold_size}] if place.hold else [],
     }  # fmt: skip
     a_deck["play_from_beat"] = round(min(-1.0, -a_deck["beat0_s"] * m.a_bpm / 60.0), 4)
     b_end_s = m.b_dur if m.b_dur > 0 else gb.fd + gb.n * gb.bar_s
@@ -1979,6 +2018,8 @@ def _generate_chill(a: Track, a_an: dict | None, b: Track, b_an: dict | None, fo
     if b_wait is not None:
         B["vocals"] = [(0.0, 0.0, "hold"), (b_wait, 0.0, "ease"), (b_wait + 2.0, 1.0, "hold")]
         markers.append({"beat": b_wait + 2.0, "label": "B vocal in"})
+    if place.hold:
+        markers += [{"beat": 0.0, "label": "B loop"}, {"beat": 4.0 * place.hold, "label": "B plays on"}]
     tempo = _tempo(m, E, cut=L == 0)
     ws, we = _preview(tempo, a_deck, b_deck, L, E)
     a_deck["lanes"] = {lane: _kf(A[lane], ws, lane) for lane in LANES}
