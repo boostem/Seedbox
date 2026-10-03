@@ -798,7 +798,9 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
             voc, _ = _source(vocal, deck, s0, s1, sr)
             src = stem_balance(src, voc, deck["lanes"], s0, sr * spb, sr)
             del voc
-    ft = np.asarray(deck_time(deck, np.linspace(p0, p1, 64)), dtype=float)
+    # the deck plays [p0, p1): a loop ending at p1 has released there, so p1 itself isn't probed
+    probe = np.append(np.linspace(p0, p1, 64, endpoint=False), np.nextafter(p1, p0))
+    ft = np.asarray(deck_time(deck, probe), dtype=float)
     if ft.min() < -0.05 or ft.max() > audio.shape[1] / sr + 0.05:
         warn.append("plays outside its audio file (silence there)")
     j = np.arange(src.shape[1])

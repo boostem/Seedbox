@@ -250,7 +250,7 @@ export function MixDetail({ folder, t, a, b, index, count, onPrev, onNext, onSel
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-fg-subtle">{t.ready ? "None — this one should be clean." : "—"}</p>
+            <p className="text-sm text-fg-subtle">{t.ready ? "None. This one should be clean." : "—"}</p>
           )}
           {g && g.clash.length > 0 && <p className="mt-2 text-xs text-fg-subtle">Red bars in the ruler = both decks carry vocals on that bar.</p>}
         </section>

@@ -48,7 +48,8 @@ Other flags:
   The model (BS-RoFormer "Resurrection", 205 MB) downloads the first time it's needed. Splitting runs on the Apple
   GPU on macOS 14+: roughly 2-5 minutes per song on M1/M2-class chips and 1-2 minutes on Pro/Max chips; on macOS
   12/13 it runs on the CPU and is several times slower. Until a song is split, vocal clashes are handled by
-  ducking A's mids. Splitting needs PyTorch (`requirements.txt` now includes `torch` and `einops`).
+  ducking A's mids. Splitting needs PyTorch (`requirements.txt` now includes `torch` and `einops`). The stems are
+  lossless FLAC in each crate's `.seedbox/stems/`, about 5 MB per minute of music.
 - **Other styles, only when the songs need them.** A **filter fade** for two full arrangements or keys a step apart,
   a **double drop** (EQ only) when two drops line up, and a clean **quick cut** on the phrase when the tempos are too
   far apart to glide. Clashing keys get an 8-bar blend with A's melody and vocal out early. Tempo gaps up to 12%
@@ -203,11 +204,11 @@ before it. Two small curves show how energy and BPM change across the set.
 - **Track numbers**: the order is written to each file's track number (`TRCK`, e.g. `3/12`), so sorting by
   track number in your DJ software plays the crate in that order.
 - **Playlist files** (rewritten after every run), for DJ apps that ignore track numbers:
-  - `<seed>.xml` — the crate as a playlist in rekordbox's XML exchange format (no rekordbox needed), with key,
+  - `<seed>.xml`: the crate as a playlist in rekordbox's XML exchange format (no rekordbox needed), with key,
     BPM, genre, label and energy stars. **AutoPilot:** import this file (rekordbox XML import, with playlist
-    import on) instead of the folder — its folder import orders tracks by analysis finish time and ignores
+    import on) instead of the folder. Its folder import orders tracks by analysis finish time and ignores
     track numbers, M3U files and star tags, but its XML import keeps the playlist order.
-  - `<seed>.m3u8` — a plain playlist in set order for apps and players that read M3U.
+  - `<seed>.m3u8`: a plain playlist in set order for apps and players that read M3U.
 - **Energy stars**: energy 1–10 becomes 1–5 stars (rating ÷ 2, rounded up), written as `POPM` rating frames.
   Ratings aren't standardised, so one frame is written per reader: Serato DJ 4 and Windows Explorer read the
   common one, Traktor reads its own (after *Check Consistency*), and rekordbox picks the rating up only when a

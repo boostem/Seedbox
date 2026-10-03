@@ -129,6 +129,9 @@ NATTEN build issues), CLAP / MERT, TensorFlow builds (0.4-1.1 GB), and bundling 
 - [ ] **More stems**: drums / bass / other (a 4-stem model) for true drum and bass swaps and drums-only intros for
       tracks that don't have them (vocal swaps and acapellas are done).
 - [ ] **B's intro loop**: when B's intro is too short, repeat a clean 8-bar stretch of it (A's ending already does).
+- [ ] **Stems housekeeping**: a Settings switch to pause background splitting, and "Clear vocal stems" per crate
+      (they take ~5 MB per minute of music).
+- [ ] **Faster splitting**: fp16 on the Apple GPU (est. 1.5-2x, unverified), or a lighter model for older Macs.
 - [ ] **A/B alternatives**: render 2-3 different plans for a transition side by side and keep the favourite.
 - [ ] **Full-mix waveform** with transition markers and scrubbing on the set mix panel.
 - [ ] **Publish a mix** to Mixcloud with its tracklist (their upload API takes sections), or SoundCloud.
