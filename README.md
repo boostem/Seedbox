@@ -29,6 +29,24 @@ Other flags:
 
 `.venv/bin/python -m seedbox.server --port 8765 --dev` runs the bare API (no window, no built UI).
 
+### Transitions, full mixes and setlists
+
+- **Transitions you can hear.** Every pair in the set builder has a rendered transition with editable automation
+  (fader, 3-band EQ, filter, echo, reverb, loops, tempo). Loops do real work: a short outro loops its last clean
+  phrase to stretch into a long blend, a short intro loops to hold its groove under a long outro, and loop rolls
+  (8 → 4 → 2 → 1 → ½ beat) build into the cuts. Echo throws catch the outgoing vocal's phrase ends and the beat before
+  the bass swap; reverb washes ride filter sweeps, breakdown exits and drops. Hard exits also come as a turntable
+  **brake** or a **spinback**.
+- **Full mix.** *Full mix* on the set builder renders the whole set as one continuous MP3 (320 kbps) using every
+  transition exactly as planned (saved edits included), with tempo moves spread across each track so the set flows.
+  It lands in `<crates folder>/Mixes/<name>/` with a `.cue` sheet, a `.txt` tracklist and ID3 chapters. Rendering
+  runs in the background (about a minute per 10 minutes of music on Apple Silicon); re-rendering an unchanged set is
+  instant.
+- **Setlists.** Chain crates into one long set (*Setlists*, ⌘3, or *Link crates* on a set builder, which ranks how
+  well this crate's ending mixes into every other crate's start). Each crate keeps its own running order; the links
+  between crates get their own editable transitions, *Auto-order crates* finds the best chain, and *Full mix* renders
+  the whole setlist.
+
 ### Build the app to share
 
 ```sh
@@ -48,6 +66,8 @@ uses `.venv`'s Homebrew Python, and the app only runs on this Mac's macOS versio
 | Crates: MP3s, `tracks.csv`, `skipped.txt`, `.xml`, `.m3u8` | `~/Music/MusicReco/<Artists - Title of seed>/` (change it under Settings). The project's `downloads/` is a symlink to it: the first launch from source moved the old crates there. |
 | Crate metadata, analysis cache | `<crate>/.seedbox/` (`crate.json`, `analysis/<track id>.json`) |
 | Settings, downloaded yt-dlp updates | `~/Library/Application Support/Seedbox/` (`settings.json`, `pydeps/`) |
+| Rendered set mixes (MP3 + .cue + .txt) | `<crates folder>/Mixes/<name>/` (not a crate; index in `<crates folder>/.seedbox/setmixes.json`) |
+| Setlists | `<crates folder>/.seedbox/setlists/<id>.json` (+ `<id>/mixplans/` for edited crate-to-crate links) |
 | Preview clips (safe to delete) | `~/Library/Caches/Seedbox/previews/` (capped at 500 MB by default) |
 | Log | `~/Library/Logs/Seedbox/seedbox.log` |
 

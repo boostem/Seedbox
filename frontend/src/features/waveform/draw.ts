@@ -211,10 +211,19 @@ export function drawSections(ctx: CanvasRenderingContext2D, lane: Lane, view: Vi
 
 // ------------------------------------------------------------------------------------------------ intro / outro
 
-/** Intro/outro brackets along the top of the band + a faint tint over the region. */
-export function drawEdges(ctx: CanvasRenderingContext2D, lane: Lane, view: View, y: number, h: number, opts: { labels?: boolean } = {}): void {
+/** A label's box on the canvas (so other labels can keep clear of it). */
+export interface LabelBox {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+
+/** Intro/outro brackets along the top of the band + a faint tint over the region. Returns the label boxes drawn. */
+export function drawEdges(ctx: CanvasRenderingContext2D, lane: Lane, view: View, y: number, h: number, opts: { labels?: boolean } = {}): LabelBox[] {
   const an = lane.an;
-  if (!an) return;
+  const boxes: LabelBox[] = [];
+  if (!an) return boxes;
   const p = wavePalette();
   ctx.save();
   ctx.font = font(p, 9, 650);
@@ -240,10 +249,12 @@ export function drawEdges(ctx: CanvasRenderingContext2D, lane: Lane, view: View,
         ctx.fillRect(lx - 3, y + 3, tw + 6, 12);
         ctx.fillStyle = col;
         ctx.fillText(text, lx, y + 4.5);
+        boxes.push({ x0: lx - 3, x1: lx + tw + 3, y0: y + 3, y1: y + 15 });
       }
     }
   }
   ctx.restore();
+  return boxes;
 }
 
 // ------------------------------------------------------------------------------------------------ cues
@@ -272,8 +283,9 @@ interface CueMark {
   color: string;
 }
 
-/** Cue markers: a line through the band and a labelled flag at the top (merged when they coincide, two rows max). */
-export function drawCues(ctx: CanvasRenderingContext2D, lane: Lane, view: View, y: number, h: number, opts: { labels?: boolean; topOffset?: number } = {}): void {
+/** Cue markers: a line through the band and a labelled flag at the top (merged when they coincide, three rows max;
+ * a label never covers one of `avoid`, e.g. the INTRO/OUTRO labels). */
+export function drawCues(ctx: CanvasRenderingContext2D, lane: Lane, view: View, y: number, h: number, opts: { labels?: boolean; topOffset?: number; avoid?: LabelBox[] } = {}): void {
   const an = lane.an;
   if (!an?.cues?.length) return;
   const p = wavePalette();
@@ -291,8 +303,13 @@ export function drawCues(ctx: CanvasRenderingContext2D, lane: Lane, view: View, 
   ctx.save();
   ctx.font = font(p, 9.5, 600);
   ctx.textBaseline = "middle";
-  const rowsEnd = [-Infinity, -Infinity];
+  const rowsEnd = [-Infinity, -Infinity, -Infinity];
   const top = y + (opts.topOffset ?? 0);
+  const avoid = opts.avoid ?? [];
+  const free = (row: number, lx: number, tw: number) => {
+    const ly = top + 7 + row * 14;
+    return rowsEnd[row] < lx - 2 && !avoid.some((b) => lx < b.x1 && lx + tw > b.x0 && ly < b.y1 && ly + 12 > b.y0);
+  };
   for (const m of marks) {
     const x = Math.round(m.x) + 0.5;
     ctx.strokeStyle = alpha(m.color, 0.75);
@@ -313,7 +330,7 @@ export function drawCues(ctx: CanvasRenderingContext2D, lane: Lane, view: View, 
     const tw = ctx.measureText(m.label).width + 8;
     const lx = Math.min(x, view.width - tw);
     if (lx < 0) continue;
-    const row = rowsEnd[0] < lx - 2 ? 0 : rowsEnd[1] < lx - 2 ? 1 : -1;
+    const row = [0, 1, 2].find((r) => free(r, lx, tw)) ?? -1;
     if (row < 0) continue;
     const ly = top + 7 + row * 14;
     rowsEnd[row] = lx + tw;

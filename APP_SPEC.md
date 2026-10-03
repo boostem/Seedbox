@@ -214,3 +214,44 @@ def plan_hash(plan: dict, a_path: Path, b_path: Path) -> str
 | DELETE | same | drop saved edits → generated MixPlan |
 | POST | `/api/crates/{folder}/mix/{from_id}/{to_id}/render` (optional body: MixPlan to render unsaved edits) | MixRender (cached by plan_hash; SSE `{type:"render", data:{render_id, state, progress}}` while it runs) |
 | GET | `/api/renders/{render_id}.m4a` | rendered audio (Range) |
+
+---
+
+# v5 — loops & FX in transitions, full set mixes, setlists (2026-10-03)
+
+Contract: the "Full set mixes" and "Setlists" blocks at the end of `frontend/src/api/types.ts`, plus `DeckFx` /
+`DeckPlan.fx` and the `brake` / `spinback` techniques.
+
+## Planner / renderer (musicreco/mixplan.py, mixrender.py)
+- `PLAN_VERSION = 3`, `RENDER_VERSION = 2`. Plans may loop deck B (intro hold: `{start_beat: 0, end_beat: 4h,
+  source_beat: 4h, length_beats: 4·size}` with B's beat0 moved h bars earlier, so B continues from its cue after
+  the hold) and deck A (outro stretch, loop rolls). `DeckPlan.fx` = `[{kind: "brake" | "spinback", beat, beats}]`
+  (validated, ≤ 8, beats 0.25–16); the deck is silent after the effect.
+- Echo / reverb sends tap post-filter, pre-EQ. Send lanes are built from prioritised pulses (exit throw first, then
+  the bass-swap accent, vocal clash / phrase-end throws, breakdown washes).
+
+## Full set mix (musicreco/setmix.py)
+```python
+build(entries: list[SetEntry], plans: list[dict]) -> Timeline   # one deck per track on a global beat axis
+summary(tl, entries) -> dict                                      # tracklist + length without rendering
+render(entries, plans, out_path, *, title, progress(f, msg), cancel) -> dict   # SetMixResult minus urls/paths
+set_hash(entries, plans) -> str; cue_sheet(result, title, name) / tracklist(result, title); write_sidecars(...)
+```
+
+## Endpoints (SERVER)
+| Method | Path | Returns |
+|---|---|---|
+| POST / GET | `/api/crates/{folder}/setmix` | SetMix (start / join) · SetMixStatus |
+| POST / GET | `/api/setlists/{id}/setmix` | SetMix · SetMixStatus |
+| GET / DELETE | `/api/setmix/{mix_id}` | SetMix (DELETE cancels) |
+| GET | `/api/setmix/{mix_id}/audio` | the mix file (Range) |
+| GET | `/api/crates/{folder}/links` | CrateLinks |
+| GET / POST | `/api/setlists` | SetlistSummary[] · Setlist (`{crates, name?}`) |
+| GET / PUT / DELETE | `/api/setlists/{id}` | Setlist (PUT `{name?, crates?}`) · OkResponse |
+| POST | `/api/setlists/{id}/auto-order` | Setlist |
+| GET / PUT / DELETE | `/api/setlists/{id}/mix/{from}/{to}` | MixPlan (a crate-to-crate link; `folder` = `"setlist:<id>"`) |
+| POST | `/api/setlists/{id}/mix/{from}/{to}/render` | MixRender |
+
+SSE: `{type: "setmix", data: SetMix}` on every state / progress change, `{type: "setlist_changed", data: {id}}`.
+Render events of a link carry `folder: "setlist:<id>"`. Mixes are written to `<root>/Mixes/<name>/` (skipped by
+`library.list_crates`), indexed in `<root>/.seedbox/setmixes.json`; setlists live in `<root>/.seedbox/setlists/`.

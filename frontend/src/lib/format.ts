@@ -16,11 +16,12 @@ export function fmtBpm(bpm: number | null | undefined): string {
   return Math.abs(bpm - Math.round(bpm)) < 0.05 ? String(Math.round(bpm)) : bpm.toFixed(1);
 }
 
-/** Signed percent: 1.53 → "+1.5%", -0.04 → "0.0%". */
+/** Signed percent, the one pitch format everywhere: 1.53 → "+1.5%", -1.5 → "−1.5%", anything rounding to 0 → "±0%". */
 export function fmtPitch(pct: number | null | undefined, digits = 1): string {
   if (pct == null || !Number.isFinite(pct)) return "—";
   const r = Number(pct.toFixed(digits));
-  return `${r > 0 ? "+" : r < 0 ? "−" : ""}${Math.abs(r).toFixed(digits)}%`;
+  if (r === 0) return "±0%";
+  return `${r > 0 ? "+" : "−"}${Math.abs(r).toFixed(digits)}%`;
 }
 
 /** 0.796 → "80" (energy/danceability as 0-100). */

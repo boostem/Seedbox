@@ -71,12 +71,12 @@ export function TrackWaveform({ analysis, trackId, onSeek, height = 132, overvie
     const waveH = height - TOP - SECTIONS;
     ctx.fillStyle = p.bg;
     ctx.fillRect(0, 0, width, height);
-    drawEdges(ctx, lane, view, TOP, waveH, { labels: true });
+    const edgeLabels = drawEdges(ctx, lane, view, TOP, waveH, { labels: true });
     drawGrid(ctx, lane, view, TOP, waveH, { labels: true, labelY: 2 });
     drawWave(ctx, lane, view, TOP + 2, waveH - 4, dpr);
     ctx.fillStyle = alpha(p.fg, 0.08);
     ctx.fillRect(0, TOP + waveH / 2, width, 1);
-    drawCues(ctx, lane, view, TOP, waveH, { topOffset: 0 });
+    drawCues(ctx, lane, view, TOP, waveH, { topOffset: 0, avoid: edgeLabels });
     drawSections(ctx, lane, view, height - SECTIONS, SECTIONS);
   }, [lane, view, width, height]);
 

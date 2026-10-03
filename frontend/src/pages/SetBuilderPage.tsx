@@ -175,7 +175,7 @@ export function SetBuilderPage({ folder }: { folder: string }) {
       </span>
     ) : m.save === "error" ? (
       <span className="inline-flex items-center gap-1 text-warn">
-        <AlertTriangle size={12} /> Order not saved
+        <AlertTriangle size={12} /> Last move not saved · order reverted
       </span>
     ) : null;
 

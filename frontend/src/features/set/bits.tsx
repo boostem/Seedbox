@@ -55,7 +55,7 @@ export function PitchChip({ pct, className }: { pct: number; className?: string 
         className,
       )}
     >
-      {Math.abs(pct) < 0.05 ? "±0%" : fmtPitch(pct)}
+      {fmtPitch(pct)}
     </span>
   );
 }

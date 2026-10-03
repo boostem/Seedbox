@@ -3,7 +3,7 @@ import { useCallback, useMemo } from "react";
 import type { SetTrack } from "@/api/types";
 import { Button, CoverArt, IconButton, MoveChip, ScoreChip, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { fmtBpm } from "@/lib/format";
+import { fmtBpm, fmtPitch } from "@/lib/format";
 import { fmtPrecise, type MixClock, MixWaveform, mixGeometry } from "@/features/waveform";
 import { type AuditionPlan, audition, useAudition } from "./audition";
 import { PitchChip, Stat } from "./bits";
@@ -161,8 +161,7 @@ export function MixDetail({ folder, t, a, b, index, count, onPrev, onNext, onSel
           </Stat>
           <Stat label="Pitch B" sub={`${fmtBpm(bpmB)} → ${fmtBpm(Math.round(pitched * 10) / 10)} BPM`}>
             <span className={cn("num", Math.abs(t.pitch_pct) > 6 ? "text-danger" : Math.abs(t.pitch_pct) > 4 ? "text-warn" : "")}>
-              {t.pitch_pct > 0 ? "+" : t.pitch_pct < 0 ? "−" : "±"}
-              {Math.abs(t.pitch_pct).toFixed(1)}%
+              {fmtPitch(t.pitch_pct)}
             </span>
           </Stat>
         </div>
