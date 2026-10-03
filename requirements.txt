@@ -1,0 +1,15 @@
+cloudscraper
+requests
+beautifulsoup4
+questionary
+rich
+yt-dlp[default]
+mutagen
+numpy
+scipy
+fastapi
+uvicorn[standard]
+pywebview
+imageio-ffmpeg
+httpx
+pedalboard

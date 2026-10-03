@@ -1,0 +1,1270 @@
+{
+ "source": "tracks.txt (GET /api/tracks?trackId=44wR4NqR75eJMETxrz59Sr) + search.txt (term 'fisher favour')",
+ "search": {
+  "page": 1,
+  "total_count": 97,
+  "items": [
+   {
+    "id": "44wR4NqR75eJMETxrz59Sr",
+    "name": "Favour",
+    "artists": [
+     "FISHER",
+     "Tones And I"
+    ],
+    "display_name": "FISHER, Tones And I - Favour",
+    "album": "Favour",
+    "release_date": "2026-04-01",
+    "duration_s": 194.89,
+    "popularity": 71,
+    "key": "G♯ minor",
+    "camelot": "1A",
+    "bpm": 130,
+    "energy": 0.796,
+    "danceability": 0.694,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2739b21cf1b6d3cd85926d994e1",
+    "spotify_url": "https://open.spotify.com/track/44wR4NqR75eJMETxrz59Sr"
+   },
+   {
+    "id": "5bIJREvmwLztjkTP5am1u9",
+    "name": "Favour - Extended Mix",
+    "artists": [
+     "FISHER",
+     "Tones And I"
+    ],
+    "display_name": "FISHER, Tones And I - Favour - Extended Mix",
+    "album": "Favour",
+    "release_date": "2026-05-13",
+    "duration_s": 237.255,
+    "popularity": 49,
+    "key": "B major",
+    "camelot": "1B",
+    "bpm": 130,
+    "energy": 0.699,
+    "danceability": 0.879,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2737977d5cc5ba877270bb97e1b",
+    "spotify_url": "https://open.spotify.com/track/5bIJREvmwLztjkTP5am1u9"
+   },
+   {
+    "id": "1xtDflWAisSMU7k6QHG71U",
+    "name": "Rain",
+    "artists": [
+     "FISHER"
+    ],
+    "display_name": "FISHER - Rain",
+    "album": "Rain",
+    "release_date": "2026-02-06",
+    "duration_s": 208.64,
+    "popularity": 70,
+    "key": "D minor",
+    "camelot": "7A",
+    "bpm": 130,
+    "energy": 0.783,
+    "danceability": 0.719,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273ed7e74a0d116e801acc22ec0",
+    "spotify_url": "https://open.spotify.com/track/1xtDflWAisSMU7k6QHG71U"
+   },
+   {
+    "id": "5zX4JjkoT2pgvlWPnjgVNQ",
+    "name": "What A Life (feat. Florence Arman)",
+    "artists": [
+     "FISHER",
+     "Florence Arman"
+    ],
+    "display_name": "FISHER, Florence Arman - What A Life (feat. Florence Arman)",
+    "album": "What A Life (feat. Florence Arman)",
+    "release_date": "2026-06-26",
+    "duration_s": 189.398,
+    "popularity": 67,
+    "key": "C major",
+    "camelot": "8B",
+    "bpm": 128,
+    "energy": 0.929,
+    "danceability": 0.785,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b27373902d12b0f2815e46137795",
+    "spotify_url": "https://open.spotify.com/track/5zX4JjkoT2pgvlWPnjgVNQ"
+   },
+   {
+    "id": "3Qf6lM9zrLjsRc7t94Kj4G",
+    "name": "Favour",
+    "artists": [
+     "FISHER",
+     "Tones And I"
+    ],
+    "display_name": "FISHER, Tones And I - Favour",
+    "album": "Favour",
+    "release_date": "2026-05-13",
+    "duration_s": 194.89,
+    "popularity": 42,
+    "key": "G♯ minor",
+    "camelot": "1A",
+    "bpm": 130,
+    "energy": 0.796,
+    "danceability": 0.694,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2737977d5cc5ba877270bb97e1b",
+    "spotify_url": "https://open.spotify.com/track/3Qf6lM9zrLjsRc7t94Kj4G"
+   },
+   {
+    "id": "63HwAAXuSV2tzIUPoHOwZa",
+    "name": "Atmosphere",
+    "artists": [
+     "FISHER",
+     "Kita Alexander"
+    ],
+    "display_name": "FISHER, Kita Alexander - Atmosphere",
+    "album": "Atmosphere",
+    "release_date": "2023-08-11",
+    "duration_s": 182.857,
+    "popularity": 73,
+    "key": "A♭ major",
+    "camelot": "4B",
+    "bpm": 126,
+    "energy": 0.895,
+    "danceability": 0.762,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273a6e3a7e65879142b2a5fe3e7",
+    "spotify_url": "https://open.spotify.com/track/63HwAAXuSV2tzIUPoHOwZa"
+   },
+   {
+    "id": "74y1VgzL668hynrvA59WQB",
+    "name": "Stay",
+    "artists": [
+     "FISHER"
+    ],
+    "display_name": "FISHER - Stay",
+    "album": "Stay",
+    "release_date": "2025-03-21",
+    "duration_s": 165.961,
+    "popularity": 73,
+    "key": "C minor",
+    "camelot": "5A",
+    "bpm": 128,
+    "energy": 0.971,
+    "danceability": 0.738,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2731ae83c58e56ee3853f130f99",
+    "spotify_url": "https://open.spotify.com/track/74y1VgzL668hynrvA59WQB"
+   },
+   {
+    "id": "195GXsPpC6wHxcwhsjpJxB",
+    "name": "I Will Love You",
+    "artists": [
+     "Fisher"
+    ],
+    "display_name": "Fisher - I Will Love You",
+    "album": "True North",
+    "release_date": "2000-11-14",
+    "duration_s": 228.76,
+    "popularity": 23,
+    "key": "D major",
+    "camelot": "10B",
+    "bpm": 146,
+    "energy": 0.134,
+    "danceability": 0.259,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b27331ad967bf88b97df1a1412af",
+    "spotify_url": "https://open.spotify.com/track/195GXsPpC6wHxcwhsjpJxB"
+   },
+   {
+    "id": "1lp5w4beXOWe5dr1W0EoYN",
+    "name": "Captain and His Whiskers / Fisherman's Favourite",
+    "artists": [
+     "Figgy Duff"
+    ],
+    "display_name": "Figgy Duff - Captain and His Whiskers / Fisherman's Favourite",
+    "album": "A Retrospective 1974-1993",
+    "release_date": "2010-02-09",
+    "duration_s": 172.666,
+    "popularity": 5,
+    "key": "D major",
+    "camelot": "10B",
+    "bpm": 145,
+    "energy": 0.559,
+    "danceability": 0.6,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273ddcbc06c9341b573da1209e2",
+    "spotify_url": "https://open.spotify.com/track/1lp5w4beXOWe5dr1W0EoYN"
+   },
+   {
+    "id": "70j3ObnSEoaUpoFVXR1DPO",
+    "name": "Playing Favourites",
+    "artists": [
+     "Genevieve Fisher"
+    ],
+    "display_name": "Genevieve Fisher - Playing Favourites",
+    "album": "Playing Favourites",
+    "release_date": "2021-01-22",
+    "duration_s": 178.607,
+    "popularity": 7,
+    "key": "F♯ major",
+    "camelot": "2B",
+    "bpm": 104,
+    "energy": 0.763,
+    "danceability": 0.57,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2737a77f1b0f4a49c4e3a441dc3",
+    "spotify_url": "https://open.spotify.com/track/70j3ObnSEoaUpoFVXR1DPO"
+   },
+   {
+    "id": "11xTfqzsDXnTF9s2JH1Anj",
+    "name": "Fisherman's Favourite/The Boys Of Blue Hill",
+    "artists": [
+     "The Government Rams"
+    ],
+    "display_name": "The Government Rams - Fisherman's Favourite/The Boys Of Blue Hill",
+    "album": "Accordion Tunes... Just The Tunes",
+    "release_date": "2009-05-27",
+    "duration_s": 203.666,
+    "popularity": 2,
+    "key": "G major",
+    "camelot": "9B",
+    "bpm": 121,
+    "energy": 0.936,
+    "danceability": 0.658,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273be59e9a7fdfb0f559748519d",
+    "spotify_url": "https://open.spotify.com/track/11xTfqzsDXnTF9s2JH1Anj"
+   },
+   {
+    "id": "627JZ3dVd88Xc5IoHOeNT5",
+    "name": "Stop It",
+    "artists": [
+     "FISHER"
+    ],
+    "display_name": "FISHER - Stop It",
+    "album": "Oi Oi",
+    "release_date": "2017-11-10",
+    "duration_s": 163.79,
+    "popularity": 65,
+    "key": "A♭ major",
+    "camelot": "4B",
+    "bpm": 124,
+    "energy": 0.824,
+    "danceability": 0.859,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273c6b6244ab810f6b0b8528bfa",
+    "spotify_url": "https://open.spotify.com/track/627JZ3dVd88Xc5IoHOeNT5"
+   },
+   {
+    "id": "6jhAJgaS9OttFwP5Cn8WII",
+    "name": "Ocean",
+    "artists": [
+     "FISHER",
+     "AR/CO"
+    ],
+    "display_name": "FISHER, AR/CO - Ocean",
+    "album": "Ocean",
+    "release_date": "2024-11-29",
+    "duration_s": 196.923,
+    "popularity": 67,
+    "key": "A minor",
+    "camelot": "8A",
+    "bpm": 128,
+    "energy": 0.978,
+    "danceability": 0.683,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2730445db0af0b11d14db1c4cfa",
+    "spotify_url": "https://open.spotify.com/track/6jhAJgaS9OttFwP5Cn8WII"
+   },
+   {
+    "id": "5gP4Zyb6wkwfAl2DxIolJK",
+    "name": "Fisherman's Widow / Devine's Favourite - Jigs",
+    "artists": [
+     "Joe Derrane"
+    ],
+    "display_name": "Joe Derrane - Fisherman's Widow / Devine's Favourite - Jigs",
+    "album": "The Masters Choice",
+    "release_date": "1996-03-01",
+    "duration_s": 174.826,
+    "popularity": 0,
+    "key": "D major",
+    "camelot": "10B",
+    "bpm": 65,
+    "energy": 0.784,
+    "danceability": 0.589,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2739b4236780633199e550701b8",
+    "spotify_url": "https://open.spotify.com/track/5gP4Zyb6wkwfAl2DxIolJK"
+   },
+   {
+    "id": "0e457tGsO8QyJavqcr2IbO",
+    "name": "Palm Beach Banger",
+    "artists": [
+     "FISHER"
+    ],
+    "display_name": "FISHER - Palm Beach Banger",
+    "album": "Palm Beach Banger",
+    "release_date": "2022-02-11",
+    "duration_s": 233.836,
+    "popularity": 47,
+    "key": "C major",
+    "camelot": "8B",
+    "bpm": 126,
+    "energy": 0.8,
+    "danceability": 0.767,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273a1395a1cd5d0c01be1335919",
+    "spotify_url": "https://open.spotify.com/track/0e457tGsO8QyJavqcr2IbO"
+   },
+   {
+    "id": "1UkoQ8nYTTf7lmxdNHvyUo",
+    "name": "Diamonds Are A Girl's Best Friend",
+    "artists": [
+     "Connie Fisher"
+    ],
+    "display_name": "Connie Fisher - Diamonds Are A Girl's Best Friend",
+    "album": "Favourite Things",
+    "release_date": "2006-01-01",
+    "duration_s": 160.506,
+    "popularity": 10,
+    "key": "F minor",
+    "camelot": "4A",
+    "bpm": 110,
+    "energy": 0.728,
+    "danceability": 0.595,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b27368610eb651bee8835726ad03",
+    "spotify_url": "https://open.spotify.com/track/1UkoQ8nYTTf7lmxdNHvyUo"
+   },
+   {
+    "id": "2dOsUm9eiO9dQrPJiIiaLg",
+    "name": "Fisher of Men",
+    "artists": [
+     "N!X"
+    ],
+    "display_name": "N!X - Fisher of Men",
+    "album": "Summary",
+    "release_date": "2023-11-03",
+    "duration_s": 167.521,
+    "popularity": 35,
+    "key": "B major",
+    "camelot": "1B",
+    "bpm": 105,
+    "energy": 0.542,
+    "danceability": 0.796,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2730e27402c7c7841b83a4c5367",
+    "spotify_url": "https://open.spotify.com/track/2dOsUm9eiO9dQrPJiIiaLg"
+   },
+   {
+    "id": "3CVtRfbGh6PLTO7zzOJVa0",
+    "name": "Fisher",
+    "artists": [
+     "Kristin Scott Benson"
+    ],
+    "display_name": "Kristin Scott Benson - Fisher",
+    "album": "Stringworks",
+    "release_date": "2016-07-22",
+    "duration_s": 180.332,
+    "popularity": 10,
+    "key": "C major",
+    "camelot": "8B",
+    "bpm": 117,
+    "energy": 0.796,
+    "danceability": 0.539,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2737f9c6fbac1f6e5ba8586f126",
+    "spotify_url": "https://open.spotify.com/track/3CVtRfbGh6PLTO7zzOJVa0"
+   },
+   {
+    "id": "6KcIpnGv9ZBv5yAuSNCJyf",
+    "name": "Fishers of Men",
+    "artists": [
+     "Praise and Harmony"
+    ],
+    "display_name": "Praise and Harmony - Fishers of Men",
+    "album": "Steadfast God",
+    "release_date": "2026-01-30",
+    "duration_s": 151.13,
+    "popularity": 35,
+    "key": "B♭ major",
+    "camelot": "6B",
+    "bpm": 75,
+    "energy": 0.233,
+    "danceability": 0.527,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2730902f9fcc68f6c8236cc9aa8",
+    "spotify_url": "https://open.spotify.com/track/6KcIpnGv9ZBv5yAuSNCJyf"
+   },
+   {
+    "id": "7gdqoSKbY8N3k76EUXelzm",
+    "name": "Promises",
+    "artists": [
+     "The Fisher Family"
+    ],
+    "display_name": "The Fisher Family - Promises",
+    "album": "Promises",
+    "release_date": "2025-11-17",
+    "duration_s": 213.369,
+    "popularity": 34,
+    "key": "B♭ major",
+    "camelot": "6B",
+    "bpm": 77,
+    "energy": 0.546,
+    "danceability": 0.581,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273be3c6f7520c1030ce7d7feff",
+    "spotify_url": "https://open.spotify.com/track/7gdqoSKbY8N3k76EUXelzm"
+   },
+   {
+    "id": "6Kb9sTdiL7Ok1cNpC7bAKi",
+    "name": "Fisher of Men",
+    "artists": [
+     "Kijan Boone"
+    ],
+    "display_name": "Kijan Boone - Fisher of Men",
+    "album": "Fisher of Men",
+    "release_date": "2026-01-09",
+    "duration_s": 165.323,
+    "popularity": 40,
+    "key": "E major",
+    "camelot": "12B",
+    "bpm": 163,
+    "energy": 0.692,
+    "danceability": 0.71,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273c12e39c7174611716b429028",
+    "spotify_url": "https://open.spotify.com/track/6Kb9sTdiL7Ok1cNpC7bAKi"
+   },
+   {
+    "id": "3cY2nHVVX2ZER1ttxGzLav",
+    "name": "Fisher",
+    "artists": [
+     "Camel Power Club"
+    ],
+    "display_name": "Camel Power Club - Fisher",
+    "album": "Sputnik II",
+    "release_date": "2019-01-11",
+    "duration_s": 324.546,
+    "popularity": 59,
+    "key": "E major",
+    "camelot": "12B",
+    "bpm": 110,
+    "energy": 0.501,
+    "danceability": 0.837,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273ef37cdb360df67bba78f3510",
+    "spotify_url": "https://open.spotify.com/track/3cY2nHVVX2ZER1ttxGzLav"
+   },
+   {
+    "id": "2hApfOB8wwBaNktFF6PUGG",
+    "name": "My Favourite Things - From 'The Sound Of Music' / Reprise",
+    "artists": [
+     "Connie Fisher",
+     "'The Sound Of Music' 2006 London Palladium Cast"
+    ],
+    "display_name": "Connie Fisher, 'The Sound Of Music' 2006 London Palladium Cast - My Favourite Things - From 'The Sound Of Music' / Reprise",
+    "album": "The Sound Of Music - London Palladium Cast Album 2006",
+    "release_date": "2006-01-01",
+    "duration_s": 125.013,
+    "popularity": 9,
+    "key": "F minor",
+    "camelot": "4A",
+    "bpm": 100,
+    "energy": 0.204,
+    "danceability": 0.587,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2730577f5e5b2a795a531e0c1dd",
+    "spotify_url": "https://open.spotify.com/track/2hApfOB8wwBaNktFF6PUGG"
+   },
+   {
+    "id": "0lIbM0Jnj1UOG6VRey2aO0",
+    "name": "Fishers Of Men",
+    "artists": [
+     "Tyler Philip Ratcliffe"
+    ],
+    "display_name": "Tyler Philip Ratcliffe - Fishers Of Men",
+    "album": "Fishers Of Men",
+    "release_date": "2026-06-05",
+    "duration_s": 176.258,
+    "popularity": 37,
+    "key": "C♯ major",
+    "camelot": "3B",
+    "bpm": 115,
+    "energy": 0.714,
+    "danceability": 0.652,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273393dff8b8617dba9d54bd1d5",
+    "spotify_url": "https://open.spotify.com/track/0lIbM0Jnj1UOG6VRey2aO0"
+   },
+   {
+    "id": "4gkgzjZftJ17KfQq8DnstY",
+    "name": "Jazz Suite No. 2: VII. Waltz",
+    "artists": [
+     "Dmitri Shostakovich",
+     "Brodsky Quartet",
+     "Philip Edward Fisher"
+    ],
+    "display_name": "Dmitri Shostakovich, Brodsky Quartet, Philip Edward Fisher - Jazz Suite No. 2: VII. Waltz",
+    "album": "Petits Fours - Favourite Encores",
+    "release_date": "2012-02-01",
+    "duration_s": 216.066,
+    "popularity": 10,
+    "key": "D minor",
+    "camelot": "7A",
+    "bpm": 100,
+    "energy": 0.208,
+    "danceability": 0.346,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273a2b6dd75136d74ae9de3e485",
+    "spotify_url": "https://open.spotify.com/track/4gkgzjZftJ17KfQq8DnstY"
+   },
+   {
+    "id": "7ycJfgqJ4JaQoFVM9XGLym",
+    "name": "Fishers of Men",
+    "artists": [
+     "Rhonda Vincent"
+    ],
+    "display_name": "Rhonda Vincent - Fishers of Men",
+    "album": "One Step Ahead",
+    "release_date": "2003-01-01",
+    "duration_s": 156.106,
+    "popularity": 39,
+    "key": "D major",
+    "camelot": "10B",
+    "bpm": 130,
+    "energy": 0.0821,
+    "danceability": 0.692,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273bf13373a936138bd6e24059e",
+    "spotify_url": "https://open.spotify.com/track/7ycJfgqJ4JaQoFVM9XGLym"
+   },
+   {
+    "id": "6BaYqw7a9BR2fHeBKA46oy",
+    "name": "Fisher",
+    "artists": [
+     "Merges"
+    ],
+    "display_name": "Merges - Fisher",
+    "album": "Fuji",
+    "release_date": "2024-10-16",
+    "duration_s": 162.508,
+    "popularity": 31,
+    "key": "A♭ major",
+    "camelot": "4B",
+    "bpm": 113,
+    "energy": 0.25,
+    "danceability": 0.34,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273e042c8db6f4ef7d1a71da011",
+    "spotify_url": "https://open.spotify.com/track/6BaYqw7a9BR2fHeBKA46oy"
+   },
+   {
+    "id": "5CpsnQeqmGKGwb27riJGUM",
+    "name": "Maybe - Vocal Version",
+    "artists": [
+     "Fisher-Price",
+     "Mattel"
+    ],
+    "display_name": "Fisher-Price, Mattel - Maybe - Vocal Version",
+    "album": "Sooo Wiggly",
+    "release_date": "2021-05-28",
+    "duration_s": 88.888,
+    "popularity": 53,
+    "key": "E major",
+    "camelot": "12B",
+    "bpm": 162,
+    "energy": 0.334,
+    "danceability": 0.767,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2730d096844a01508fd33c94e27",
+    "spotify_url": "https://open.spotify.com/track/5CpsnQeqmGKGwb27riJGUM"
+   },
+   {
+    "id": "4wMBTG2tbVWUmr1brAgAoD",
+    "name": "The Old Fisherman's Song",
+    "artists": [
+     "Johan Halvorsen",
+     "Henning Kraggerud",
+     "Razumovsky Symphony Orchestra",
+     "Bjarte Engeset"
+    ],
+    "display_name": "Johan Halvorsen, Henning Kraggerud, Razumovsky Symphony Orchestra, Bjarte Engeset - The Old Fisherman's Song",
+    "album": "Norwegian Violin Favourites",
+    "release_date": "1999-11-29",
+    "duration_s": 159.866,
+    "popularity": 16,
+    "key": "E minor",
+    "camelot": "9A",
+    "bpm": 91,
+    "energy": 0.0518,
+    "danceability": 0.15,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b27313ad2b3e7ed856e4f33b9e73",
+    "spotify_url": "https://open.spotify.com/track/4wMBTG2tbVWUmr1brAgAoD"
+   },
+   {
+    "id": "6kIMbvCDcngbsnXIDLkhan",
+    "name": "The Love of Christ",
+    "artists": [
+     "The Fisher Family"
+    ],
+    "display_name": "The Fisher Family - The Love of Christ",
+    "album": "Our God Reigns",
+    "release_date": "2024-03-08",
+    "duration_s": 153.361,
+    "popularity": 30,
+    "key": "A♭ major",
+    "camelot": "4B",
+    "bpm": 84,
+    "energy": 0.692,
+    "danceability": 0.478,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273e7582447bce24ddcafda4f0b",
+    "spotify_url": "https://open.spotify.com/track/6kIMbvCDcngbsnXIDLkhan"
+   },
+   {
+    "id": "3L6iRoayJrhaYRi36Qk8Y0",
+    "name": "Roche's Favourite",
+    "artists": [
+     "The Waterboys"
+    ],
+    "display_name": "The Waterboys - Roche's Favourite",
+    "album": "THE MAGNIFICENT SEVEN The Waterboys Fisherman's Blues/Room To Roam band, 1989-90",
+    "release_date": "2021-12-03",
+    "duration_s": 190.213,
+    "popularity": 6,
+    "key": "G major",
+    "camelot": "9B",
+    "bpm": 112,
+    "energy": 0.442,
+    "danceability": 0.516,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b27314a629af54d4b2a7102e0ae6",
+    "spotify_url": "https://open.spotify.com/track/3L6iRoayJrhaYRi36Qk8Y0"
+   },
+   {
+    "id": "2LQU29VADA1zHr0BNABLXc",
+    "name": "Fisher Road To Hollywood",
+    "artists": [
+     "The Avett Brothers"
+    ],
+    "display_name": "The Avett Brothers - Fisher Road To Hollywood",
+    "album": "True Sadness",
+    "release_date": "2016-06-24",
+    "duration_s": 263.093,
+    "popularity": 33,
+    "key": "C major",
+    "camelot": "8B",
+    "bpm": 139,
+    "energy": 0.125,
+    "danceability": 0.47,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2735320d750568b1a676818075b",
+    "spotify_url": "https://open.spotify.com/track/2LQU29VADA1zHr0BNABLXc"
+   },
+   {
+    "id": "7KyUFsxOfJNlPHWAcye6Y0",
+    "name": "Sneezing Fisherman",
+    "artists": [
+     "Patsy Biscoe"
+    ],
+    "display_name": "Patsy Biscoe - Sneezing Fisherman",
+    "album": "150 Favourite Nursery Rhymes",
+    "release_date": "2004-10-15",
+    "duration_s": 55.733,
+    "popularity": 0,
+    "key": "E major",
+    "camelot": "12B",
+    "bpm": 84,
+    "energy": 0.0717,
+    "danceability": 0.777,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2734f45194010bf5b3305c53b04",
+    "spotify_url": "https://open.spotify.com/track/7KyUFsxOfJNlPHWAcye6Y0"
+   },
+   {
+    "id": "7sJ3K2T8IbcxM8FUEOikpk",
+    "name": "Sneezing Fisherman",
+    "artists": [
+     "Patsy Biscoe"
+    ],
+    "display_name": "Patsy Biscoe - Sneezing Fisherman",
+    "album": "50 Favourite Nursery Rhymes Vol. 3",
+    "release_date": "2005",
+    "duration_s": 55.733,
+    "popularity": 0,
+    "key": "E major",
+    "camelot": "12B",
+    "bpm": 84,
+    "energy": 0.0717,
+    "danceability": 0.777,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273676202246f5ac03f9e07ab7b",
+    "spotify_url": "https://open.spotify.com/track/7sJ3K2T8IbcxM8FUEOikpk"
+   },
+   {
+    "id": "1qySbTWZDBvVvnoyisc2CW",
+    "name": "Les pêcheurs de perles, WD 13: The Pearl Fishers' duet: C'était le soir - Au fond du temple Saint",
+    "artists": [
+     "Georges Bizet",
+     "Andrea Bocelli",
+     "Bryn Terfel",
+     "London Symphony Orchestra",
+     "Barry Wordsworth"
+    ],
+    "display_name": "Georges Bizet, Andrea Bocelli, Bryn Terfel, London Symphony Orchestra, Barry Wordsworth - Les pêcheurs de perles, WD 13: The Pearl Fishers' duet: C'était le soir - Au fond du temple Saint",
+    "album": "Bryn Terfel sings Favourites",
+    "release_date": "2003-01-01",
+    "duration_s": 353.013,
+    "popularity": 21,
+    "key": "E♭ major",
+    "camelot": "5B",
+    "bpm": 69,
+    "energy": 0.223,
+    "danceability": 0.251,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273d18721e0425ca437d160d78a",
+    "spotify_url": "https://open.spotify.com/track/1qySbTWZDBvVvnoyisc2CW"
+   },
+   {
+    "id": "4k6sDYwOVHiRhSZAbslKHW",
+    "name": "My Favourite Things",
+    "artists": [
+     "Lesley Garrett",
+     "Connie Fisher"
+    ],
+    "display_name": "Lesley Garrett, Connie Fisher - My Favourite Things",
+    "album": "The Sound Of Music - London Palladium Cast Album 2006",
+    "release_date": "2006-01-01",
+    "duration_s": 84.44,
+    "popularity": 4,
+    "key": "F minor",
+    "camelot": "4A",
+    "bpm": 127,
+    "energy": 0.155,
+    "danceability": 0.524,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2730577f5e5b2a795a531e0c1dd",
+    "spotify_url": "https://open.spotify.com/track/4k6sDYwOVHiRhSZAbslKHW"
+   },
+   {
+    "id": "001bFhsEWhGpjRZz1gUIBA",
+    "name": "Fisher of Men",
+    "artists": [
+     "Michael Combs"
+    ],
+    "display_name": "Michael Combs - Fisher of Men",
+    "album": "Going Fishing",
+    "release_date": "2005-01-05",
+    "duration_s": 223.555,
+    "popularity": 8,
+    "key": "F major",
+    "camelot": "7B",
+    "bpm": 160,
+    "energy": 0.488,
+    "danceability": 0.675,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b27363d87d2cf7f133c34c8c4595",
+    "spotify_url": "https://open.spotify.com/track/001bFhsEWhGpjRZz1gUIBA"
+   },
+   {
+    "id": "46TGeJUOZrTEcHgnAYKU6E",
+    "name": "Fisher of Men",
+    "artists": [
+     "M. Ward"
+    ],
+    "display_name": "M. Ward - Fisher of Men",
+    "album": "Hold Time",
+    "release_date": "2009-02-17",
+    "duration_s": 192.666,
+    "popularity": 20,
+    "key": "D major",
+    "camelot": "10B",
+    "bpm": 110,
+    "energy": 0.878,
+    "danceability": 0.361,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273cb0707d1a3c5c4d092af890b",
+    "spotify_url": "https://open.spotify.com/track/46TGeJUOZrTEcHgnAYKU6E"
+   },
+   {
+    "id": "7L1JNliCBG5qtpntKXVc9O",
+    "name": "My Favourite Things",
+    "artists": [
+     "Connie Fisher"
+    ],
+    "display_name": "Connie Fisher - My Favourite Things",
+    "album": "Favourite Things",
+    "release_date": "2006-01-01",
+    "duration_s": 140.146,
+    "popularity": 5,
+    "key": "F minor",
+    "camelot": "4A",
+    "bpm": 101,
+    "energy": 0.284,
+    "danceability": 0.517,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b27368610eb651bee8835726ad03",
+    "spotify_url": "https://open.spotify.com/track/7L1JNliCBG5qtpntKXVc9O"
+   },
+   {
+    "id": "3IlMgDSx9e0GD3L75m3QZ5",
+    "name": "Playing Favourites (Remix)",
+    "artists": [
+     "Genevieve Fisher"
+    ],
+    "display_name": "Genevieve Fisher - Playing Favourites (Remix)",
+    "album": "Playing Favourites (Remix)",
+    "release_date": "2021-06-14",
+    "duration_s": 195.576,
+    "popularity": 0,
+    "key": "F♯ major",
+    "camelot": "2B",
+    "bpm": 104,
+    "energy": 0.838,
+    "danceability": 0.621,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b2734b2c7925a10aeaacaa9c1e7d",
+    "spotify_url": "https://open.spotify.com/track/3IlMgDSx9e0GD3L75m3QZ5"
+   },
+   {
+    "id": "7JHTP5nWvHuPvRbAj5utLD",
+    "name": "Dvorák: Goin' Home",
+    "artists": [
+     "Antonín Dvořák",
+     "William Arms Fisher",
+     "Bryn Terfel",
+     "London Symphony Orchestra",
+     "Barry Wordsworth"
+    ],
+    "display_name": "Antonín Dvořák, William Arms Fisher, Bryn Terfel, London Symphony Orchestra, Barry Wordsworth - Dvorák: Goin' Home",
+    "album": "Bryn Terfel sings Favourites",
+    "release_date": "2003-01-01",
+    "duration_s": 339.013,
+    "popularity": 13,
+    "key": "C♯ major",
+    "camelot": "3B",
+    "bpm": 71,
+    "energy": 0.0749,
+    "danceability": 0.228,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273d18721e0425ca437d160d78a",
+    "spotify_url": "https://open.spotify.com/track/7JHTP5nWvHuPvRbAj5utLD"
+   },
+   {
+    "id": "2OGBxKAjUByKrwoJ2pDK0c",
+    "name": "All That Jazz",
+    "artists": [
+     "Connie Fisher",
+     "Helena Blackman",
+     "Siobhan Dillon"
+    ],
+    "display_name": "Connie Fisher, Helena Blackman, Siobhan Dillon - All That Jazz",
+    "album": "Favourite Things",
+    "release_date": "2006-01-01",
+    "duration_s": 118.226,
+    "popularity": 17,
+    "key": "F major",
+    "camelot": "7B",
+    "bpm": 133,
+    "energy": 0.449,
+    "danceability": 0.569,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b27368610eb651bee8835726ad03",
+    "spotify_url": "https://open.spotify.com/track/2OGBxKAjUByKrwoJ2pDK0c"
+   },
+   {
+    "id": "3XHtGQBlfMHfKcXdTX7Mt0",
+    "name": "Fisher Island Sound",
+    "artists": [
+     "Beirut"
+    ],
+    "display_name": "Beirut - Fisher Island Sound",
+    "album": "Artifacts",
+    "release_date": "2022-01-28",
+    "duration_s": 164.773,
+    "popularity": 46,
+    "key": "G major",
+    "camelot": "9B",
+    "bpm": 124,
+    "energy": 0.739,
+    "danceability": 0.561,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273d34ab0a2566efc1bcab2d090",
+    "spotify_url": "https://open.spotify.com/track/3XHtGQBlfMHfKcXdTX7Mt0"
+   },
+   {
+    "id": "2aS2paSvC2c9z4yoBFRFIW",
+    "name": "Maybe This Time",
+    "artists": [
+     "Connie Fisher"
+    ],
+    "display_name": "Connie Fisher - Maybe This Time",
+    "album": "Favourite Things",
+    "release_date": "2006-01-01",
+    "duration_s": 170.506,
+    "popularity": 4,
+    "key": "G major",
+    "camelot": "9B",
+    "bpm": 123,
+    "energy": 0.251,
+    "danceability": 0.4,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b27368610eb651bee8835726ad03",
+    "spotify_url": "https://open.spotify.com/track/2aS2paSvC2c9z4yoBFRFIW"
+   },
+   {
+    "id": "2EZ9upNjbgu4QXM713xlVg",
+    "name": "Another Suitcase In Another Hall",
+    "artists": [
+     "Connie Fisher"
+    ],
+    "display_name": "Connie Fisher - Another Suitcase In Another Hall",
+    "album": "Favourite Things",
+    "release_date": "2006-01-01",
+    "duration_s": 176.706,
+    "popularity": 1,
+    "key": "B♭ major",
+    "camelot": "6B",
+    "bpm": 127,
+    "energy": 0.286,
+    "danceability": 0.453,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b27368610eb651bee8835726ad03",
+    "spotify_url": "https://open.spotify.com/track/2EZ9upNjbgu4QXM713xlVg"
+   },
+   {
+    "id": "2iAlfNE55ggpnvwmL6PPnH",
+    "name": "Fisher Village",
+    "artists": [
+     "Tibeauthetraveler",
+     "Claudia Lessing",
+     "Dario Lessing"
+    ],
+    "display_name": "Tibeauthetraveler, Claudia Lessing, Dario Lessing - Fisher Village",
+    "album": "Fairy Tales",
+    "release_date": "2023-10-30",
+    "duration_s": 167.366,
+    "popularity": 26,
+    "key": "E minor",
+    "camelot": "9A",
+    "bpm": 70,
+    "energy": 0.319,
+    "danceability": 0.446,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b273363ae1f21cb9c0263f6e67ba",
+    "spotify_url": "https://open.spotify.com/track/2iAlfNE55ggpnvwmL6PPnH"
+   },
+   {
+    "id": "2g1lilOk5bhKWgj9BD26dc",
+    "name": "All The Love I Have",
+    "artists": [
+     "Connie Fisher"
+    ],
+    "display_name": "Connie Fisher - All The Love I Have",
+    "album": "Favourite Things",
+    "release_date": "2006-01-01",
+    "duration_s": 189.56,
+    "popularity": 2,
+    "key": "F major",
+    "camelot": "7B",
+    "bpm": 99,
+    "energy": 0.315,
+    "danceability": 0.441,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b27368610eb651bee8835726ad03",
+    "spotify_url": "https://open.spotify.com/track/2g1lilOk5bhKWgj9BD26dc"
+   },
+   {
+    "id": "0sPYRUQCCnJsBcDYB7JjyS",
+    "name": "Shout",
+    "artists": [
+     "Connie Fisher"
+    ],
+    "display_name": "Connie Fisher - Shout",
+    "album": "Favourite Things",
+    "release_date": "2006-01-01",
+    "duration_s": 95.826,
+    "popularity": 1,
+    "key": "C major",
+    "camelot": "8B",
+    "bpm": 144,
+    "energy": 0.803,
+    "danceability": 0.552,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b27368610eb651bee8835726ad03",
+    "spotify_url": "https://open.spotify.com/track/0sPYRUQCCnJsBcDYB7JjyS"
+   },
+   {
+    "id": "5P72eBGDEkC3jjAf2QB5qR",
+    "name": "As Long As He Needs Me",
+    "artists": [
+     "Connie Fisher"
+    ],
+    "display_name": "Connie Fisher - As Long As He Needs Me",
+    "album": "Favourite Things",
+    "release_date": "2006-01-01",
+    "duration_s": 151.44,
+    "popularity": 4,
+    "key": "A♭ major",
+    "camelot": "4B",
+    "bpm": 77,
+    "energy": 0.252,
+    "danceability": 0.246,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b27368610eb651bee8835726ad03",
+    "spotify_url": "https://open.spotify.com/track/5P72eBGDEkC3jjAf2QB5qR"
+   },
+   {
+    "id": "5ocpmuuK1J2NZcyRoBHv3d",
+    "name": "No Matter What",
+    "artists": [
+     "Connie Fisher"
+    ],
+    "display_name": "Connie Fisher - No Matter What",
+    "album": "Favourite Things",
+    "release_date": "2006-01-01",
+    "duration_s": 199.853,
+    "popularity": 2,
+    "key": "D major",
+    "camelot": "10B",
+    "bpm": 185,
+    "energy": 0.397,
+    "danceability": 0.485,
+    "cover_url": "https://i.scdn.co/image/ab67616d0000b27368610eb651bee8835726ad03",
+    "spotify_url": "https://open.spotify.com/track/5ocpmuuK1J2NZcyRoBHv3d"
+   }
+  ]
+ },
+ "seed": {
+  "id": "44wR4NqR75eJMETxrz59Sr",
+  "name": "Favour",
+  "artists": [
+   "FISHER",
+   "Tones And I"
+  ],
+  "display_name": "FISHER, Tones And I - Favour",
+  "album": "Favour",
+  "release_date": "2026-04-01",
+  "duration_s": 194.89,
+  "popularity": 73,
+  "key": "G♯ minor",
+  "camelot": "1A",
+  "bpm": 130,
+  "energy": 0.796,
+  "danceability": 0.694,
+  "cover_url": "https://i.scdn.co/image/ab67616d0000b2739b21cf1b6d3cd85926d994e1",
+  "spotify_url": "https://open.spotify.com/track/44wR4NqR75eJMETxrz59Sr"
+ },
+ "recs": [
+  {
+   "id": "5GFXl6uAUANwLkTeZmyr2R",
+   "name": "She’s Gone, Dance On (Carlita Remix)",
+   "artists": [
+    "Disclosure",
+    "Carlita"
+   ],
+   "display_name": "Disclosure, Carlita - She’s Gone, Dance On (Carlita Remix)",
+   "album": "She’s Gone, Dance On (Carlita Remix)",
+   "release_date": "2024-07-05",
+   "duration_s": 214.435,
+   "popularity": 46,
+   "key": "G♯ minor",
+   "camelot": "1A",
+   "bpm": 131,
+   "energy": 0.866,
+   "danceability": 0.626,
+   "cover_url": "https://i.scdn.co/image/ab67616d0000b2739093a079178ad0fc8a69fae0",
+   "spotify_url": "https://open.spotify.com/track/5GFXl6uAUANwLkTeZmyr2R"
+  },
+  {
+   "id": "13cX2o4cASGLYXNaQyXWxt",
+   "name": "Don't Stop",
+   "artists": [
+    "Prospa"
+   ],
+   "display_name": "Prospa - Don't Stop",
+   "album": "Don't Stop",
+   "release_date": "2025-04-11",
+   "duration_s": 147.656,
+   "popularity": 71,
+   "key": "B major",
+   "camelot": "1B",
+   "bpm": 128,
+   "energy": 0.825,
+   "danceability": 0.79,
+   "cover_url": "https://i.scdn.co/image/ab67616d0000b273af6ce83c4f61574e702f3443",
+   "spotify_url": "https://open.spotify.com/track/13cX2o4cASGLYXNaQyXWxt"
+  },
+  {
+   "id": "0kcM5HzMLTc3K15an6nZcJ",
+   "name": "Midnight Trip",
+   "artists": [
+    "TOYZZ"
+   ],
+   "display_name": "TOYZZ - Midnight Trip",
+   "album": "Midnight Trip",
+   "release_date": "2024-10-11",
+   "duration_s": 194.545,
+   "popularity": 47,
+   "key": "C♯ minor",
+   "camelot": "12A",
+   "bpm": 132,
+   "energy": 0.978,
+   "danceability": 0.728,
+   "cover_url": "https://i.scdn.co/image/ab67616d0000b2737c8eb1429c4dd026cbb2ce23",
+   "spotify_url": "https://open.spotify.com/track/0kcM5HzMLTc3K15an6nZcJ"
+  },
+  {
+   "id": "3gXGtYT41b4FXYctdxMwCI",
+   "name": "Can I Ride",
+   "artists": [
+    "SIDEPIECE",
+    "95 South"
+   ],
+   "display_name": "SIDEPIECE, 95 South - Can I Ride",
+   "album": "Can I Ride",
+   "release_date": "2026-07-10",
+   "duration_s": 163.888,
+   "popularity": 65,
+   "key": "B major",
+   "camelot": "1B",
+   "bpm": 132,
+   "energy": 0.791,
+   "danceability": 0.752,
+   "cover_url": "https://i.scdn.co/image/ab67616d0000b273ad34f97cb6c9164d8163fc11",
+   "spotify_url": "https://open.spotify.com/track/3gXGtYT41b4FXYctdxMwCI"
+  },
+  {
+   "id": "6ryWXzeSbDX5cebOrgjMKL",
+   "name": "World, Hold On - FISHER Rework",
+   "artists": [
+    "Bob Sinclar",
+    "Steve Edwards",
+    "FISHER"
+   ],
+   "display_name": "Bob Sinclar, Steve Edwards, FISHER - World, Hold On - FISHER Rework",
+   "album": "World, Hold On (FISHER Rework)",
+   "release_date": "2022-07-08",
+   "duration_s": 178.304,
+   "popularity": 69,
+   "key": "C♯ minor",
+   "camelot": "12A",
+   "bpm": 127,
+   "energy": 0.883,
+   "danceability": 0.771,
+   "cover_url": "https://i.scdn.co/image/ab67616d0000b273c272f11aee228a5089cb4501",
+   "spotify_url": "https://open.spotify.com/track/6ryWXzeSbDX5cebOrgjMKL"
+  },
+  {
+   "id": "6DFHSmlrZLDZnXV5kTTMF6",
+   "name": "PATT (Party All The Time) - Adam Beyer, Layton Giordani & Green Velvet Remix",
+   "artists": [
+    "Sharam",
+    "Adam Beyer",
+    "Layton Giordani",
+    "Green Velvet"
+   ],
+   "display_name": "Sharam, Adam Beyer, Layton Giordani, Green Velvet - PATT (Party All The Time) - Adam Beyer, Layton Giordani & Green Velvet Remix",
+   "album": "PATT (Party All The Time) [Adam Beyer, Layton Giordani & Green Velvet Remix]",
+   "release_date": "2024-04-05",
+   "duration_s": 183.157,
+   "popularity": 58,
+   "key": "B major",
+   "camelot": "1B",
+   "bpm": 133,
+   "energy": 0.847,
+   "danceability": 0.645,
+   "cover_url": "https://i.scdn.co/image/ab67616d0000b273388c851a80c48e99d14d1ade",
+   "spotify_url": "https://open.spotify.com/track/6DFHSmlrZLDZnXV5kTTMF6"
+  },
+  {
+   "id": "02QE4LsAj7DBjMRxolGE8a",
+   "name": "More Baby",
+   "artists": [
+    "Chris Lake",
+    "Aluna"
+   ],
+   "display_name": "Chris Lake, Aluna - More Baby",
+   "album": "More Baby",
+   "release_date": "2023-09-15",
+   "duration_s": 175.856,
+   "popularity": 61,
+   "key": "B major",
+   "camelot": "1B",
+   "bpm": 126,
+   "energy": 0.871,
+   "danceability": 0.754,
+   "cover_url": "https://i.scdn.co/image/ab67616d0000b273e3db81b7565e20e3d8d1cd25",
+   "spotify_url": "https://open.spotify.com/track/02QE4LsAj7DBjMRxolGE8a"
+  },
+  {
+   "id": "74nEGIzIefJhJ5qX7NeIAz",
+   "name": "Beggin'",
+   "artists": [
+    "Chris Lake",
+    "Aluna"
+   ],
+   "display_name": "Chris Lake, Aluna - Beggin'",
+   "album": "Beggin'",
+   "release_date": "2023-04-20",
+   "duration_s": 183.397,
+   "popularity": 69,
+   "key": "G♯ minor",
+   "camelot": "1A",
+   "bpm": 126,
+   "energy": 0.691,
+   "danceability": 0.801,
+   "cover_url": "https://i.scdn.co/image/ab67616d0000b27333e18b9b63b4de1887880cb5",
+   "spotify_url": "https://open.spotify.com/track/74nEGIzIefJhJ5qX7NeIAz"
+  },
+  {
+   "id": "3fvsxmytTns1ApIWBqfANZ",
+   "name": "Temptation (feat. Poppy Baskcomb)",
+   "artists": [
+    "Jess Bays",
+    "Poppy Baskcomb"
+   ],
+   "display_name": "Jess Bays, Poppy Baskcomb - Temptation (feat. Poppy Baskcomb)",
+   "album": "Temptation (feat. Poppy Baskcomb)",
+   "release_date": "2022-02-18",
+   "duration_s": 172.197,
+   "popularity": 58,
+   "key": "D♯ minor",
+   "camelot": "2A",
+   "bpm": 125,
+   "energy": 0.703,
+   "danceability": 0.744,
+   "cover_url": "https://i.scdn.co/image/ab67616d0000b273a4ab11e7d73b8a262f80e34d",
+   "spotify_url": "https://open.spotify.com/track/3fvsxmytTns1ApIWBqfANZ"
+  },
+  {
+   "id": "5WsSAyixmdLYcl3FRMjZM1",
+   "name": "One Three Nine",
+   "artists": [
+    "Zeds Dead",
+    "Scrufizzer"
+   ],
+   "display_name": "Zeds Dead, Scrufizzer - One Three Nine",
+   "album": "One Three Nine",
+   "release_date": "2023-02-17",
+   "duration_s": 168,
+   "popularity": 56,
+   "key": "B major",
+   "camelot": "1B",
+   "bpm": 125,
+   "energy": 0.864,
+   "danceability": 0.81,
+   "cover_url": "https://i.scdn.co/image/ab67616d0000b273dc1175c18080e7df2975e875",
+   "spotify_url": "https://open.spotify.com/track/5WsSAyixmdLYcl3FRMjZM1"
+  },
+  {
+   "id": "0vxf8HSKtY4xsbIzYUv9Fa",
+   "name": "Supersonic",
+   "artists": [
+    "it's murph",
+    "Nonô",
+    "Jimmy James"
+   ],
+   "display_name": "it's murph, Nonô, Jimmy James - Supersonic",
+   "album": "Supersonic",
+   "release_date": "2024-08-16",
+   "duration_s": 188.731,
+   "popularity": 47,
+   "key": "G♯ minor",
+   "camelot": "1A",
+   "bpm": 124,
+   "energy": 0.89,
+   "danceability": 0.658,
+   "cover_url": "https://i.scdn.co/image/ab67616d0000b27388aa9da81dc0a686f92d8604",
+   "spotify_url": "https://open.spotify.com/track/0vxf8HSKtY4xsbIzYUv9Fa"
+  },
+  {
+   "id": "2dwnD6tMYqp8zQmfg1XvNQ",
+   "name": "Way It Is",
+   "artists": [
+    "Mr. Belt & Wezol",
+    "RSCL"
+   ],
+   "display_name": "Mr. Belt & Wezol, RSCL - Way It Is",
+   "album": "Way It Is",
+   "release_date": "2021-01-25",
+   "duration_s": 192.905,
+   "popularity": 61,
+   "key": "D♯ minor",
+   "camelot": "2A",
+   "bpm": 124,
+   "energy": 0.69,
+   "danceability": 0.868,
+   "cover_url": "https://i.scdn.co/image/ab67616d0000b273b329d430a991f074082dab96",
+   "spotify_url": "https://open.spotify.com/track/2dwnD6tMYqp8zQmfg1XvNQ"
+  },
+  {
+   "id": "2UtuOyOQ0VxF2sNZU12H3y",
+   "name": "Life Is Simple (Move Your Body) [Feat Salomé Das]",
+   "artists": [
+    "Maesic",
+    "Marshall Jefferson",
+    "Salomé Das"
+   ],
+   "display_name": "Maesic, Marshall Jefferson, Salomé Das - Life Is Simple (Move Your Body) [Feat Salomé Das]",
+   "album": "Life Is Simple (Move Your Body) [Feat Salomé Das]",
+   "release_date": "2025-03-07",
+   "duration_s": 172.314,
+   "popularity": 62,
+   "key": "D♯ minor",
+   "camelot": "2A",
+   "bpm": 121,
+   "energy": 0.704,
+   "danceability": 0.753,
+   "cover_url": "https://i.scdn.co/image/ab67616d0000b2734bb821c1aaab088e1df4e533",
+   "spotify_url": "https://open.spotify.com/track/2UtuOyOQ0VxF2sNZU12H3y"
+  }
+ ]
+}

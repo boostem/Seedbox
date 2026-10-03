@@ -1,0 +1,34 @@
+{
+  "name": "seedbox-frontend",
+  "private": true,
+  "version": "0.3.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:mock": "VITE_MOCK=1 vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "build:mock": "tsc -p tsconfig.json && VITE_MOCK=1 vite build --outDir dist-mock",
+    "preview": "vite preview --port 4173",
+    "preview:mock": "vite preview --outDir dist-mock --port 4174",
+    "typecheck": "tsc -p tsconfig.json",
+    "fixtures": "deno run --allow-read=.. --allow-write=src/mock scripts/gen-fixtures.ts"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "lucide-react": "^1.40.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^7.0.0",
+    "vite": "^8.0.0"
+  }
+}

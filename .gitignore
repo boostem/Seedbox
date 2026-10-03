@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+downloads
+frontend/node_modules/
+frontend/dist/
+frontend/dist-mock/
+packaging/dist/
+packaging/.relvenv/
+packaging/build/
+*.log
