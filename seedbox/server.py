@@ -510,14 +510,16 @@ def create_app(
         return JSON(out)
 
     def with_styles(data: dict) -> dict:
-        """CrateSet + the planned style of each transition (the set's style chain); the set works without them."""
+        """CrateSet + the planned style of each transition (the set's style chain) and, in chill mode, its plan's notes
+        (what the mix will do: the suggestion's own notes describe a hand-mixing recipe); the set works without them."""
         try:
-            styles = state.mixes.crate_styles(data["folder"])
+            summaries = state.mixes.crate_summaries(data["folder"])
         except Exception:  # noqa: BLE001
             log.exception("planning the styles of %s failed", data.get("folder"))
             return data
-        for t, st in zip(data["transitions"], styles):
+        for t, (st, notes) in zip(data["transitions"], summaries):
             t["style"] = st
+            t["plan_notes"] = notes
         return data
 
     @app.get("/api/crates/{folder}/set")

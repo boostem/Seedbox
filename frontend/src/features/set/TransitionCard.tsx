@@ -7,7 +7,7 @@ import { moveColor } from "@/lib/moves";
 import { useApp } from "@/store/app";
 import { PitchChip } from "./bits";
 import { STYLE_HINTS } from "./mix/lanes";
-import { headline, type SetTransition, techniqueShort } from "./model";
+import { type SetTransition, techniqueShort } from "./model";
 
 export interface TransitionCardProps {
   t: SetTransition;
@@ -24,13 +24,14 @@ export interface TransitionCardProps {
   onAudition?: () => void;
 }
 
-/** A → B suggestion between two set rows: score, key move, pitch, technique/overlap, headline; expands to notes. */
+/** A → B suggestion between two set rows: score, key move, pitch, planned style; expands to notes. */
 export const TransitionCard = memo(function TransitionCard({ t, a, b, folder, selected, expanded, dimmed, worst, auditioning, onSelect, onToggle, onAudition }: TransitionCardProps) {
   const sa = useApp((s) => s.analysis[folder]?.[a.track.id]) ?? a.analysis_state;
   const sb = useApp((s) => s.analysis[folder]?.[b.track.id]) ?? b.analysis_state;
   const failed = sa === "error" || sb === "error";
   const color = moveColor(t.key_move);
-  const head = t.ready ? headline(t) : null;
+  // the planned mix's own notes when the set has them (chill mode), else the suggestion's recipe
+  const notes = t.plan_notes?.length ? t.plan_notes : t.notes;
   const warn = t.warnings.length;
   const technique = t.ready ? techniqueShort(t) : null;
 
@@ -103,9 +104,8 @@ export const TransitionCard = memo(function TransitionCard({ t, a, b, folder, se
             <div className="flex flex-wrap items-center gap-1.5 pb-0.5">
               <PitchChip pct={t.pitch_pct} />
               {worst && <span className="text-2xs font-semibold tracking-wide text-danger uppercase">weakest transition</span>}
-              {head && <span className="text-fg-subtle">{head}</span>}
             </div>
-            {t.notes.map((n, i) => (
+            {notes.map((n, i) => (
               <p key={i} className={i === 0 && t.ready ? "font-medium text-fg" : "text-fg-muted"}>
                 {n}
               </p>

@@ -176,12 +176,6 @@ export function techniqueLong(t: TechniqueFields): string | null {
   return `${n}-bar ${t.technique}${swap}`;
 }
 
-/** The headline (first) note of a transition, without the trailing period. */
-export function headline(t: Transition): string | null {
-  const n = t.notes[0];
-  return n ? n.replace(/\.$/, "") : null;
-}
-
 /**
  * Wrong-download check: the analysis had to detect its own tempo (tunebat's didn't fit the audio) and that tempo
  * isn't tunebat's ×1/×2/×½ within ±3 % — the file is most likely a different song than the tunebat track.

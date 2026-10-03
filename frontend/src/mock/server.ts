@@ -190,7 +190,10 @@ function crateSet(c: MockCrate): CrateSet {
   const an = (t: Track) => (states.get(t.id) === "ready" ? mockAnalysis(t) : null);
   const transitions = tracks.slice(1).map((b, i) => {
     const t = mockTransition(tracks[i], an(tracks[i]), b, an(b), settings.bpm_tolerance);
-    return { ...t, style: t.ready ? mockStyle(t.technique ?? "phrase blend", tracks[i].id + b.id) : null };
+    if (!t.ready) return { ...t, style: null, plan_notes: null };
+    // like the server's style chain: the saved plan's style and notes, else a fresh plan's
+    const plan = savedPlans.get(`${c.folder}|${tracks[i].id}|${b.id}`) ?? genPlan(c.folder, tracks[i], b);
+    return { ...t, style: plan.style, plan_notes: plan.notes };
   });
   return { folder: c.folder, path: crateDir(c.folder), seed_id: c.seed?.id ?? null, tracks: setTracks, transitions };
 }

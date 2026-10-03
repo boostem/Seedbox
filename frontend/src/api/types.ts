@@ -203,7 +203,8 @@ export interface Transition {
   swap_bar: number | null; // 1-based bar within the overlap where B's low end replaces A's (any blend that swaps bass, incl. blend → echo out); null for cuts / no bass
   technique: Technique | null;
   style?: MixStyle | null; // the planned transition style in this set (crate set responses; null = can't be planned yet)
-  notes: string[]; // human explanations
+  notes: string[]; // human explanations (a hand-mixing recipe for the technique above)
+  plan_notes?: string[] | null; // what the planned mix will do (chill crate sets, both songs analysed): show over notes
   warnings: string[]; // e.g. "vocals overlap for 8 bars"
   ready: boolean; // false until both analyses exist (then only key/BPM fields are meaningful)
 }

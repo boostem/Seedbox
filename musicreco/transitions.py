@@ -453,17 +453,19 @@ def _plan_notes(a: _Grid, b: _Grid, plan: _Plan) -> list[str]:
 
 def _plan_warnings(a: _Grid, b: _Grid, plan: _Plan) -> list[str]:
     warnings = []
-    if plan.clash:
+    if plan.clash and not _CHILL:  # chill plans hand the vocals over themselves (and their notes say how)
         k0, k1 = plan.clash[0], plan.clash[-1] + 1
         warnings.append(
             f"Vocals overlap for {_plural(len(plan.clash), 'bar')} "
             f"(A {_mmss(a.t(plan.a0 + k0))}–{_mmss(a.t(plan.a0 + k1))}): ride the mids or shorten the blend."
         )
-    if not plan.length and plan.technique != "echo out":
+    if not plan.length and plan.technique != "echo out":  # chill mixes blend anyway: say what that means
         if a.outro_vocals and b.intro_vocals:
-            warnings.append("A's outro and B's intro both have vocals: no clean blend, so cut.")
+            warnings.append("A's outro and B's intro both have vocals: " +
+                            ("one has to wait for the other." if _CHILL else "no clean blend, so cut."))
         elif b.intro_bars < PHRASE and a.outro_bars < PHRASE:
-            warnings.append(f"Short edges (A outro {a.outro_bars}, B intro {b.intro_bars} bars): no room to blend.")
+            warnings.append(f"Short edges (A outro {a.outro_bars}, B intro {b.intro_bars} bars): " +
+                            ("a blend overlaps both songs' main parts." if _CHILL else "no room to blend."))
     if plan.technique != "drop swap" and not b.intro_bars:
         warnings.append("B has no intro: it starts full-on.")
     elif plan.technique != "drop swap" and b.intro_bars < PHRASE:
@@ -487,7 +489,8 @@ def _key_text(a: Track, b: Track, move: str, plan: _Plan | None) -> tuple[list[s
     if plan is not None and plan.length and plan.tonal == 0:
         return [f"Key {key} clashes, but the overlap is drums-only on one deck at all times, so it should pass."], []
     if plan is not None and not plan.length:
-        return [], [f"Key clash {key}: cut, don't blend."]
+        return [], [f"Key clash {key}: " + ("keep the blend short, with A's melody out early." if _CHILL
+                                           else "cut, don't blend.")]
     return [], [f"Key clash {key}: keep the overlap short and percussive."]
 
 

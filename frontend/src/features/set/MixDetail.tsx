@@ -11,6 +11,7 @@ import { type SetTransition, techniqueLong } from "./model";
 import { useTrackAnalysis } from "./useAnalysis";
 import { useSessionState } from "./useSessionState";
 import { MixEditor } from "./mix/MixEditor";
+import { isChillStyle } from "./mix/lanes";
 import { useMixPlan } from "./mix/useMixPlan";
 import { usePlayRequests } from "./mix/pending";
 import { WavePlaceholder } from "./TrackDetail";
@@ -90,6 +91,8 @@ export function MixDetail({ folder, t, a, b, index, count, onPrev, onNext, onSel
   const pitched = bpmB * (1 + t.pitch_pct / 100);
   const mp = useMixPlan(folder, t.from_id, t.to_id, t.ready && !t.pending);
   const hasPlan = !!mp.plan;
+  // a chill plan says what the mix does (the editor's "The plan"); the suggestion's notes are a different, hand-mixing recipe
+  const planSaysIt = !!mp.plan && isChillStyle(mp.plan.style);
   const [details, setDetails] = useSessionState("seedbox.mix.details", false);
   // "Audition" from a transition card on an engine without mix plans → the rough two-deck preview
   const legacyPlay = useCallback(() => plan && audition.toggle(plan), [plan]);
@@ -225,7 +228,8 @@ export function MixDetail({ folder, t, a, b, index, count, onPrev, onNext, onSel
       )}
 
       {details && (
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+      <div className={cn("grid grid-cols-1 gap-4", !planSaysIt && "xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]")}>
+        {!planSaysIt && (
         <section className="rounded-md border border-line bg-surface px-3 py-2.5">
           <h3 className="label-caps mb-1.5 !text-fg-muted">{hasPlan ? "Transition analysis" : "How to mix it"}</h3>
           <ol className="flex flex-col gap-1.5 text-sm select-text">
@@ -238,6 +242,7 @@ export function MixDetail({ folder, t, a, b, index, count, onPrev, onNext, onSel
             {t.pending && <li className="text-fg-subtle">Scoring this pair…</li>}
           </ol>
         </section>
+        )}
         <section className="rounded-md border border-line bg-surface px-3 py-2.5">
           <h3 className="label-caps mb-1.5 !text-fg-muted">Warnings</h3>
           {t.warnings.length ? (

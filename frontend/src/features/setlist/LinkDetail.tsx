@@ -4,6 +4,7 @@ import type { CrateLink, SetTrack } from "@/api/types";
 import { Button, CoverArt } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { MixEditor, useTrackAnalysis } from "@/features/set";
+import { isChillStyle } from "@/features/set/mix/lanes";
 import { useMixPlan } from "@/features/set/mix/useMixPlan";
 import { useSessionState } from "@/features/set/useSessionState";
 import { WavePlaceholder } from "@/features/set/TrackDetail";
@@ -33,6 +34,9 @@ export function LinkDetail({ setlistId, link, a, b }: { setlistId: string; link:
   const ready = !!anA && !!anB;
   const mp = useMixPlan(scope, a.track.id, b.track.id, ready);
   const [details, setDetails] = useSessionState("seedbox.mix.details", false);
+  // a chill plan says what the mix does (the editor's "The plan"): only the suggestion's warnings add to it
+  const planSaysIt = !!mp.plan && isChillStyle(mp.plan.style);
+  const lines = [...(planSaysIt ? [] : link.transition.notes), ...link.transition.warnings.map((w) => `⚠ ${w}`)];
   return (
     <div className="flex flex-col gap-4 px-5 py-4">
       <span className="label-caps">Crate link</span>
@@ -55,10 +59,10 @@ export function LinkDetail({ setlistId, link, a, b }: { setlistId: string; link:
       ) : (
         <WavePlaceholder view={!ready ? (va.status !== "ready" ? va : vb) : { status: "loading" }} height={220} />
       )}
-      {details && (
+      {details && lines.length > 0 && (
         <ul className="flex flex-col gap-1.5 rounded-md border border-line bg-surface px-3 py-2.5 text-sm select-text">
-          {[...link.transition.notes, ...link.transition.warnings.map((w) => `⚠ ${w}`)].map((n, i) => (
-            <li key={i} className={cn(i === 0 ? "font-medium text-fg" : "text-fg-muted")}>
+          {lines.map((n, i) => (
+            <li key={i} className={cn(i === 0 && !planSaysIt ? "font-medium text-fg" : "text-fg-muted")}>
               {n}
             </li>
           ))}

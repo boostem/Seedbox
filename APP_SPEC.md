@@ -288,8 +288,14 @@ Render events of a link carry `folder: "setlist:<id>"`. Mixes are written to `<r
 # v6: chill mixes + vocal stems (branch claude/chill-mixes, 2026-10-03)
 
 Contract: `LaneId` gains `vocals` / `instrumental`; `MixPlan.swap_kind` / `vocal_stems`; `ChillStyle`, `SwapKind`,
-`StemsStatus`, the `stems` SSE event and `TrackAnalysis.kick_per_bar` / `bass_per_bar` / `vocal_source` in
-`frontend/src/api/types.ts`.
+`StemsStatus`, the `stems` SSE event, `Transition.plan_notes` and `TrackAnalysis.kick_per_bar` / `bass_per_bar` /
+`vocal_source` in `frontend/src/api/types.ts`.
+
+Set view: crate set transitions carry `style` and, in chill mode, `plan_notes` (the planned mix's own notes, from
+the style chain, which plans every transition in full: ~2 ms each; null until both songs are analysed). The card and
+the mix view show those instead of the suggestion's `notes` (a hand-mixing recipe for `technique`, which the chill
+planner doesn't follow). The suggestion's warnings stay, minus the vocal-overlap one (the plan handles vocals) and
+with the "cut" advice reworded for blends.
 
 ## Planner (musicreco/mixplan.py)
 - `MODE` = `"chill"` (default) or `"fx"` (env `SEEDBOX_MIX_MODE=fx`: the v5 planner, kept intact). `PLAN_VERSION = 4`.

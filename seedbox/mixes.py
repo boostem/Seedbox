@@ -84,6 +84,21 @@ def _mtime(path: Path) -> int:
         return 0
 
 
+def _chill_summary(mixplan: Any, pair: Pair, saved: dict | None, row: tuple) -> tuple[str | None, list[str] | None]:
+    """A chill transition's (style, plan notes): its saved plan's, else a fresh plan's (no notes for a rough plan,
+    i.e. before both songs are analysed)."""
+    if saved is not None:
+        return saved.get("style"), [str(n) for n in saved.get("notes") or []] or None
+    a, a_an, b, b_an, tr = row
+    try:
+        plan = mixplan.generate(a, a_an, b, b_an, pair.key, transition=tr)
+    except Exception:  # noqa: BLE001 - one pair that can't be planned keeps the chain going
+        log.debug("planning %s -> %s for the set view failed", a.id, b.id, exc_info=True)
+        return getattr(mixplan, "DEFAULT_STYLE", None), None
+    notes = [str(n) for n in plan.get("notes") or []] if a_an is not None and b_an is not None else []
+    return plan.get("style"), notes or None
+
+
 def check_ids(from_id: str, to_id: str) -> None:
     for tid in (from_id, to_id):
         if not _ID.match(tid):
@@ -179,8 +194,12 @@ class MixService:
 
     def crate_styles(self, folder: str) -> list[str | None]:
         """The planned style of each consecutive transition of a crate's set order (None: can't be planned)."""
+        return [style for style, _ in self.crate_summaries(folder)]
+
+    def crate_summaries(self, folder: str) -> list[tuple[str | None, list[str] | None]]:
+        """(planned style, plan notes) of each consecutive transition of a crate's set order (see summaries)."""
         seed_dir = resolve_crate(self.crates.root, folder)
-        return self.chain(self.crate_pairs(seed_dir, self.crates.files(seed_dir)))
+        return self.summaries(self.crate_pairs(seed_dir, self.crates.files(seed_dir)))
 
     def with_chain(self, pairs: list[Pair]) -> list[Pair]:
         """Set each pair's `recent` (the styles of the transitions before it) from the set's chain; `pairs` are a
@@ -191,13 +210,18 @@ class MixService:
         return pairs
 
     def chain(self, pairs: list[Pair]) -> list[str | None]:
-        """The style of every transition of a set (mixplan.plan_styles): a saved plan keeps its own, the others are
-        each the best fit for their two songs given the styles before them. Uses the analyses known now (nothing
-        waits; missing ones are queued) and is remembered until the order, an analysis, a track's vocal stems or a saved
-        plan changes."""
+        """The style of every transition of a set (see summaries)."""
+        return [style for style, _ in self.summaries(pairs)]
+
+    def summaries(self, pairs: list[Pair]) -> list[tuple[str | None, list[str] | None]]:
+        """(style, plan notes) of every transition of a set: a saved plan keeps its own, the others are each the best
+        fit for their two songs. FX mode: given the styles before them (mixplan.plan_styles), without notes. Chill
+        mode plans each one in full (a couple of ms) so the set view can say what the mix will do; no notes until both
+        songs are analysed. Uses the analyses known now (nothing waits; missing ones are queued) and is remembered
+        until the order, an analysis, a track's vocal stems or a saved plan changes."""
         mixplan = engine.optional("mixplan")
         if mixplan is None or not hasattr(mixplan, "plan_styles") or not pairs:
-            return [None] * len(pairs)
+            return [(None, None)] * len(pairs)
         known: dict[tuple[str, str], dict | None] = {}
         for d in dict.fromkeys(x for p in pairs for x in (p.a_dir, p.b_dir)):
             files = list({f.track.id: f for p in pairs for dd, f in ((p.a_dir, p.a), (p.b_dir, p.b)) if dd == d}.values())
@@ -218,17 +242,22 @@ class MixService:
             hit = self._chains.get(key)
         if hit is not None:
             return hit
-        fixed = [((self._load_saved(p.saved) or {}).get("style") if mt else None) for p, mt in zip(pairs, saved)]
+        saved_plans = [self._load_saved(p.saved) if mt else None for p, mt in zip(pairs, saved)]
         rows = []
         for p in pairs:
             a_an, b_an = an_of(p.a_dir, p.a), an_of(p.b_dir, p.b)
             tr = transitions.suggest(p.a.track, a_an, p.b.track, b_an, bpm_tol=self.crates.bpm_tol)
             rows.append((p.a.track, a_an, p.b.track, b_an, tr))
+        out: list[tuple[str | None, list[str] | None]]
         try:
-            out = list(mixplan.plan_styles(rows, fixed))
+            if getattr(mixplan, "MODE", "fx") == "chill":
+                out = [_chill_summary(mixplan, p, sp, row) for p, sp, row in zip(pairs, saved_plans, rows)]
+            else:
+                fixed = [(sp or {}).get("style") for sp in saved_plans]
+                out = [(style, None) for style in mixplan.plan_styles(rows, fixed)]
         except Exception:  # noqa: BLE001 - every plan still works without the chain
             log.exception("planning the style chain failed")
-            out = [None] * len(pairs)
+            out = [(None, None)] * len(pairs)
         with self._lock:
             self._chains[key] = out
             while len(self._chains) > CHAIN_CACHE:
