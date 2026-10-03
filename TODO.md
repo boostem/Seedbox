@@ -57,9 +57,10 @@
       uses only the EQ, the filter and the vocal stems. Default: a 16-bar phrase mix. B's fader is up with its EQ
       shut, its highs open first, then its mids (A dipping 4 dB in each band to make room), the bass swaps halfway,
       then A's mids and highs leave under a touch of high-pass.
-- [x] **Bass swaps by the songs**: hard on the 1 (steady kicks, tight bass), quick over one bar (a bassline that never
-      lets go, a broken kick), slow over 4 bars (a soft low end). New `kick_per_bar` / `bass_per_bar` in the
-      analysis (ANALYSIS_VERSION 5). Pick one by hand in the editor's *Bass swap* menu.
+- [x] **Bass swaps by the songs**: hard on the 1 (steady four-on-the-floor kicks), quick over one bar (a kick that
+      isn't on every beat: hip-hop, soul, live drums), slow over 4 bars (a soft low end). New `kick_per_bar` /
+      `bass_per_bar` in the analysis (ANALYSIS_VERSION 5; `bass_per_bar` saturates on real songs, so only the kick
+      decides for now). Pick one by hand in the editor's *Bass swap* menu.
 - [x] **Vocal stems**: a RoFormer model splits every song's vocals in the background (songs in use first), cached as
       FLAC + loudness envelopes; the stems replace the heuristic vocal detection. Per-deck *Vocals* / *Instrumental*
       lanes; two vocals never sound at once; acapella moments where A's vocal can ride over B's beat.

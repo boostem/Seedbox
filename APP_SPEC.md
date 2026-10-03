@@ -302,8 +302,8 @@ Contract: `LaneId` gains `vocals` / `instrumental`; `MixPlan.swap_kind` / `vocal
   its fader over the last quarter, a high-pass rising to 0.45 (~330 Hz) over the last half.
 - Bass swap (`swap_kind`, `generate(swap=)` / `?swap=`): `hard` (on the 1), `quick` (over the bar before, -3 dB each at
   the crossing), `slow` (over 4 bars around it). By the songs: a soft low end on either side (low_per_bar < 0.45) →
-  slow; a bassline that never lets go (bass_per_bar ≥ 0.85) or a kick not on every beat (kick_per_bar < 0.75) → quick;
-  else hard. B without bass in the blend: A's lows carry it (`swap_kind` null); into B's drop: hard at the blend end.
+  slow; a kick not on every beat on either side (kick_per_bar < 0.75) → quick; else hard. (`bass_per_bar` is
+  exported but not used yet: on real songs it reads 1.0 for most basslines.) B without bass in the blend: A's lows carry it (`swap_kind` null); into B's drop: hard at the blend end.
 - Loops only when needed: when A's clean ending (after its last sung bar, 4-bar grid) is shorter than the blend and
   the plain window would run over A's vocals or past its end, the blend starts on that ending and A's last 8 bars
   repeat (slip loop) until A is out; the repeat's vocal is muted (needs A's stems when those bars are sung; a fading

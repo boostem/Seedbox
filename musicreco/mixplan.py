@@ -1374,7 +1374,6 @@ _LOOP_BARS = 8
 _MILD_KEYS = ("+2 boost", "+7 boost", "diagonal")
 _FOUR_FLOOR = 0.75  # kick_per_bar at/above this = a steady kick on every beat
 _SOFT_LOW = 0.45  # low_per_bar below this = a soft low end (blends slowly without mud)
-_LONG_BASS = 0.85  # bass_per_bar at/above this = a bassline that never lets go (808, reese): no hard cut
 _TECH_STYLE = {"filter sweep": "filter fade", "double drop": "double drop", "quick cut": "quick cut",
                "drop swap": "quick cut", "slam": "quick cut", "brake": "quick cut", "spinback": "quick cut"}
 _SWAP_HOW = {"hard": "hard bass swap on the 1 of bar {bar}", "quick": "quick 1-bar bass swap into bar {bar}",
@@ -1494,8 +1493,8 @@ def _chill_place(m: _Mix, base: _Place, L: int) -> tuple[_Place, dict | None, bo
 
 def _swap_kind(m: _Mix, place: _Place, sw: int) -> tuple[str, str]:
     """hard / quick / slow, from the two low ends around overlap bar `sw`: a soft low end on either side blends slowly
-    without mud; steady kicks with tight bass on both sides swap on the 1; a bassline that never lets go between the
-    kicks, or a kick that isn't on every beat, crosses over one bar so two basslines never stack for long."""
+    without mud; steady four-on-the-floor kicks on both sides swap on the 1 (house, techno); a kick that isn't on
+    every beat (hip-hop, soul, live drums, broken beats) crosses over one bar so the two grooves never clash on it."""
     ga, gb = m.ga, m.gb
     if not (m.real_a and m.real_b):
         return "hard", "The bass swaps on the 1 (the songs aren't analysed yet, so this is the safe default)."
@@ -1505,16 +1504,10 @@ def _swap_kind(m: _Mix, place: _Place, sw: int) -> tuple[str, str]:
     if min(a_low, b_low) < _SOFT_LOW:
         who = "A's" if a_low <= b_low else "B's"
         return "slow", f"{who} low end is soft here, so the lows blend over 4 bars without getting muddy."
-    a_bass = _mean(ga.bass, *ar) if ga.bass else 0.0
-    b_bass = _mean(gb.bass, *br) if gb.bass else 0.0
-    if max(a_bass, b_bass) >= _LONG_BASS:
-        who = "A's" if a_bass >= b_bass else "B's"
-        return "quick", f"{who} bassline barely lets go between the kicks, so the lows cross over one bar instead of " \
-            "being chopped on the 1."
     a_kick = _mean(ga.kick, *ar) if ga.kick else 1.0
     b_kick = _mean(gb.kick, *br) if gb.kick else 1.0
     if min(a_kick, b_kick) >= _FOUR_FLOOR:
-        return "hard", "Steady kicks and tight bass on both sides, so the bass swaps right on the 1."
+        return "hard", "Steady four-on-the-floor kicks on both sides, so the bass swaps right on the 1."
     who = "A's" if a_kick <= b_kick else "B's"
     return "quick", f"{who} kick isn't on every beat, so the lows cross over one bar rather than switching on the 1."
 
