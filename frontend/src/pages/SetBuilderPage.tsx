@@ -1,5 +1,5 @@
 // OWNER: FRONTEND-SET agent. Set builder: running order + transitions (left), track / mix detail (right), overview.
-import { Activity, AlertTriangle, AudioWaveform, Check, FolderOpen, Keyboard, Search, Sprout, Undo2, Wand2 } from "lucide-react";
+import { Activity, AlertTriangle, AudioLines, AudioWaveform, Check, FolderOpen, Keyboard, Search, Sprout, Undo2, Wand2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import { usePageTitle } from "@/components/shell/pageTitle";
@@ -12,7 +12,7 @@ import { fmtTime, plural } from "@/lib/format";
 import { useHotkey } from "@/lib/hotkeys";
 import { navigate, useHashQuery } from "@/lib/router";
 import { useListNav } from "@/lib/useListNav";
-import { useApp } from "@/store/app";
+import { useApp, useStemsSummary } from "@/store/app";
 import { player, usePlayer } from "@/audio/player";
 
 const OVERVIEW_KEY = "seedbox.set.overview";
@@ -190,6 +190,7 @@ export function SetBuilderPage({ folder }: { folder: string }) {
             <span className="text-fg-faint">·</span>
             <span className="num">{plural(n, "track")}</span>
             {stats && <span className="num">· {fmtTime(stats.totalS)}</span>}
+            {n > 0 && <StemsChip folder={set.folder} ids={set.tracks.map((t) => t.track.id)} />}
           </span>
         }
         actions={
@@ -306,5 +307,27 @@ export function SetBuilderPage({ folder }: { folder: string }) {
         </>
       )}
     </Page>
+  );
+}
+
+/** "Vocals split 5/12" in the header while the crate's vocal stems are being split in the background. */
+function StemsChip({ folder, ids }: { folder: string; ids: string[] }) {
+  const st = useStemsSummary(folder, ids);
+  if (!st.available) {
+    return (
+      <Tooltip content={st.reason ?? "Vocal splitting isn't available on this install."}>
+        <span className="flex items-center gap-1 text-fg-faint">
+          · <AudioLines size={11} /> no vocal stems
+        </span>
+      </Tooltip>
+    );
+  }
+  const done = st.ready >= st.total;
+  return (
+    <Tooltip content={done ? "Every song's vocals are split: transitions hand the vocals over cleanly." : "Each song's vocals are split in the background, songs you're using first. Transitions use them as they land."}>
+      <span className={cn("flex items-center gap-1 num", done ? "text-ok" : "text-fg-subtle")}>
+        · <AudioLines size={11} /> {done ? "vocals split" : `vocals ${st.ready}/${st.total}${st.running ? ` · ${Math.round(st.running.progress * 100)}%` : ""}`}
+      </span>
+    </Tooltip>
   );
 }

@@ -316,8 +316,10 @@ Contract: `LaneId` gains `vocals` / `instrumental`; `MixPlan.swap_kind` / `vocal
   the plain window (a line running there or starting within a bar) that ends ≥ 2 bars after it inside the blend, and
   B not singing before then (or B split: its vocal waits). A's instrumental drops out on the 1 of the swap, its vocal
   rides on with its mids / highs open, then fades a beat after the line.
-- Filter fade (0.66 for two full arrangements, 0.64 for keys a step apart): B low-pass -0.7 opening over 3/4 of the
-  blend, A high-pass to 0.6 from the first quarter; the bass still swaps. Double drop: as v5 (EQ + filter only).
+- Filter fade (0.66 when two full arrangements collide: A's outro under 4 bars or the blend's first half in A's main
+  part, and B's intro under 4 bars or its main part arriving in the first half; 0.58 for keys a step apart, so it's
+  offered but the phrase mix wins): B low-pass -0.7 opening over 3/4 of the blend, A high-pass to 0.6 from the first
+  quarter; the bass still swaps. Double drop: as v5 (EQ + filter only).
   Quick cut: A out on the 1, nothing else (tempo gaps over 12% or when asked).
 - Clashing keys: 8 bars, A's mids out over bars 2-3 (its vocal with them), B's mids in over bars 4-5.
 

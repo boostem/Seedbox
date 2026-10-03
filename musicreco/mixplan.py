@@ -1569,17 +1569,19 @@ def _chill_choices(m: _Mix, place: _Place, key_mode: str, va: list[float], vb: l
     else:
         base = (0.62, "the smooth default: B's highs, then its mids, then the bass")
     a_score, a_why, a_end = _acapella_fit(m, va, vb, sw)
-    a_full = real and not any(ga.perc[k] for k in range(place.a0, place.a0 + L) if 0 <= k < ga.n)
-    b_full = real and not any(gb.perc[k] for k in range(place.b0, place.b0 + L) if 0 <= k < gb.n)
+    # two full arrangements colliding: A has no real outro (or the blend's first half is still in its main part)
+    # and B's main part arrives in the first half (no real intro): the EQ alone would stack two whole songs
+    a_full = real and (ga.outro_bars < 4 or place.a0 + L // 2 < ga.outro[0])
+    b_full = real and (gb.intro_bars < 4 or place.b0 + L // 2 > gb.intro[1])
     if key_mode == "clash":
         ff = (0.3, "the keys clash: even a filter fade would show it, a short EQ blend hides it better")
     elif a_full and b_full:
-        ff = (0.66, "both songs are full arrangements here (no drums-only intro or outro): a filter fade melts one "
+        ff = (0.66, "two full arrangements meet here (A has no real outro, B no real intro): a filter fade melts one "
                     "into the other")
     elif key_mode == "mild":
-        ff = (0.64, "the keys are a step apart: the filter softens the change")
+        ff = (0.58, "the keys are a step apart: the filter would soften the change")
     else:
-        ff = (0.4, "a drums-only intro or outro blends cleanly with the EQ alone")
+        ff = (0.4, "A's outro and B's intro leave room: the EQ alone blends them cleanly")
     return [
         _Choice(DEFAULT_STYLE, *base),
         _Choice("acapella", a_score, a_why),
