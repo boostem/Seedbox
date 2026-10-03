@@ -305,7 +305,7 @@ class SetMixService:
                     break
                 except Conflict:
                     if time.monotonic() > deadline:
-                        raise ApiError(f"{f.track.display_name} is still being analysed — try again shortly") from None
+                        raise ApiError(f"{f.track.display_name} is still being analysed, try again shortly") from None
 
         # plans: saved edits or generated
         plans = []

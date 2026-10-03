@@ -1131,7 +1131,7 @@ def generate(
             notes_extra.append(f"A runs out before the blend ends, so its last {size} clean bars loop from bar "
                                f"{barno(stretch['start_beat'])} of the blend until it is out.")
         elif stretch is None and place.a0 + place.overlap > m.ga.end and m.real_a:
-            notes_extra.append(f"A runs out {place.a0 + place.overlap - m.ga.end} bars before the blend ends — "
+            notes_extra.append(f"A runs out {place.a0 + place.overlap - m.ga.end} bars before the blend ends: "
                                "try a loop roll or a shorter blend.")
     L = place.overlap
     E = 4.0 * L

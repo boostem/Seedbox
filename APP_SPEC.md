@@ -217,7 +217,7 @@ def plan_hash(plan: dict, a_path: Path, b_path: Path) -> str
 
 ---
 
-# v5 — loops & FX in transitions, full set mixes, setlists (2026-10-03)
+# v5: loops & FX in transitions, full set mixes, setlists (2026-10-03)
 
 Contract: the "Full set mixes" and "Setlists" blocks at the end of `frontend/src/api/types.ts`, plus `DeckFx` /
 `DeckPlan.fx` and the `brake` / `spinback` techniques.

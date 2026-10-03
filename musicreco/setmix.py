@@ -190,7 +190,7 @@ def build(entries: list[SetEntry], plans: list[dict]) -> Timeline:
                 if core_b > core_a:
                     conflicts.append(i)
                 split = a_start
-                warnings.append(f"track {i + 1} ({e.track.display_name}) is short for both of its transitions — "
+                warnings.append(f"track {i + 1} ({e.track.display_name}) is short for both of its transitions, "
                                 "some automation overlaps")
         else:
             split = math.inf if side_b else -math.inf

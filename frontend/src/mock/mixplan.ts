@@ -93,7 +93,7 @@ export function generateMixPlan(folder: string, a: Track, aAn: TrackAnalysis | n
       break;
     }
     default: {
-      // long blend / phrase blend / bass swap — echo accent before the swap, exit throw + reverb wash on A
+      // long blend / phrase blend / bass swap: echo accent before the swap, exit throw + reverb wash on A
       const swap = tech === "bass swap" ? Math.min(n, (t.swap_bar ?? L / 2 + 1) * 4 - 4) : half;
       const hold = tech === "long blend" && L >= 16 ? 8 : 0; // B's intro held (looped) under A's long outro
       A = deck(a, aAn, out, start, n, {

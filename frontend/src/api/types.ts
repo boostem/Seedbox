@@ -333,7 +333,7 @@ export interface SetMixTrack {
   camelot: string;
   bpm: number;
   folder: string;
-  start_s: number; // where it takes over (bass swap / mid-blend / the cut) — the tracklist & cue time
+  start_s: number; // where it takes over (bass swap / mid-blend / the cut): the tracklist & cue time
   in_s: number; // where it starts to sound
   out_s: number; // where it's gone
 }

@@ -96,7 +96,7 @@ export function CrateLinksButton({ folder, label }: { folder: string; label: str
       <Button variant="ghost" icon={Link2} onClick={() => setOpen(true)}>
         Link crates
       </Button>
-      <Modal open={open} onClose={() => setOpen(false)} size="lg" title={`Link ${label} with other crates`} description="Chain crates into one long setlist — and render it as one mix.">
+      <Modal open={open} onClose={() => setOpen(false)} size="lg" title={`Link ${label} with other crates`} description="Chain crates into one long setlist, then render it as one mix.">
         {open && <CrateLinksPanel folder={folder} />}
       </Modal>
     </>

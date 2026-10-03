@@ -34,7 +34,7 @@ export interface SetModel {
 const OVERRIDE_GRACE_MS = 2500; // keep showing our order while slower refetches (started before the PUT) land
 
 function conflictToast(): void {
-  toast.warning("A download is still running for this crate — re-order once it has finished. The set keeps its current order.", { title: "Can't re-order yet", key: "set-order-409" });
+  toast.warning("A download is still running for this crate. Re-order once it has finished; the set keeps its current order.", { title: "Can't re-order yet", key: "set-order-409" });
 }
 
 export function useSetModel(folder: string): SetModel {
@@ -134,7 +134,7 @@ export function useSetModel(folder: string): SetModel {
       if (my !== seq.current) return;
       setSave("idle"); // nothing changed: the set keeps its saved order (the toast says why)
       if (e instanceof ApiError && e.isConflict) conflictToast();
-      else toast.error(`${(e as Error).message} — the set keeps its current order.`, { title: "Auto-order failed", key: "set-auto" });
+      else toast.error(`${(e as Error).message}. The set keeps its current order.`, { title: "Auto-order failed", key: "set-auto" });
     } finally {
       setAutoOrdering(false);
     }

@@ -57,7 +57,7 @@ export function NewSetlistModal({ open, onClose, initial = [] }: { open: boolean
       onClose={onClose}
       size="md"
       title="New setlist"
-      description="Pick crates in the order you want to play them — you can re-order, auto-order and add more later."
+      description="Pick crates in the order you want to play them. You can re-order, auto-order and add more later."
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -70,7 +70,7 @@ export function NewSetlistModal({ open, onClose, initial = [] }: { open: boolean
       }
     >
       <div className="flex flex-col gap-3">
-        <Field label="Name" hint="Optional — defaults to the seeds' names">
+        <Field label="Name" hint="Optional: defaults to the seeds' names">
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Friday warm-up" />
         </Field>
         {crates.length ? <CratePicker crates={crates} picked={picked} onToggle={toggle} /> : <p className="text-sm text-fg-subtle">No crates yet.</p>}
@@ -106,7 +106,7 @@ export function SetlistsPage() {
           <EmptyState
             icon={ListMusic}
             title="No setlists yet"
-            description="Chain two or more crates into a long set — Seedbox scores each crate's ending against the next crate's start and renders the whole thing as one mix."
+            description="Chain two or more crates into a long set. Seedbox scores each crate's ending against the next crate's start and renders the whole thing as one mix."
             action={
               <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
                 New setlist
