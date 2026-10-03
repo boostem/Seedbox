@@ -223,10 +223,10 @@ Contract: the "Full set mixes" and "Setlists" blocks at the end of `frontend/src
 `DeckPlan.fx` and the `brake` / `spinback` techniques.
 
 ## Planner / renderer (musicreco/mixplan.py, mixrender.py)
-- `PLAN_VERSION = 3`, `RENDER_VERSION = 2`. Plans may loop deck B (intro hold: `{start_beat: 0, end_beat: 4h,
-  source_beat: 4h, length_beats: 4·size}` with B's beat0 moved h bars earlier, so B continues from its cue after
-  the hold) and deck A (outro stretch, loop rolls). `DeckPlan.fx` = `[{kind: "brake" | "spinback", beat, beats}]`
-  (validated, ≤ 8, beats 0.25–16); the deck is silent after the effect.
+- `PLAN_VERSION = 3`, `RENDER_VERSION = 2`. `DeckPlan.loops` are honoured everywhere (renderer, editor, saved
+  plans), but generated plans only loop deck A for the `loop roll` technique and the `roll` style, both used only
+  when asked for; every other plan plays each deck straight through. `DeckPlan.fx` =
+  `[{kind: "brake" | "spinback", beat, beats}]` (validated, ≤ 8, beats 0.25–16); the deck is silent after it.
 - Echo / reverb sends tap post-filter, pre-EQ. A plain phrase mix has no sends except the vocal-clash throw; every
   other send comes from the transition's style (below).
 
@@ -235,11 +235,12 @@ Contract: the "Full set mixes" and "Setlists" blocks at the end of `frontend/src
   `wash exit`, `filter wash`, `dub echo`; they ride on a long blend / phrase blend / bass swap) and the structural
   styles, which are their technique (`filter sweep`, `loop roll`, `double drop`, `echo out`, `slam`, `quick cut`,
   `drop swap`, `brake`, `spinback`). `validate` fills a missing style from the technique (else the default).
-- Choice: the structure first (what the music allows: blend, cut, double drop, loop-built outro), then the flavour;
+- Choice: the structure first (what the music allows: blend, cut, double drop), then the flavour;
   each candidate is scored 0-1 on the pair's analysis (vocal ends, energy lift where A leaves, B's intro, keys,
   tempo jump). A score is lowered by 0.04 per use of the same style in the previous 4 transitions, 0.03 per use of a
   same-family style (echo / wash / roll / turntable / cut) and 0.25 for a double drop / brake / spinback used in
-  that window; a non-default style is never picked a 4th time in a row. Ties go to the phrase mix.
+  that window; a non-default style is never picked a 4th time in a row. Ties go to the phrase mix. `roll` and
+  `loop roll` (`_MANUAL_ONLY`) are never picked automatically.
 ```python
 generate(a, a_an, b, b_an, folder, technique=None, bars=None, transition=None, style=None, recent=None) -> dict
 plan_styles(pairs: list[(a, a_an, b, b_an, transition)], fixed: list[str | None] | None = None) -> list[str]

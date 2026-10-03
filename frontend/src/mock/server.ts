@@ -559,8 +559,8 @@ async function runSetMix(m: SetMix, tracks: Track[], folders: string[]) {
     t += Math.max(60, tr.duration_s - 32);
     return { index: i, track_id: tr.id, display_name: tr.display_name, name: tr.name, artists: tr.artists, camelot: tr.camelot, bpm: tr.bpm, folder: folders[i], start_s: start, in_s: Math.max(0, start - 30), out_s: t + 30 };
   });
-  const techs = ["long blend", "bass swap", "echo out", "filter sweep", "slam", "loop roll", "spinback", "brake"] as const;
-  const flavours = ["phrase mix", "phrase mix", "vocal throw", "roll", "phrase mix", "swell in", "echo exit"] as const;
+  const techs = ["long blend", "bass swap", "echo out", "filter sweep", "slam", "bass swap", "spinback", "long blend"] as const;
+  const flavours = ["phrase mix", "phrase mix", "vocal throw", "phrase mix", "phrase mix", "swell in", "echo exit"] as const;
   step({
     state: "done",
     progress: 1,

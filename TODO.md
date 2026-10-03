@@ -28,9 +28,16 @@
       menu; set mix tracklists show them. `mixplan.plan_styles`, `MixService.chain`.
 - [x] **FX diet**: reverb washes and swells sit around -10 to -13 dB under the mix on dense tracks (they reached the
       level of the music before); a plain phrase mix carries no reverb and at most one echo (the vocal-clash throw).
-- [x] **Loop-first moves**: A drops onto a clean loop of its own groove when the vocals would clash (its last word
-      into the echo); radio edits get a looped 4-bar groove as a makeshift outro; A rolls its last bar into B's drop;
-      double drops when two drops line up in key.
+- [x] Double drops when two drops line up in key. (The loop-first moves from this round were taken back out in
+      round 3: they sounded worse than plain blends.)
+
+## Done (round 3: subtler, loop-free mixes)
+- [x] **No loops in generated mixes**: every track plays straight through. Gone: stretching A's outro, holding B's
+      intro, A jumping onto a loop of its own groove on a vocal clash (now: A's mids duck and its last word goes into
+      the echo), the 4-bar looped "outros" for radio edits, and the stutters before slams, quick cuts, drop swaps
+      and double drops. Loop rolls stay available by hand: the *Loop roll* technique and the *Roll* style.
+- [x] **Subtler defaults**: the plain phrase mix needs a clear musical reason to give way to a flashier style, and
+      echo outs ring a bit quieter and shorter.
 
 ## Machine learning plan (all local)
 Use ML for **perception** (what's in each track) and **ranking** (which plan is best), not to generate mixes end to
@@ -62,6 +69,9 @@ the mix editor. In order of payoff:
 - [ ] **Key shift for clashing keys**: transpose a deck ±1-2 semitones with Rubber Band (key lock already runs every
       deck through it) so a clash becomes a same-key / ±1 blend (e.g. 8A → 3A: B down a semitone = 8A). In a set
       the shift has to hold for the track's whole run, so the planner picks it per track, not per pair.
+- [ ] **Loops, done right (later)**: generated loops sounded off for two reasons: a constant-tempo beat grid drifts
+      over the bars between a loop's source and where it plays, and the vocal heuristic let melodic or sung bars into
+      loops. Revisit only with per-beat grids (downbeat tracking) and stems, and keep loops to drums-only material.
 - [ ] **Cue points into rekordbox / Serato**: write the analysis' mix-in / mix-out / drop cues and the planned loops
       as memory + hot cues in the exported `.xml` (rekordbox POSITION_MARK) and Serato markers, so the set plays the
       same on CDJs.

@@ -155,22 +155,22 @@ export const isBlend = (t: MixTechnique) => BLEND_TECHNIQUES.includes(t);
 export const BLEND_STYLES: { id: BlendStyle; hint: string }[] = [
   { id: "phrase mix", hint: "B eases in and A eases out over whole phrases, bass swapped on the 1. No FX." },
   { id: "vocal throw", hint: "A's last sung phrase is thrown into the echo and trails off over B." },
-  { id: "roll", hint: "A rolls its last bar (2 → 1 → ½ → ¼ beat) into B's drop or the bass swap." },
   { id: "echo exit", hint: "A's last bar trails off in a dotted-8th echo." },
   { id: "dub echo", hint: "A's last 4 bars build into a long 8th-note echo." },
   { id: "swell in", hint: "B rises out of a reverb wash before its dry signal comes up." },
   { id: "wash exit", hint: "A dissolves into a reverb wash over its last 2 bars." },
   { id: "filter wash", hint: "A climbs a high-pass into a light reverb wash on its way out." },
+  { id: "roll", hint: "Only when you pick it: A loop-rolls its last bar (2 → 1 → ½ → ¼ beat) into B's drop or the bass swap." },
 ];
 
 export const STYLE_HINTS: Record<MixStyle, string> = {
   ...(Object.fromEntries(BLEND_STYLES.map((s) => [s.id, s.hint])) as Record<BlendStyle, string>),
   "filter sweep": "A rides a high-pass sweep out while B's low-pass opens: hides a key change.",
-  "loop roll": "A loops and rolls 8 → 4 → 2 → 1 → ½ beat into the 1 where B's bass drops in.",
+  "loop roll": "Only when you pick it: A loops and rolls 8 → 4 → 2 → 1 → ½ beat into the 1 where B's bass drops in.",
   "double drop": "Both drops land on the same 1, then the bass goes to B.",
   "echo out": "A's last beats fly off into an echo and B starts on the 1.",
-  slam: "A 4-bar loop roll and a high-pass riser slam into B on the 1.",
-  "quick cut": "A 1-bar stutter, then a clean cut into B on the 1.",
+  slam: "A high-pass riser, A's bass out for a beat, and B slams in on the 1.",
+  "quick cut": "A clean cut into B on the 1, A's last beats in a short echo.",
   "drop swap": "A's build cuts straight into B's drop.",
   brake: "A powers down like a turntable switched off; B starts on the 1.",
   spinback: "A is spun back and B lands on the 1: hides a big tempo jump.",
