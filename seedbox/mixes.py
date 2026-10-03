@@ -1,8 +1,9 @@
-"""v4 mix plans and rendered transitions: generate / save / render the MixPlan for one A -> B pair of a crate.
+"""v4 mix plans and rendered transitions: generate / save / render the MixPlan for one A -> B pair.
 
-Saved edits: <crate>/.seedbox/mixplans/<from>__<to>.json (atomic). Renders: <cache>/renders/<hash>.m4a + .json,
-keyed by mixrender.plan_hash, at most RENDER_WORKERS at a time; identical requests share one render; the folder
-is trimmed least-recently-used first to RENDER_CACHE_MB.
+A pair is two tracks of one crate (saved edits: <crate>/.seedbox/mixplans/<from>__<to>.json) or, for a setlist's
+crate-to-crate links, tracks of two crates (saved edits under the setlist, see setlists.py). Saves are atomic.
+Renders: <cache>/renders/<hash>.m4a + .json, keyed by mixrender.plan_hash, at most RENDER_WORKERS at a time;
+identical requests share one render; the folder is trimmed least-recently-used first to RENDER_CACHE_MB.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +33,7 @@ RENDER_WORKERS = 2
 RENDER_CACHE_MB = 1024
 PROGRESS_STEP = 0.05  # publish render progress in steps of at least this much
 TECHNIQUES = ("long blend", "phrase blend", "bass swap", "drop swap", "quick cut", "echo out", "filter sweep",
-              "loop roll", "slam")  # fmt: skip
+              "loop roll", "slam", "brake", "spinback")  # fmt: skip
 BARS = (4, 8, 16, 32)
 _ID = re.compile(r"^[A-Za-z0-9]{1,64}$")
 _RENDER_ID = re.compile(r"^[A-Za-z0-9_-]{6,128}$")
@@ -56,6 +58,27 @@ def _write_json_atomic(path: Path, data: Any) -> None:
         raise
 
 
+@dataclass
+class Pair:
+    """A -> B for a mix plan: both tracks' crate folder + set file, where edits are saved, and the key that render
+    events and plan["folder"] carry (the crate folder, or "setlist:<id>" for a crate-to-crate link)."""
+
+    key: str
+    a_dir: Path
+    a: SetFile
+    b_dir: Path
+    b: SetFile
+    saved: Path
+
+
+def check_ids(from_id: str, to_id: str) -> None:
+    for tid in (from_id, to_id):
+        if not _ID.match(tid):
+            raise ApiError("invalid track id")
+    if from_id == to_id:
+        raise ApiError("a transition needs two different tracks")
+
+
 class MixService:
     def __init__(self, crates: CrateService, bus: EventBus, cache_dir: Any) -> None:
         self.crates = crates
@@ -73,14 +96,12 @@ class MixService:
 
     # --- plans ----------------------------------------------------------------------------------------------------
 
-    def _pair(self, folder: str, from_id: str, to_id: str) -> tuple[Path, SetFile, SetFile]:
-        for tid in (from_id, to_id):
-            if not _ID.match(tid):
-                raise ApiError("invalid track id")
-        if from_id == to_id:
-            raise ApiError("a transition needs two different tracks")
+    def pair(self, folder: str, from_id: str, to_id: str) -> Pair:
+        """A pair of one crate's tracks."""
+        check_ids(from_id, to_id)
         seed_dir = resolve_crate(self.crates.root, folder)
-        return seed_dir, self.crates.file(seed_dir, from_id), self.crates.file(seed_dir, to_id)
+        return Pair(seed_dir.name, seed_dir, self.crates.file(seed_dir, from_id), seed_dir,
+                    self.crates.file(seed_dir, to_id), self.saved_path(seed_dir, from_id, to_id))
 
     @staticmethod
     def saved_path(seed_dir: Path, from_id: str, to_id: str) -> Path:
@@ -88,30 +109,34 @@ class MixService:
 
     def plan(self, folder: str, from_id: str, to_id: str, technique: str | None = None, bars: int | None = None) -> dict:
         """Saved edits (when no technique/bars are asked for), else a freshly generated MixPlan."""
-        seed_dir, a, b = self._pair(folder, from_id, to_id)
-        if technique is None and bars is None and (saved := self._load_saved(seed_dir, from_id, to_id)) is not None:
-            return saved
-        return self._generate(seed_dir, a, b, technique, bars)
+        return self.plan_pair(self.pair(folder, from_id, to_id), technique, bars)
 
-    def _generate(self, seed_dir: Path, a: SetFile, b: SetFile, technique: str | None, bars: int | None) -> dict:
+    def plan_pair(self, pair: Pair, technique: str | None = None, bars: int | None = None,
+                  wait_s: float | None = None) -> dict:
+        if technique is None and bars is None and (saved := self._load_saved(pair.saved)) is not None:
+            return saved
+        return self._generate(pair, technique, bars, wait_s)
+
+    def _generate(self, pair: Pair, technique: str | None, bars: int | None, wait_s: float | None = None) -> dict:
         if technique is not None and technique not in TECHNIQUES:
             raise ApiError(f"unknown technique {technique!r}", 422)
         if bars is not None and bars not in BARS:
             raise ApiError("bars must be 4, 8, 16 or 32", 422)
         mixplan = _module("mixplan")
-        self.crates.want_analyses(seed_dir, [a, b])  # both start now, so a 409 retry finds both done
-        a_an = self.crates.ready_analysis(seed_dir, a)
-        b_an = self.crates.ready_analysis(seed_dir, b)
+        self.crates.want_analyses(pair.a_dir, [pair.a])  # both start now, so a 409 retry finds both done
+        self.crates.want_analyses(pair.b_dir, [pair.b])
+        a_an = self.crates.ready_analysis(pair.a_dir, pair.a, wait_s)
+        b_an = self.crates.ready_analysis(pair.b_dir, pair.b, wait_s)
+        a, b = pair.a, pair.b
         transition = transitions.suggest(a.track, a_an, b.track, b_an, bpm_tol=self.crates.bpm_tol)
         try:
-            plan = mixplan.generate(a.track, a_an, b.track, b_an, seed_dir.name, technique=technique, bars=bars,
+            plan = mixplan.generate(a.track, a_an, b.track, b_an, pair.key, technique=technique, bars=bars,
                                     transition=transition)  # fmt: skip
         except ValueError as e:
             raise ApiError(f"can't plan this transition: {e}", 422) from e
         return {**plan, "edited": False}
 
-    def _load_saved(self, seed_dir: Path, from_id: str, to_id: str) -> dict | None:
-        path = self.saved_path(seed_dir, from_id, to_id)
+    def _load_saved(self, path: Path) -> dict | None:
         try:
             data = json.loads(path.read_text("utf-8"))
         except FileNotFoundError:
@@ -140,25 +165,33 @@ class MixService:
         return {**plan, "folder": folder}
 
     def save(self, folder: str, from_id: str, to_id: str, body: Any) -> dict:
-        seed_dir, _a, _b = self._pair(folder, from_id, to_id)
-        plan = {**self._validated(body, seed_dir.name, from_id, to_id), "edited": True}
-        _write_json_atomic(self.saved_path(seed_dir, from_id, to_id), plan)
+        return self.save_pair(self.pair(folder, from_id, to_id), body)
+
+    def save_pair(self, pair: Pair, body: Any) -> dict:
+        plan = {**self._validated(body, pair.key, pair.a.track.id, pair.b.track.id), "edited": True}
+        _write_json_atomic(pair.saved, plan)
         return plan
 
     def delete(self, folder: str, from_id: str, to_id: str) -> dict:
-        seed_dir, a, b = self._pair(folder, from_id, to_id)
-        self.saved_path(seed_dir, from_id, to_id).unlink(missing_ok=True)
-        return self._generate(seed_dir, a, b, None, None)
+        return self.delete_pair(self.pair(folder, from_id, to_id))
+
+    def delete_pair(self, pair: Pair) -> dict:
+        pair.saved.unlink(missing_ok=True)
+        return self._generate(pair, None, None)
 
     # --- renders --------------------------------------------------------------------------------------------------
 
     def render(self, folder: str, from_id: str, to_id: str, body: Any = None) -> dict:
         """MixRender for the saved/generated plan, or for `body` (unsaved edits). Blocks until rendered."""
-        seed_dir, a, b = self._pair(folder, from_id, to_id)
+        return self.render_pair(self.pair(folder, from_id, to_id), body)
+
+    def render_pair(self, pair: Pair, body: Any = None) -> dict:
+        a, b = pair.a, pair.b
+        from_id, to_id = a.track.id, b.track.id
         if body:  # the client's post() sends {} when there is nothing to send
-            plan = self._validated(body, seed_dir.name, from_id, to_id)
+            plan = self._validated(body, pair.key, from_id, to_id)
         else:
-            plan = self.plan(folder, from_id, to_id)
+            plan = self.plan_pair(pair)
         mixrender = _module("mixrender")
         render_id = str(mixrender.plan_hash(plan, a.path, b.path))
         if not _RENDER_ID.match(render_id):
@@ -170,7 +203,7 @@ class MixService:
             if fut is None:
                 if (hit := self._cached(render_id)) is not None:  # finished between the check above and now
                     return hit
-                fut = self._pool.submit(self._render, mixrender, render_id, plan, a.path, b.path, seed_dir.name,
+                fut = self._pool.submit(self._render, mixrender, render_id, plan, a.path, b.path, pair.key,
                                         from_id, to_id)  # fmt: skip
                 self._inflight[render_id] = fut
         try:

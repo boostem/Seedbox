@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { api, MOCK } from "@/api/client";
-import type { CrateSummary, FinalStatus, Job, JobItem, PreviewStatus, ServerEvent, Settings, SetTrack, SystemStatus, Track } from "@/api/types";
+import type { CrateSummary, FinalStatus, Job, JobItem, PreviewStatus, ServerEvent, SetMix, Settings, SetTrack, SystemStatus, Track } from "@/api/types";
 import { toast } from "./toasts";
 
 export type ConnectionState = "connecting" | "live" | "reconnecting" | "offline";
@@ -32,6 +32,11 @@ export interface AppState {
   analysis: Record<string, Record<string, AnalysisState>>;
   /** setVersion[folder] bumps on `set_changed` — include in deps to refetch a CrateSet. */
   setVersion: Record<string, number>;
+  /** setmixes[target] = the latest SetMix seen for "crate:<folder>" / "setlist:<id>" (from `setmix` events). */
+  setmixes: Record<string, SetMix>;
+  /** setlistVersion[id] bumps on `setlist_changed`; setlistsVersion on any of them (the setlist list). */
+  setlistVersion: Record<string, number>;
+  setlistsVersion: number;
   selection: Selection | null;
 
   setConnection: (c: ConnectionState) => void;
@@ -45,6 +50,7 @@ export interface AppState {
   /** GET /api/jobs/{id} and merge it into the store (quiet; returns null on failure). */
   refreshJob: (jobId: string) => Promise<Job | null>;
   seedAnalysis: (folder: string, tracks: Pick<SetTrack, "track" | "analysis_state">[]) => void;
+  upsertSetMix: (m: SetMix) => void;
   select: (sel: Selection | null) => void;
   handleEvent: (ev: ServerEvent) => void;
   /** (Re)load system status, settings, job history and the crate list. */
@@ -88,6 +94,9 @@ export const useApp = create<AppState>()((set, get) => ({
   jobs: {},
   analysis: {},
   setVersion: {},
+  setmixes: {},
+  setlistVersion: {},
+  setlistsVersion: 0,
   selection: null,
 
   setConnection: (connection) => set({ connection }),
@@ -125,6 +134,13 @@ export const useApp = create<AppState>()((set, get) => ({
       },
     })),
   select: (selection) => set({ selection }),
+  upsertSetMix: (m) =>
+    set((s) => {
+      const cur = s.setmixes[m.target];
+      // an older job's late event never replaces a newer one for the same set
+      if (cur && cur.mix_id !== m.mix_id && cur.started_at > m.started_at) return {};
+      return { setmixes: { ...s.setmixes, [m.target]: m } };
+    }),
 
   handleEvent: (ev) => {
     switch (ev.type) {
@@ -173,6 +189,29 @@ export const useApp = create<AppState>()((set, get) => ({
         void get().refreshCrates();
         break;
       }
+      case "setmix": {
+        const m = ev.data;
+        const prev = get().setmixes[m.target];
+        get().upsertSetMix(m);
+        const wasLive = prev?.mix_id === m.mix_id && prev.state !== m.state;
+        if (wasLive && m.state === "done" && m.result) {
+          const r = m.result;
+          toast.success(`${m.title} · ${Math.round(r.duration_s / 60)} min · ${r.tracks.length} tracks`, {
+            title: "Mix rendered",
+            key: `setmix-${m.mix_id}`,
+            action: {
+              label: "Play",
+              onClick: () => void import("@/audio/player").then(({ player }) => player.play(`setmix:${m.mix_id}`, r.audio_url, { track: setMixTrack(m), source: "file" })),
+            },
+          });
+        } else if (wasLive && m.state === "error") toast.error(m.error ?? "The mix render failed", { title: `Mix failed: ${m.title}`, key: `setmix-${m.mix_id}` });
+        break;
+      }
+      case "setlist_changed": {
+        const { id } = ev.data;
+        set((s) => ({ setlistVersion: { ...s.setlistVersion, [id]: (s.setlistVersion[id] ?? 0) + 1 }, setlistsVersion: s.setlistsVersion + 1 }));
+        break;
+      }
       case "toast":
         toast[ev.data.level](ev.data.message);
         break;
@@ -195,6 +234,27 @@ export const useApp = create<AppState>()((set, get) => ({
   },
 }));
 
+/** A Track-shaped label for the player / mini player while a set mix plays. */
+export function setMixTrack(m: SetMix): Track {
+  return {
+    id: `setmix:${m.mix_id}`,
+    name: m.title,
+    artists: ["Seedbox mix"],
+    display_name: `Seedbox mix - ${m.title}`,
+    album: "",
+    release_date: "",
+    duration_s: m.result?.duration_s ?? 0,
+    popularity: 0,
+    key: "",
+    camelot: "",
+    bpm: 0,
+    energy: 0,
+    danceability: 0,
+    cover_url: null,
+    spotify_url: "",
+  };
+}
+
 // ---- convenience hooks ----
 
 export const usePreview = (trackId: string | null | undefined): PreviewStatus | undefined =>
@@ -208,6 +268,10 @@ export const useAnalysisState = (folder: string, trackId: string): AnalysisState
 export const useSetVersion = (folder: string): number => useApp((s) => s.setVersion[folder] ?? 0);
 
 export const useSelection = (): Selection | null => useApp((s) => s.selection);
+
+export const useSetMixLive = (target: string): SetMix | undefined => useApp((s) => s.setmixes[target]);
+
+export const useSetlistVersion = (id: string): number => useApp((s) => (s.setlistVersion[id] ?? 0) + s.epoch * 1e6);
 
 /** Jobs that are still running/finalizing (for badges). */
 export const useActiveJobs = (): Job[] =>

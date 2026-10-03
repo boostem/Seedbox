@@ -9,6 +9,7 @@ export function GlobalHotkeys() {
   useHotkey("Mod+k", (e) => (e.shiftKey ? false : focusSearch()), { allowInInputs: true }); // works while typing; pauses while a Modal is open
   useHotkey("Mod+1", () => navigate({ name: "search" }));
   useHotkey("Mod+2", () => navigate({ name: "crates" }));
+  useHotkey("Mod+3", () => navigate({ name: "setlists" }));
   useHotkey("Mod+,", () => navigate({ name: "settings" }));
   useHotkey("Mod+[", () => history.back());
   useHotkey("Mod+]", () => history.forward());

@@ -9,12 +9,17 @@ import type {
   PickFolderResult,
   UpdateResult,
   Crate,
+  CrateLinks,
   CrateSet,
   CrateSummary,
   Job,
   Partner,
   PreviewStatus,
   SearchPage,
+  Setlist,
+  SetlistSummary,
+  SetMix,
+  SetMixStatus,
   Settings,
   SystemStatus,
   TrackAnalysis,
@@ -178,9 +183,36 @@ export const api = {
   },
   filePath: (folder: string, filename: string) => `/api/files/${enc(folder)}/${enc(filename)}`,
 
+  // full set mixes: target "crate:<folder>" | "setlist:<id>"
+  /** Start (or join the running) render of the whole set as one mix; progress arrives as `setmix` events. */
+  startSetMix: (target: string, opts?: RequestOptions) => post<SetMix>(`${targetBase(target)}/setmix`, undefined, opts),
+  /** The running / last mix of a set and whether the set changed since. */
+  setMixStatus: (target: string, opts?: RequestOptions) => get<SetMixStatus>(`${targetBase(target)}/setmix`, opts),
+  setMix: (mixId: string, opts?: RequestOptions) => get<SetMix>(`/api/setmix/${enc(mixId)}`, opts),
+  cancelSetMix: (mixId: string, opts?: RequestOptions) => del<SetMix>(`/api/setmix/${enc(mixId)}`, opts),
+
+  // setlists (crates back to back) + crate-to-crate links
+  crateLinks: (folder: string, opts?: RequestOptions) => get<CrateLinks>(`/api/crates/${enc(folder)}/links`, opts),
+  setlists: (opts?: RequestOptions) => get<SetlistSummary[]>("/api/setlists", opts),
+  setlist: (id: string, opts?: RequestOptions) => get<Setlist>(`/api/setlists/${enc(id)}`, opts),
+  /** name is optional (defaults to "Seed A → Seed B …"). */
+  createSetlist: (crates: string[], name?: string, opts?: RequestOptions) => post<Setlist>("/api/setlists", { crates, name }, opts),
+  updateSetlist: (id: string, patch: { name?: string; crates?: string[] }, opts?: RequestOptions) => put<Setlist>(`/api/setlists/${enc(id)}`, patch, opts),
+  deleteSetlist: (id: string, opts?: RequestOptions) => del<OkResult>(`/api/setlists/${enc(id)}`, opts),
+  /** Re-order the crates (the first stays the opener) for the best crate-to-crate links. */
+  autoOrderSetlist: (id: string, opts?: RequestOptions) => post<Setlist>(`/api/setlists/${enc(id)}/auto-order`, undefined, opts),
+
   /** Reveal a file/folder in Finder (must be under the output root). */
   reveal: (path: string, opts?: RequestOptions) => post<OkResult>("/api/reveal", { path }, opts),
 };
+
+/** "/api/crates/<folder>" or "/api/setlists/<id>" for a set-mix target. */
+function targetBase(target: string): string {
+  const i = target.indexOf(":");
+  const kind = target.slice(0, i);
+  const key = target.slice(i + 1);
+  return kind === "setlist" ? `/api/setlists/${enc(key)}` : `/api/crates/${enc(key)}`;
+}
 
 /** Turns an audio path from the API ("/api/previews/<id>/audio", SetTrack.audio_url) into a playable src. */
 export async function resolveMediaUrl(path: string): Promise<string> {

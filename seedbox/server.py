@@ -51,6 +51,8 @@ from .events import HEARTBEAT_S, EventBus
 from .jobs import Job, JobManager
 from .mixes import MixService
 from .serializers import JSON
+from .setlists import SetlistService
+from .setmixes import SetMixService
 from .tunebat_service import TunebatService
 
 log = logging.getLogger(__name__)
@@ -148,6 +150,8 @@ class AppState:
         self.jobs = JobManager(self.bus, lambda: self.settings, on_finished=self._job_finished)
         self.crates = CrateService(lambda: self.settings, self.analysis, self.bus, busy=self.jobs.busy)
         self.mixes = MixService(self.crates, self.bus, lambda: self.cache_dir)
+        self.setlists = SetlistService(self.crates, self.mixes, self.bus)
+        self.setmixes = SetMixService(self.crates, self.mixes, self.setlists, self.bus)
         self._lock = threading.RLock()
         self._previews: Any = None
         self._last_preload: list[Track] = []
@@ -268,6 +272,7 @@ class AppState:
         self.bus.close()
         self.jobs.shutdown(timeout=2.0)
         self.analysis.shutdown(timeout=1.0)
+        self.setmixes.shutdown()
         self.mixes.shutdown()
         with self._lock:
             mgr, self._previews = self._previews, None
@@ -536,6 +541,84 @@ def create_app(
     @app.get("/api/renders/{render_id}.m4a")
     def render_audio(render_id: str) -> Response:
         return FileResponse(state.mixes.audio_path(render_id), media_type="audio/mp4")
+
+    # ---- full set mixes (one continuous MP3 of a crate's set or a setlist)
+
+    @app.post("/api/crates/{folder}/setmix")
+    def crate_setmix_start(folder: str) -> Response:
+        return JSON(state.setmixes.start(f"crate:{folder}"))
+
+    @app.get("/api/crates/{folder}/setmix")
+    def crate_setmix(folder: str) -> Response:
+        return JSON(state.setmixes.current(f"crate:{folder}"))
+
+    @app.get("/api/setmix/{mix_id}")
+    def setmix_get(mix_id: str) -> Response:
+        return JSON(state.setmixes.get(mix_id))
+
+    @app.delete("/api/setmix/{mix_id}")
+    def setmix_cancel(mix_id: str) -> Response:
+        return JSON(state.setmixes.cancel(mix_id))
+
+    @app.get("/api/setmix/{mix_id}/audio")
+    def setmix_audio(mix_id: str) -> Response:
+        path = state.setmixes.audio_path(mix_id)
+        return FileResponse(path, media_type="audio/mpeg" if path.suffix.lower() == ".mp3" else "audio/mp4")
+
+    # ---- setlists (crates back to back) + crate-to-crate links
+
+    @app.get("/api/crates/{folder}/links")
+    def crate_links(folder: str) -> Response:
+        return JSON(state.setlists.links(folder))
+
+    @app.get("/api/setlists")
+    def setlists() -> Response:
+        return JSON(state.setlists.list())
+
+    @app.post("/api/setlists")
+    def setlist_create(body: dict = Body(...)) -> Response:  # noqa: B008
+        return JSON(state.setlists.create(body.get("name"), body.get("crates")))
+
+    @app.get("/api/setlists/{sid}")
+    def setlist_get(sid: str) -> Response:
+        return JSON(state.setlists.get(sid))
+
+    @app.put("/api/setlists/{sid}")
+    def setlist_update(sid: str, body: dict = Body(...)) -> Response:  # noqa: B008
+        return JSON(state.setlists.update(sid, body))
+
+    @app.delete("/api/setlists/{sid}")
+    def setlist_delete(sid: str) -> Response:
+        return JSON(state.setlists.delete(sid))
+
+    @app.post("/api/setlists/{sid}/auto-order")
+    def setlist_auto_order(sid: str) -> Response:
+        return JSON(state.setlists.auto_order(sid))
+
+    @app.get("/api/setlists/{sid}/mix/{from_id}/{to_id}")
+    def setlist_mix_plan(sid: str, from_id: str, to_id: str, technique: str | None = Query(None),
+                         bars: int | None = Query(None)) -> Response:  # fmt: skip
+        return JSON(state.mixes.plan_pair(state.setlists.pair(sid, from_id, to_id), technique, bars))
+
+    @app.put("/api/setlists/{sid}/mix/{from_id}/{to_id}")
+    def setlist_mix_save(sid: str, from_id: str, to_id: str, body: Any = Body(...)) -> Response:  # noqa: B008
+        return JSON(state.mixes.save_pair(state.setlists.pair(sid, from_id, to_id), body))
+
+    @app.delete("/api/setlists/{sid}/mix/{from_id}/{to_id}")
+    def setlist_mix_reset(sid: str, from_id: str, to_id: str) -> Response:
+        return JSON(state.mixes.delete_pair(state.setlists.pair(sid, from_id, to_id)))
+
+    @app.post("/api/setlists/{sid}/mix/{from_id}/{to_id}/render")
+    def setlist_mix_render(sid: str, from_id: str, to_id: str, body: Any = Body(None)) -> Response:  # noqa: B008
+        return JSON(state.mixes.render_pair(state.setlists.pair(sid, from_id, to_id), body))
+
+    @app.post("/api/setlists/{sid}/setmix")
+    def setlist_setmix_start(sid: str) -> Response:
+        return JSON(state.setmixes.start(f"setlist:{sid}"))
+
+    @app.get("/api/setlists/{sid}/setmix")
+    def setlist_setmix(sid: str) -> Response:
+        return JSON(state.setmixes.current(f"setlist:{sid}"))
 
     @app.get("/api/analysis/{folder}/{track_id}")
     def analysis(folder: str, track_id: str) -> Response:

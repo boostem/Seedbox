@@ -839,6 +839,9 @@ def _set_csv_orders(seed_dir: Path, orders: dict[str, int]) -> None:
     _write_csv(path, CSV_COLUMNS + [c for c in header if c not in CSV_COLUMNS], rows)
 
 
+MIXES_DIRNAME = "Mixes"  # rendered set mixes live in <root>/Mixes/<name>/ (not a crate)
+
+
 def list_crates(root: Path | None = None) -> list[dict]:
     """CrateSummary dicts (types.ts) for every crate folder under `root` (default downloads_root()), newest first.
 
@@ -852,7 +855,7 @@ def list_crates(root: Path | None = None) -> list[dict]:
         return []
     out: list[dict] = []
     for d in entries:
-        if d.name.startswith(".") or not d.is_dir():
+        if d.name.startswith(".") or d.name == MIXES_DIRNAME or not d.is_dir():
             continue
         mp3s = _crate_mp3s(d)
         meta = [p for p in (d / "tracks.csv", crate_json_path(d)) if p.is_file()]

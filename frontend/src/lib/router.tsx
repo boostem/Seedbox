@@ -1,6 +1,6 @@
 /**
  * Tiny hash router. Routes: #/search[?q=], #/crate/<seed_id>, #/downloads[/<job_id>], #/crates, #/set/<folder>,
- * #/settings, #/ui (design-system gallery). Path segments are URI-encoded (folder names contain spaces etc).
+ * #/setlists, #/setlist/<id>, #/settings, #/ui (design-system gallery). Path segments are URI-encoded (folder names contain spaces etc).
  */
 import { type AnchorHTMLAttributes, type MouseEvent, useSyncExternalStore } from "react";
 
@@ -10,6 +10,8 @@ export type Route =
   | { name: "downloads"; jobId: string }
   | { name: "crates" }
   | { name: "set"; folder: string }
+  | { name: "setlists" }
+  | { name: "setlist"; id: string }
   | { name: "settings" }
   | { name: "ui" }
   | { name: "notFound"; path: string };
@@ -46,6 +48,10 @@ export function parseHash(hash: string): Route {
       return { name: "crates" };
     case "set":
       return arg ? { name: "set", folder: segs.slice(1).join("/") } : { name: "crates" };
+    case "setlists":
+      return { name: "setlists" };
+    case "setlist":
+      return arg ? { name: "setlist", id: arg } : { name: "setlists" };
     case "settings":
       return { name: "settings" };
     case "ui":
@@ -68,6 +74,9 @@ export function href(route: Route, query?: Record<string, string | number | null
       break;
     case "set":
       path = `set/${e(route.folder)}`;
+      break;
+    case "setlist":
+      path = `setlist/${e(route.id)}`;
       break;
     case "notFound":
       path = route.path;

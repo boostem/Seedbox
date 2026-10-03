@@ -25,6 +25,7 @@ function trackFor(path: string): { track: Track | undefined; seconds: number; ra
     const pseudo = info ? ({ bpm: info.bpm, key: "A minor" } as Track) : undefined;
     return { track: pseudo, seconds: info?.duration ?? 60, rate: 8000 };
   }
+  if (/\/api\/setmix\/[^/]+\/audio/.test(path)) return { track: { bpm: 124, key: "A minor" } as Track, seconds: 600, rate: 6000 };
   const prev = /\/api\/previews\/([^/]+)\/audio/.exec(path);
   if (prev) return { track: POOL.get(decodeURIComponent(prev[1])), seconds: 20, rate: 16000 };
   const file = /\/api\/files\/[^/]+\/(.+)$/.exec(path);

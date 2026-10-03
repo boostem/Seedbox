@@ -12,6 +12,8 @@ const TITLES: Record<Route["name"], string> = {
   downloads: "Downloads",
   crates: "Crates",
   set: "Set builder",
+  setlists: "Setlists",
+  setlist: "Setlist",
   settings: "Settings",
   ui: "Design system",
   notFound: "Not found",

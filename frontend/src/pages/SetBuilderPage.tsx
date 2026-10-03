@@ -5,6 +5,8 @@ import { api } from "@/api/client";
 import { usePageTitle } from "@/components/shell/pageTitle";
 import { Button, CoverArt, EmptyState, IconButton, Kbd, Page, PageHeader, Spinner, Tooltip } from "@/components/ui";
 import { audition, MixDetail, requestPlay, type SetSelection, SetList, SetOverview, setStats, TrackDetail, useAudition, useSetModel } from "@/features/set";
+import { CrateLinksButton } from "@/features/setlist/CrateLinks";
+import { SetMixButton } from "@/features/setmix/SetMixPanel";
 import { cn } from "@/lib/cn";
 import { fmtTime, plural } from "@/lib/format";
 import { useHotkey } from "@/lib/hotkeys";
@@ -199,6 +201,8 @@ export function SetBuilderPage({ folder }: { folder: string }) {
             <Button variant="secondary" icon={Wand2} loading={m.autoOrdering} disabled={n < 3} onClick={() => void m.autoOrder()}>
               Auto-order
             </Button>
+            <SetMixButton target={`crate:${set.folder}`} title={seed?.name ?? set.folder} trackCount={n} refreshKey={set.tracks.map((t) => t.track.id).join()} />
+            <CrateLinksButton folder={set.folder} label={seed?.name ?? set.folder} />
             <IconButton icon={Activity} label={showOverview ? "Hide set overview" : "Show set overview"} active={showOverview} onClick={toggleOverview} />
             <IconButton icon={FolderOpen} label="Reveal crate in Finder" onClick={() => void api.reveal(set.path)} />
             {set.seed_id && <IconButton icon={Sprout} label="More recommendations for this seed" onClick={() => navigate({ name: "crate", seedId: set.seed_id! })} />}

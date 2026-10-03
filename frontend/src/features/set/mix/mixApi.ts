@@ -6,7 +6,11 @@ import { request, type RequestOptions } from "@/api/client";
 import type { MixPlan, MixRender, MixTechnique } from "@/api/types";
 
 const enc = encodeURIComponent;
-const base = (folder: string, from: string, to: string) => `/api/crates/${enc(folder)}/mix/${enc(from)}/${enc(to)}`;
+/** `scope` is a crate folder, or "setlist:<id>" for a setlist's crate-to-crate link (folder names never hold ":"). */
+const base = (scope: string, from: string, to: string) =>
+  scope.startsWith("setlist:")
+    ? `/api/setlists/${enc(scope.slice(8))}/mix/${enc(from)}/${enc(to)}`
+    : `/api/crates/${enc(scope)}/mix/${enc(from)}/${enc(to)}`;
 
 export const mixApi = {
   /** Saved edits when present (and no technique/bars given), else a freshly generated plan. */

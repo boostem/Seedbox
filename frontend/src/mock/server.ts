@@ -3,7 +3,7 @@
  * animates preview preloading, download jobs and analysis progress. State lives in memory (resets on reload).
  */
 import type { EventStream } from "@/api/client";
-import type { Crate, CrateSet, Job, JobItem, MixPlan, Partner, PreviewStatus, ServerEvent, Settings, SetTrack, SystemStatus, Track } from "@/api/types";
+import type { Crate, CrateLink, CrateSet, Job, JobItem, MixPlan, Partner, PreviewStatus, ServerEvent, Setlist, SetMix, Settings, SetTrack, SystemStatus, Track } from "@/api/types";
 import { mockAnalysis, mockTransition } from "./analysis";
 import { emitRenderProgress, generateMixPlan, mockRender, validateMixPlan } from "./mixplan";
 import { crateSummary, energyRatings, FAVOUR, genreFor, HOME, initialCrates, type MockCrate, orderSet, POOL, recsFor, sanitize, SEARCH_PAGE } from "./data";
@@ -519,6 +519,221 @@ on("POST", "/api/crates/([^/]+)/mix/([^/]+)/([^/]+)/render", async ([folder, fro
   renderedIds.add(r.render_id);
   return ok(r);
 });
+// ---- full set mixes (mock: animated progress, then a synthesised mix you can play)
+const setMixes = new Map<string, SetMix>();
+const mixById = new Map<string, SetMix>();
+function setMixTracks(target: string): { title: string; tracks: Track[]; folders: string[] } | null {
+  const [kind, key] = [target.slice(0, target.indexOf(":")), target.slice(target.indexOf(":") + 1)];
+  if (kind === "crate") {
+    const c = crateByFolder(key);
+    return c ? { title: c.seed?.display_name ?? c.folder, tracks: c.trackIds.map((id) => track(id)!).filter(Boolean), folders: c.trackIds.map(() => c.folder) } : null;
+  }
+  const sl = setlistStore.get(key);
+  if (!sl) return null;
+  const seen = new Set<string>();
+  const tracks: Track[] = [];
+  const folders: string[] = [];
+  for (const f of sl.crates) for (const id of crateByFolder(f)?.trackIds ?? []) if (!seen.has(id) && track(id)) (seen.add(id), tracks.push(track(id)!), folders.push(f));
+  return { title: sl.name, tracks, folders };
+}
+async function runSetMix(m: SetMix, tracks: Track[], folders: string[]) {
+  const step = (patch: Partial<SetMix>) => {
+    Object.assign(m, patch);
+    emit({ type: "setmix", data: clone(m) });
+  };
+  step({ state: "preparing", message: "Collecting the tracks" });
+  await sleep(500);
+  for (let i = 0; i < tracks.length; i++) {
+    if (m.state === "cancelled") return;
+    step({ state: "rendering", progress: 0.05 + (0.93 * i) / tracks.length, message: `Track ${i + 1}/${tracks.length} · ${tracks[i].display_name}` });
+    await sleep(450);
+  }
+  if (m.state === "cancelled") return;
+  let t = 0;
+  const out = tracks.map((tr, i) => {
+    const start = t;
+    t += Math.max(60, tr.duration_s - 32);
+    return { index: i, track_id: tr.id, display_name: tr.display_name, name: tr.name, artists: tr.artists, camelot: tr.camelot, bpm: tr.bpm, folder: folders[i], start_s: start, in_s: Math.max(0, start - 30), out_s: t + 30 };
+  });
+  const techs = ["long blend", "bass swap", "echo out", "filter sweep", "slam", "loop roll", "spinback", "brake"] as const;
+  step({
+    state: "done",
+    progress: 1,
+    message: "Done",
+    finished_at: new Date().toISOString(),
+    result: {
+      audio_url: `/api/setmix/${m.mix_id}/audio`,
+      path: `${settings.output_root}/Mixes/${sanitize(m.title)}/${sanitize(m.title)} - 2026-10-03 2200.mp3`,
+      cue_path: "",
+      txt_path: "",
+      format: "mp3",
+      duration_s: t + 30,
+      lufs: -11.4,
+      true_peak_db: -1.6,
+      tracks: out,
+      transitions: out.slice(1).map((x, i) => ({ index: i, technique: techs[hash(x.track_id) % techs.length], bars: 16, overlap: hash(x.track_id) % 3 ? 16 : 0, at_s: x.in_s, edited: i === 1 })),
+      warnings: [],
+    },
+  });
+}
+function startSetMix(target: string) {
+  const live = setMixes.get(target);
+  if (live && (live.state === "queued" || live.state === "preparing" || live.state === "rendering")) return ok(live);
+  const src = setMixTracks(target);
+  if (!src) return fail(404, "Not found");
+  if (src.tracks.length < 2) return fail(422, "a set mix needs at least two tracks");
+  const m: SetMix = { mix_id: Math.random().toString(16).slice(2, 14).padEnd(12, "0"), target, title: src.title, state: "queued", progress: 0, message: "Waiting for another mix to finish", error: null, started_at: new Date().toISOString(), finished_at: null, result: null };
+  setMixes.set(target, m);
+  mixById.set(m.mix_id, m);
+  void runSetMix(m, src.tracks, src.folders);
+  return ok(m);
+}
+on("POST", "/api/crates/([^/]+)/setmix", ([folder]) => startSetMix(`crate:${folder}`));
+on("GET", "/api/crates/([^/]+)/setmix", ([folder]) => ok({ mix: setMixes.get(`crate:${folder}`) ?? null, stale: false }));
+on("POST", "/api/setlists/([^/]+)/setmix", ([id]) => startSetMix(`setlist:${id}`));
+on("GET", "/api/setlists/([^/]+)/setmix", ([id]) => ok({ mix: setMixes.get(`setlist:${id}`) ?? null, stale: false }));
+on("GET", "/api/setmix/([^/]+)", ([id]) => (mixById.has(id) ? ok(mixById.get(id)) : fail(404, "no such mix")));
+on("DELETE", "/api/setmix/([^/]+)", ([id]) => {
+  const m = mixById.get(id);
+  if (!m) return fail(404, "no such mix");
+  if (m.state !== "done") {
+    Object.assign(m, { state: "cancelled", message: "Cancelled", finished_at: new Date().toISOString() });
+    emit({ type: "setmix", data: clone(m) });
+  }
+  return ok(m);
+});
+
+// ---- setlists + crate links
+interface MockSetlist {
+  id: string;
+  name: string;
+  crates: string[];
+  created_at: string;
+  updated_at: string;
+}
+const setlistStore = new Map<string, MockSetlist>();
+function link(fromFolder: string, toFolder: string): CrateLink | null {
+  const a = crateByFolder(fromFolder);
+  const b = crateByFolder(toFolder);
+  if (!a?.trackIds.length || !b?.trackIds.length) return null;
+  const ta = track(a.trackIds[a.trackIds.length - 1])!;
+  const tb = track(b.trackIds[0])!;
+  const an = (f: string, t: Track) => (analysis.get(f)?.get(t.id) === "ready" ? mockAnalysis(t) : null);
+  const tr = mockTransition(ta, an(fromFolder, ta), tb, an(toFolder, tb), settings.bpm_tolerance);
+  let better: CrateLink["better_entry"] = null;
+  for (const id of b.trackIds.slice(1)) {
+    const t2 = mockTransition(ta, an(fromFolder, ta), track(id)!, an(toFolder, track(id)!), settings.bpm_tolerance);
+    if (t2.score >= tr.score + 8 && (!better || t2.score > better.transition.score)) better = { track: track(id)!, transition: t2 };
+  }
+  return { from_folder: fromFolder, to_folder: toFolder, from_track: ta, to_track: tb, transition: tr, better_entry: better, from_seed: a.seed ?? null, to_seed: b.seed ?? null };
+}
+function setlistJson(sl: MockSetlist): Setlist {
+  const seen = new Set<string>();
+  const blocks = sl.crates.map((f) => {
+    const c = crateByFolder(f);
+    if (!c) return { folder: f, seed: null, missing: true, tracks: [] };
+    const set = crateSet(c);
+    const tracks = set.tracks.filter((t) => !seen.has(t.track.id) && (seen.add(t.track.id), true));
+    return { folder: f, seed: c.seed ?? null, missing: false, tracks };
+  });
+  const live = blocks.filter((b) => b.tracks.length);
+  const links = live.slice(1).map((b, i) => link(live[i].folder, b.folder)).filter((l): l is CrateLink => !!l);
+  return { ...sl, blocks, links, track_count: blocks.reduce((n, b) => n + b.tracks.length, 0), duration_s: blocks.reduce((n, b) => n + b.tracks.reduce((m, t) => m + t.track.duration_s, 0), 0) };
+}
+const touchSetlist = (sl: MockSetlist) => {
+  sl.updated_at = new Date().toISOString();
+  setTimeout(() => emit({ type: "setlist_changed", data: { id: sl.id } }), 20);
+};
+on("GET", "/api/crates/([^/]+)/links", ([folder]) => {
+  if (!crateByFolder(folder)) return fail(404, "Not found");
+  const others = crates.filter((c) => c.folder !== folder);
+  const by = (l: CrateLink) => -l.transition.score;
+  return ok({
+    out: others.map((c) => link(folder, c.folder)).filter((l): l is CrateLink => !!l).sort((x, y) => by(x) - by(y)).slice(0, 6),
+    in: others.map((c) => link(c.folder, folder)).filter((l): l is CrateLink => !!l).sort((x, y) => by(x) - by(y)).slice(0, 6),
+  });
+});
+on("GET", "/api/setlists", () =>
+  ok([...setlistStore.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).map((sl) => ({ id: sl.id, name: sl.name, crates: sl.crates, seeds: sl.crates.map((f) => crateByFolder(f)?.seed ?? null), track_count: sl.crates.reduce((n, f) => n + (crateByFolder(f)?.trackIds.length ?? 0), 0), updated_at: sl.updated_at }))),
+);
+on("POST", "/api/setlists", (_m, body) => {
+  const cr = ((body.crates as string[]) ?? []).filter((f) => crateByFolder(f));
+  if (!cr.length) return fail(422, "pick at least one crate");
+  const now = new Date().toISOString();
+  const name = typeof body.name === "string" && body.name.trim() ? body.name.trim() : cr.slice(0, 2).map((f) => crateByFolder(f)?.seed?.name ?? f).join(" → ") + (cr.length > 2 ? " …" : "");
+  const sl: MockSetlist = { id: Math.random().toString(16).slice(2, 14).padEnd(12, "0"), name, crates: cr, created_at: now, updated_at: now };
+  setlistStore.set(sl.id, sl);
+  touchSetlist(sl);
+  return ok(setlistJson(sl));
+});
+on("GET", "/api/setlists/([^/]+)", ([id]) => (setlistStore.has(id) ? ok(setlistJson(setlistStore.get(id)!)) : fail(404, "no such setlist")));
+on("PUT", "/api/setlists/([^/]+)", ([id], body) => {
+  const sl = setlistStore.get(id);
+  if (!sl) return fail(404, "no such setlist");
+  if (typeof body.name === "string") sl.name = body.name;
+  if (Array.isArray(body.crates)) sl.crates = (body.crates as string[]).filter((f) => crateByFolder(f));
+  touchSetlist(sl);
+  return ok(setlistJson(sl));
+});
+on("DELETE", "/api/setlists/([^/]+)", ([id]) => {
+  setlistStore.delete(id);
+  emit({ type: "setlist_changed", data: { id } });
+  return ok({ ok: true });
+});
+on("POST", "/api/setlists/([^/]+)/auto-order", async ([id]) => {
+  const sl = setlistStore.get(id);
+  if (!sl) return fail(404, "no such setlist");
+  await sleep(400);
+  const [first, ...rest] = sl.crates;
+  const order = [first];
+  const left = new Set(rest);
+  while (left.size) {
+    const nxt = [...left].sort((x, y) => (link(order[order.length - 1], y)?.transition.score ?? 0) - (link(order[order.length - 1], x)?.transition.score ?? 0))[0];
+    order.push(nxt);
+    left.delete(nxt);
+  }
+  sl.crates = order;
+  touchSetlist(sl);
+  return ok(setlistJson(sl));
+});
+const linkPlans = new Map<string, MixPlan>();
+function linkPair(id: string, from: string, to: string): { a: Track; b: Track } | Resp {
+  const sl = setlistStore.get(id);
+  const a = track(from);
+  const b = track(to);
+  if (!sl || !a || !b) return fail(404, "track not in this setlist");
+  return { a, b };
+}
+on("GET", "/api/setlists/([^/]+)/mix/([^/]+)/([^/]+)", ([id, from, to], _b, q) => {
+  const p = linkPair(id, from, to);
+  if ("status" in p) return p;
+  const saved = linkPlans.get(`${id}|${from}|${to}`);
+  if (saved && !q.get("technique") && !q.get("bars")) return ok(saved);
+  return ok(genPlan(`setlist:${id}`, p.a, p.b, q.get("technique"), Number(q.get("bars")) || null));
+});
+on("PUT", "/api/setlists/([^/]+)/mix/([^/]+)/([^/]+)", ([id, from, to], body) => {
+  const p = linkPair(id, from, to);
+  if ("status" in p) return p;
+  const plan = { ...validateMixPlan(body as unknown as MixPlan), edited: true };
+  linkPlans.set(`${id}|${from}|${to}`, plan);
+  return ok(plan);
+});
+on("DELETE", "/api/setlists/([^/]+)/mix/([^/]+)/([^/]+)", ([id, from, to]) => {
+  const p = linkPair(id, from, to);
+  if ("status" in p) return p;
+  linkPlans.delete(`${id}|${from}|${to}`);
+  return ok(genPlan(`setlist:${id}`, p.a, p.b));
+});
+on("POST", "/api/setlists/([^/]+)/mix/([^/]+)/([^/]+)/render", async ([id, from, to], body) => {
+  const p = linkPair(id, from, to);
+  if ("status" in p) return p;
+  const plan = body && "tempo" in body ? validateMixPlan(body as unknown as MixPlan) : (linkPlans.get(`${id}|${from}|${to}`) ?? genPlan(`setlist:${id}`, p.a, p.b));
+  const r = mockRender(plan);
+  await emitRenderProgress(emit, r, `setlist:${id}`, from, to, renderedIds.has(r.render_id));
+  renderedIds.add(r.render_id);
+  return ok(r);
+});
+
 on("GET", "/api/analysis/([^/]+)/([^/]+)", async ([folder, id]) => {
   const t = track(id);
   const st = analysis.get(folder)?.get(id);

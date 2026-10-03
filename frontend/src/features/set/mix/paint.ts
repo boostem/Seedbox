@@ -40,6 +40,7 @@ export function paintGrid(ctx: CanvasRenderingContext2D, view: View, y: number, 
 }
 
 const MARKER_COLOR: [RegExp, keyof ReturnType<typeof wavePalette>][] = [
+  [/brake|spinback/i, "danger"],
   [/^b in/i, "accent"],
   [/bass/i, "low"],
   [/a out/i, "fgMuted"],
@@ -280,6 +281,29 @@ export function paintDeck(ctx: CanvasRenderingContext2D, dpr: number, view: View
     ctx.fillRect(x0, 0, x1 - x0, h);
     ctx.fillStyle = alpha(p.info, 0.9);
     ctx.fillRect(x0, 0, x1 - x0, 2);
+  }
+  // turntable FX: the effect's stretch tinted and labelled (the deck is silent after it)
+  ctx.font = `700 9px ${p.font}`;
+  ctx.textBaseline = "top";
+  for (const f of deck.fx ?? []) {
+    const x0 = beatX(view, f.beat);
+    const x1 = beatX(view, f.beat + f.beats);
+    if (x1 < 0 || x0 > w) continue;
+    const g = ctx.createLinearGradient(x0, 0, x1, 0);
+    g.addColorStop(0, alpha(p.danger, 0.05));
+    g.addColorStop(1, alpha(p.danger, 0.32));
+    ctx.fillStyle = g;
+    ctx.fillRect(x0, 0, x1 - x0, h);
+    ctx.fillStyle = alpha(p.danger, 0.95);
+    ctx.fillRect(x0, 0, x1 - x0, 2);
+    const text = f.kind === "brake" ? "BRAKE" : "SPINBACK";
+    const tw = ctx.measureText(text).width;
+    if (x1 - x0 > tw + 6) {
+      ctx.fillStyle = alpha(p.bg, 0.75);
+      ctx.fillRect(x0 + 2, 4, tw + 6, 12);
+      ctx.fillStyle = p.danger;
+      ctx.fillText(text, x0 + 5, 5.5);
+    }
   }
   // volume shading (fader position) — every 2 px
   const vol = deck.lanes.volume;

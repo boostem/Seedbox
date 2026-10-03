@@ -219,7 +219,9 @@ export type ServerEvent =
   | { type: "job_done"; data: Job }
   | { type: "analysis"; data: { folder: string; track_id: string; state: SetTrack["analysis_state"] } }
   | { type: "set_changed"; data: { folder: string } }
-  | { type: "render"; data: { render_id: string; folder: string; from_id: string; to_id: string; state: "running" | "done" | "error"; progress: number; error?: string } }
+  | { type: "render"; data: { render_id: string; folder: string; from_id: string; to_id: string; state: "running" | "done" | "error"; progress: number; error?: string } } // folder = crate folder, or "setlist:<id>" for a crate-to-crate link
+  | { type: "setmix"; data: SetMix }
+  | { type: "setlist_changed"; data: { id: string } }
   | { type: "toast"; data: { level: "info" | "warning" | "error"; message: string } };
 
 // ---- Small responses ----
@@ -261,6 +263,14 @@ export interface DeckLoop {
   length_beats: number; // 1, 2, 4, 8, 16 ...
 }
 
+export type DeckFxKind = "brake" | "spinback";
+
+export interface DeckFx {
+  kind: DeckFxKind; // brake: the deck slows to a stop like a turntable switched off (pitch drops); spinback: a fast backwards whip that winds down
+  beat: number; // master beat where the effect starts
+  beats: number; // how long it takes; the deck is silent afterwards
+}
+
 export interface DeckPlan {
   track_id: string;
   beat0_s: number; // this deck's file time (s) at master beat 0
@@ -269,14 +279,15 @@ export interface DeckPlan {
   play_to_beat: number; // master beat where it stops (echo/reverb tails may ring past it)
   echo_beats: number; // echo time in beats (0.75 = dotted 8th, 1, 0.5 …)
   loops: DeckLoop[];
+  fx?: DeckFx[]; // turntable FX (always present from the server; older saved plans may lack it)
   lanes: Record<LaneId, Keyframe[]>; // every lane present, at least one keyframe each
 }
 
-export type MixTechnique = Technique | "filter sweep" | "loop roll" | "slam";
+export type MixTechnique = Technique | "filter sweep" | "loop roll" | "slam" | "brake" | "spinback";
 
 export interface MixMarker {
   beat: number;
-  label: string; // "B in", "bass swap", "A out", "echo throw", "loop", "tempo ramp" …
+  label: string; // "B in", "bass swap", "A out", "echo throw", "loop", "A loop", "B loop", "B plays on", "loop roll", "brake", "spinback", "tempo ramp" …
 }
 
 export interface MixPlan {
@@ -305,4 +316,110 @@ export interface MixRender {
   lufs: number;
   true_peak_db: number;
   warnings: string[];
+}
+
+// ---- Full set mixes (musicreco/setmix.py, seedbox/setmixes.py) ----
+// One continuous mix of a crate's set (target "crate:<folder>") or a setlist ("setlist:<id>"): every transition's
+// MixPlan back to back with set-wide tempo continuity, written to <crates>/Mixes/<name>/ as MP3 + .cue + .txt.
+
+export type SetMixState = "queued" | "preparing" | "rendering" | "done" | "error" | "cancelled";
+
+export interface SetMixTrack {
+  index: number;
+  track_id: string;
+  display_name: string;
+  name: string;
+  artists: string[];
+  camelot: string;
+  bpm: number;
+  folder: string;
+  start_s: number; // where it takes over (bass swap / mid-blend / the cut) — the tracklist & cue time
+  in_s: number; // where it starts to sound
+  out_s: number; // where it's gone
+}
+
+export interface SetMixTransition {
+  index: number; // tracks[index] -> tracks[index + 1]
+  technique: MixTechnique;
+  bars: number;
+  overlap: number; // bars both tracks play (0 = a cut)
+  at_s: number;
+  edited: boolean; // the user's saved mix plan was used
+}
+
+export interface SetMixResult {
+  audio_url: string; // "/api/setmix/<mix_id>/audio"
+  path: string; // the mix file
+  cue_path: string;
+  txt_path: string;
+  format: "mp3" | "m4a";
+  duration_s: number;
+  lufs: number;
+  true_peak_db: number;
+  tracks: SetMixTrack[];
+  transitions: SetMixTransition[];
+  warnings: string[];
+}
+
+export interface SetMix {
+  mix_id: string;
+  target: string; // "crate:<folder>" | "setlist:<id>"
+  title: string;
+  state: SetMixState;
+  progress: number; // 0-1
+  message: string; // "Analysing 3/12 · …", "Track 4/12 · Artist - Title", "Unchanged since the last render"
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+  result: SetMixResult | null; // when done
+}
+
+export interface SetMixStatus {
+  mix: SetMix | null; // running / queued, else the last finished (or failed) one
+  stale: boolean; // the running order or a saved transition changed since it was rendered
+}
+
+// ---- Setlists: crates back to back (seedbox/setlists.py) ----
+
+export interface CrateLink {
+  from_folder: string;
+  to_folder: string;
+  from_track: Track; // the from-crate's last track
+  to_track: Track; // the to-crate's first track
+  transition: Transition; // from_track -> to_track
+  better_entry: { track: Track; transition: Transition } | null; // a clearly better opener for the to-crate
+  from_seed: Track | null;
+  to_seed: Track | null;
+}
+
+export interface CrateLinks {
+  out: CrateLink[]; // this crate's ending -> other crates' starts, best first
+  in: CrateLink[]; // other crates' endings -> this crate's start
+}
+
+export interface SetlistSummary {
+  id: string;
+  name: string;
+  crates: string[]; // folders in play order
+  seeds: (Track | null)[];
+  track_count: number;
+  updated_at: string;
+}
+
+export interface SetlistBlock {
+  folder: string;
+  seed: Track | null;
+  missing: boolean; // the crate folder is gone
+  tracks: SetTrack[]; // the crate's set order (tracks already played by an earlier crate left out)
+}
+
+export interface Setlist {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+  blocks: SetlistBlock[];
+  links: CrateLink[]; // between consecutive non-empty blocks
+  track_count: number;
+  duration_s: number; // sum of track lengths (the mix is shorter)
 }

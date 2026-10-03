@@ -1,4 +1,4 @@
-import { Download, Library, type LucideIcon, Search, Settings } from "lucide-react";
+import { Download, Library, ListMusic, type LucideIcon, Search, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { CoverArt, KeyBadge, Spinner } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -44,6 +44,7 @@ export function Sidebar() {
       <nav className="flex flex-col gap-0.5 px-2 pt-3">
         <NavItem to={{ name: "search" }} icon={Search} label="Search" combo="Mod+1" active={route.name === "search" || route.name === "crate"} />
         <NavItem to={{ name: "crates" }} icon={Library} label="Crates" combo="Mod+2" active={route.name === "crates" || route.name === "set"} />
+        <NavItem to={{ name: "setlists" }} icon={ListMusic} label="Setlists" combo="Mod+3" active={route.name === "setlists" || route.name === "setlist"} />
         <NavItem
           to={active.length === 1 ? { name: "downloads", jobId: active[0].job_id } : { name: "downloads", jobId: "" }}
           icon={Download}

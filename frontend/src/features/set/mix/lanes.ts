@@ -144,7 +144,7 @@ export function timeAt(r: MixRender, beat: number): number {
 
 export const CURVES: Curve[] = ["linear", "ease", "hold"];
 
-export const TECHNIQUES = ["long blend", "bass swap", "filter sweep", "echo out", "loop roll", "phrase blend", "drop swap", "slam", "quick cut"] as const;
+export const TECHNIQUES = ["long blend", "bass swap", "filter sweep", "echo out", "loop roll", "phrase blend", "drop swap", "slam", "spinback", "brake", "quick cut"] as const;
 export const BAR_OPTIONS = [4, 8, 16, 32] as const;
 
 /** "bar.beat" relative to B in (beat 0 = bar 1.1; negative beats count back from it). */

@@ -8,7 +8,7 @@ import { LANE_RANGES } from "@/api/types";
 
 const LANE_IDS: LaneId[] = ["volume", "eq_low", "eq_mid", "eq_high", "filter", "echo_send", "echo_feedback", "reverb_send"];
 const NEUTRAL: Record<LaneId, number> = { volume: 1, eq_low: 0, eq_mid: 0, eq_high: 0, filter: 0, echo_send: 0, echo_feedback: 0.5, reverb_send: 0 };
-const TECHS: MixTechnique[] = ["long blend", "bass swap", "filter sweep", "echo out", "loop roll", "phrase blend", "drop swap", "slam", "quick cut"];
+const TECHS: MixTechnique[] = ["long blend", "bass swap", "filter sweep", "echo out", "loop roll", "phrase blend", "drop swap", "slam", "quick cut", "brake", "spinback"];
 
 const kf = (beat: number, value: number, curve: Keyframe["curve"] = "linear"): Keyframe => ({ beat, value, curve });
 
@@ -22,7 +22,7 @@ function deck(track: Track, an: TrackAnalysis | null, beat0_s: number, from: num
 
 export function generateMixPlan(folder: string, a: Track, aAn: TrackAnalysis | null, b: Track, bAn: TrackAnalysis | null, t: Transition, technique?: string | null, bars?: number | null): MixPlan {
   const tech = (TECHS.includes(technique as MixTechnique) ? technique : t.technique === "quick cut" ? "quick cut" : t.technique ?? "phrase blend") as MixTechnique;
-  const cut = tech === "quick cut" || tech === "drop swap" || tech === "slam";
+  const cut = tech === "quick cut" || tech === "drop swap" || tech === "slam" || tech === "brake" || tech === "spinback";
   const L = ([4, 8, 16, 32].includes(bars ?? 0) ? bars : Math.max(4, Math.min(32, t.overlap_bars || 16))) as 4 | 8 | 16 | 32;
   const n = cut ? 0 : L * 4; // blend length in beats
   const aBpm = aAn?.bpm ?? a.bpm;
@@ -63,22 +63,51 @@ export function generateMixPlan(folder: string, a: Track, aAn: TrackAnalysis | n
       notes.push("Roll A's last phrase down 4 → 2 → 1 beat loops with a rising high-pass, then drop B's bass on the 1.");
       break;
     }
+    case "brake":
+    case "spinback": {
+      const n0 = tech === "brake" ? 4 : 2;
+      A = deck(a, aAn, out, start, 0, { reverb_send: [kf(-n0, 0, "linear"), kf(-0.5, tech === "brake" ? 0.45 : 0.45, "hold"), kf(0.5, 0)], filter: tech === "spinback" ? [kf(-8, 0, "ease"), kf(-2, 0.25, "hold")] : undefined });
+      A.fx = [{ kind: tech, beat: -n0, beats: n0 }];
+      B = deck(b, bAn, inS, 0, end, {});
+      markers.push({ beat: -n0, label: tech }, { beat: 0, label: "cut" });
+      notes.push(tech === "brake" ? "Brake: A powers down like a turntable switched off over its last bar; B starts on the 1." : "Spinback: A is spun back on its last 2 beats into a big reverb wash, and B slams in on the 1.");
+      break;
+    }
     case "quick cut":
     case "drop swap":
-    case "slam":
-      A = deck(a, aAn, out, start, 0, tech === "slam" ? { reverb_send: [kf(-2, 0, "linear"), kf(0, 0.9, "hold"), kf(4, 0)], echo_send: [kf(-1, 0, "hold"), kf(-0.5, 1, "hold"), kf(4, 0)] } : { volume: [kf(0, 1)] });
+    case "slam": {
+      const rb = tech === "slam" ? 4 : 1;
+      const roll: DeckLoop[] = (rb === 4 ? [8, 4, 2, 1, 0.5] : [2, 1, 0.5, 0.25]).reduce<{ out: DeckLoop[]; b: number }>(
+        (acc, ln, i, arr) => {
+          const e = i === arr.length - 1 ? 0 : acc.b + ln;
+          acc.out.push({ start_beat: acc.b, end_beat: e, source_beat: -4 * rb, length_beats: ln });
+          acc.b = e;
+          return acc;
+        },
+        { out: [], b: -4 * rb },
+      ).out;
+      A = deck(a, aAn, out, start, 0, { reverb_send: [kf(-4, 0, "linear"), kf(0, 0.55, "hold"), kf(4, 0)], echo_send: [kf(-2, 0, "linear"), kf(0, 0.9, "hold"), kf(4, 0)], filter: tech === "slam" ? [kf(-16, 0, "ease"), kf(0, 0.45)] : undefined, eq_low: [kf(-2, 0, "linear"), kf(-1, -30, "hold")] }, roll);
       B = deck(b, bAn, inS, 0, end, {});
-      markers.push({ beat: 0, label: "A out" });
-      if (tech === "slam") markers.push({ beat: -0.5, label: "echo throw" });
-      notes.push(tech === "slam" ? "Slam: wash A into reverb + echo on its last half-beat and hit B's drop on the 1." : `${tech === "drop swap" ? "Drop swap" : "Quick cut"} on the 1 — no overlap.`);
+      markers.push({ beat: -4 * rb, label: "loop roll" }, { beat: -2, label: "echo throw" }, { beat: 0, label: "cut" });
+      notes.push(tech === "slam" ? "Slam: a 4-bar loop roll (8 → 4 → 2 → 1 → ½ beat) under a high-pass riser, an echo throw on A's last beats, and B's drop on the 1." : `${tech === "drop swap" ? "Drop swap" : "Quick cut"} on the 1 after a 1-bar stutter.`);
       break;
+    }
     default: {
-      // long blend / phrase blend / bass swap
+      // long blend / phrase blend / bass swap — echo accent before the swap, exit throw + reverb wash on A
       const swap = tech === "bass swap" ? Math.min(n, (t.swap_bar ?? L / 2 + 1) * 4 - 4) : half;
-      A = deck(a, aAn, out, start, n, { volume: [kf(0, 1, "linear"), kf(half, 1, "ease"), kf(n, 0)], eq_low: [kf(swap, 0, "hold"), kf(swap, -30)], eq_high: [kf(half, 0, "linear"), kf(n, -12)] });
-      B = deck(b, bAn, inS, 0, end, { volume: [kf(0, tech === "bass swap" ? 0.75 : 0.0, "ease"), kf(Math.min(half, 16), 1)], eq_low: [kf(0, -30, "hold"), kf(swap, 0)], eq_high: [kf(0, -10, "linear"), kf(half, 0)] });
-      markers.push({ beat: swap, label: "bass swap" }, { beat: n, label: "A out" });
+      const hold = tech === "long blend" && L >= 16 ? 8 : 0; // B's intro held (looped) under A's long outro
+      A = deck(a, aAn, out, start, n, {
+        volume: [kf(0, 1, "linear"), kf(half, 1, "ease"), kf(n, 0)],
+        eq_low: [kf(swap, 0, "hold"), kf(swap, -30)],
+        eq_high: [kf(half, 0, "linear"), kf(n, -12)],
+        echo_send: [kf(swap - 2, 0, "linear"), kf(swap - 1, 0.45, "hold"), kf(swap, 0, "hold"), kf(n - 4, 0, "linear"), kf(n - 1, 0.55, "hold"), kf(n + 4, 0, "hold")],
+        reverb_send: [kf(n - 8, 0, "linear"), kf(n, 0.5, "hold"), kf(n + 4, 0, "hold")],
+      });
+      B = deck(b, bAn, Math.max(0, inS - (hold * 240) / bBpm), 0, end, { volume: [kf(0, tech === "bass swap" ? 0.75 : 0.0, "ease"), kf(Math.min(half, 16), 1)], eq_low: [kf(0, -30, "hold"), kf(swap, 0)], eq_high: [kf(0, -10, "linear"), kf(half, 0)] }, hold ? [{ start_beat: 0, end_beat: hold * 4, source_beat: hold * 4, length_beats: 32 }] : []);
+      markers.push({ beat: swap, label: "bass swap" }, { beat: swap - 1, label: "echo throw" }, { beat: n, label: "A out" });
+      if (hold) markers.push({ beat: 0, label: "B loop" }, { beat: hold * 4, label: "B plays on" });
       notes.push(`${L}-bar ${tech}: bring B in on the phrase with its lows cut, swap the bass on bar ${swap / 4 + 1}, fade A out by bar ${L + 1}.`);
+      if (hold) notes.push(`B's first 8 bars loop for ${hold} bars so its main section lands as A leaves.`);
     }
   }
   if (Math.abs(aBpm - bBpm) > 0.05) {
