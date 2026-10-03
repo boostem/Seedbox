@@ -311,7 +311,8 @@ Contract: `LaneId` gains `vocals` / `instrumental`; `MixPlan.swap_kind` / `vocal
 - Two vocals never at once (`_handoff`, needs the stem of the deck that goes quiet; else A's mids duck to -18 dB): B
   starts singing while A is between lines → A's vocal muted there; mid-line before the swap → B's vocal waits for A's
   line to end, at the latest the swap (the vocals change hands with the bass); later → A's vocal fades just before its
-  line (or over the 2 beats before B's) unless A's line ends within 2 bars.
+  line (or over the 2 beats before B's) unless A's line ends within 2 bars. In a key clash A's vocal is already out
+  from bar 3 (with its mids), so only A's singing before then can hold B's vocal back.
 - Acapella (score 0.76): A's vocal split, keys same / ±1 / relative, tempo gap ≤ 2%, A singing across the swap bar on
   the plain window (a line running there or starting within a bar) that ends ≥ 2 bars after it inside the blend, and
   B not singing before then (or B split: its vocal waits). A's instrumental drops out on the 1 of the swap, its vocal

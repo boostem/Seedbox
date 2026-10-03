@@ -1727,16 +1727,19 @@ def _acapella(A: dict, B: dict, s: float, e: float) -> None:
     A["volume"] = [(e + 2.0, 1.0, "ease"), (e + 3.0, 0.0, "hold")]
 
 
-def _handoff(m: _Mix, va: list[float], vb: list[float], sw: int) -> tuple[tuple[float, float] | None, float | None,
-                                                                            int | None, str | None]:
+def _handoff(m: _Mix, va: list[float], vb: list[float], sw: int, cut: int | None = None
+             ) -> tuple[tuple[float, float] | None, float | None, int | None, str | None]:
     """Never two vocals at once. Returns (A's vocal muted from beat t after an f-beat fade, B's vocal held back until
     beat t, overlap bar where A's mids duck instead because the vocal to quiet isn't split yet, note).
 
     B starts singing while A is between lines: A's vocal is muted there (inaudible) so its next line never starts.
     B starts singing mid-line before the bass swap: B's vocal waits for A's line to end, at the latest for the swap,
     where the vocals change hands with the bass. Later: A's vocal fades out just before its line, or over the 2 beats
-    before B's, unless A's line ends within 2 bars (then B's vocal waits for it)."""
+    before B's, unless A's line ends within 2 bars (then B's vocal waits for it). `cut`: the bar from which A's vocal
+    is already out (the key-clash shape takes it early), so nothing after it can clash."""
     ON = transitions._VOCAL_ON
+    if cut is not None:
+        va = [x if j < cut else 0.0 for j, x in enumerate(va)]
     L = len(va)
     kb = next((k for k in range(L) if vb[k] >= ON), None)
     if kb is None:
@@ -1757,6 +1760,9 @@ def _handoff(m: _Mix, va: list[float], vb: list[float], sw: int) -> tuple[tuple[
         if t < end:
             note = f"B starts singing in bar {kb + 1} while A is mid-line, so the vocals change hands with the bass " \
                    f"(bar {t + 1}): A's vocal goes out as B's comes in."
+        elif end == cut:
+            note = f"B starts singing in bar {kb + 1} while A is still singing, so B's vocal waits until A's is out " \
+                   f"(bar {t + 1})."
         else:
             note = f"B starts singing in bar {kb + 1} while A is mid-line, so B's vocal waits until A's line ends " \
                    f"(bar {t + 1})" + (" and A's vocal stays out after that." if a_off else ".")
@@ -1934,11 +1940,13 @@ def _generate_chill(a: Track, a_an: dict | None, b: Track, b_an: dict | None, fo
                         ("; B's vocal waits until then." if b_wait is not None else "."))
         else:
             clash_keys = d.key_mode == "clash" and d.style == DEFAULT_STYLE
+            cut = None
             if clash_keys:
                 _clash_shape(A, B, E)
                 if m.stems_a and any(x >= transitions._VOCAL_ON for x in va):
                     a_mute.append((E / 4, E / 8))
-            mute, wait, duck, note = _handoff(m, va, vb, d.sw)
+                    cut = math.ceil(E / 16)  # A's vocal is out from this bar
+            mute, wait, duck, note = _handoff(m, va, vb, d.sw, cut)
             if mute is not None:
                 a_mute.append(mute)
             if wait is not None:
