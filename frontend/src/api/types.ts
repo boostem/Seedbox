@@ -226,6 +226,7 @@ export type ServerEvent =
   | { type: "analysis"; data: { folder: string; track_id: string; state: SetTrack["analysis_state"] } }
   | { type: "stems"; data: { folder: string; track_id: string; state: StemState; progress: number; error?: string } }
   | { type: "set_changed"; data: { folder: string } }
+  | { type: "settings_changed"; data: Settings } // saved by the other app (Seedbox and Setbox share settings.json)
   | { type: "render"; data: { render_id: string; folder: string; from_id: string; to_id: string; state: "running" | "done" | "error"; progress: number; error?: string } } // folder = crate folder, or "setlist:<id>" for a crate-to-crate link
   | { type: "setmix"; data: SetMix }
   | { type: "setlist_changed"; data: { id: string } }

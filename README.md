@@ -47,7 +47,8 @@ UI); without `--app` it's Seedbox's, on 8765.
 
 ### Running both
 
-- They share the settings file and the crates folder: changing the folder in either app changes it for both.
+- They share the settings file and the crates folder: a setting changed in either app (the crates folder
+  included) reaches the other within a few seconds, and saving in one never undoes the other's change.
 - Crate writes are coordinated between the two processes. A file lock per crate (in
   `~/Library/Application Support/Seedbox/locks/`) serialises tag, CSV and playlist rewrites. While Seedbox
   downloads into a crate, Setbox won't reorder it, because the finished download re-sorts the crate.

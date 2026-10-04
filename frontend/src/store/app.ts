@@ -230,6 +230,15 @@ export const useApp = create<AppState>()((set, get) => ({
         void get().refreshCrates();
         break;
       }
+      case "settings_changed": {
+        const root = get().settings?.output_root;
+        set({ settings: ev.data });
+        if (ev.data.output_root !== root) {
+          void get().refreshBasics(); // the system panel shows the crates folder
+          void get().refreshCrates();
+        }
+        break;
+      }
       case "setmix": {
         const m = ev.data;
         const prev = get().setmixes[m.target];

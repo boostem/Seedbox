@@ -1,8 +1,9 @@
 """Crates change under Setbox: Seedbox (its own process) downloads into them and starts new ones. A pass every few
 seconds costs one stat per crate folder (a folder's mtime moves when a file in it is added, removed or replaced, and
 the crate's MP3s, tracks.csv and playlists are all written that way); only a folder that moved gets its crate
-fingerprint (crates._signature) re-read, and a crate whose fingerprint changed is announced as `set_changed`, the
-event the set builder and the crate list already refetch on. Folders modified in the last few seconds are re-read
+fingerprint (crates._signature) re-read, and a crate whose fingerprint changed is handed to `on_change` (Setbox
+drops its cached scan: a finished download re-rates and renumbers the whole crate) and announced as `set_changed`,
+the event the set builder and the crate list already refetch on. Folders modified in the last few seconds are re-read
 on every pass too: on file systems with coarse timestamps (HFS+, FAT) a second change can keep the same mtime.
 """
 
@@ -27,9 +28,10 @@ RECENT_NS = 5_000_000_000  # re-read folders modified this recently on every pas
 
 class CrateWatcher:
     def __init__(self, root: Callable[[], Path], bus: EventBus, interval_s: float = INTERVAL_S,
-                 start: bool = True) -> None:  # fmt: skip
+                 on_change: Callable[[str], None] | None = None, start: bool = True) -> None:  # fmt: skip
         self._root = root
         self.bus = bus
+        self.on_change = on_change
         self.interval_s = interval_s
         self._stop = threading.Event()
         self._lock = threading.Lock()
@@ -73,6 +75,11 @@ class CrateWatcher:
             )
             self._seen, self._seen_root = now, root
         for folder in changed:
+            if self.on_change is not None:
+                try:
+                    self.on_change(folder)
+                except Exception:  # noqa: BLE001 - still announce it
+                    log.exception("handling the change to %s failed", folder)
             self.bus.publish("set_changed", {"folder": folder})
         return changed
 

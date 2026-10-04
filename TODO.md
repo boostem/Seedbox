@@ -81,7 +81,8 @@
       navigation, hotkeys, settings, logo, icon, log and dev port. Seedbox no longer loads PyTorch or the mix engine.
 - [x] **Two processes, one crates folder**: the crate lock is now a file lock as well, so a finished download and a
       Setbox reorder never rewrite a crate at the same time; Setbox refuses to reorder while Seedbox downloads into
-      that crate (a finished download re-sorts it); Setbox notices Seedbox's changes within ~3 s and refreshes.
+      that crate (a finished download re-sorts it); Setbox notices Seedbox's changes within ~3 s and refreshes;
+      settings saved in either app reach the other, and a save never undoes the other app's change.
 - [x] **Quitting mid-split no longer crashes**: once the server has stopped the process exits straight away; the
       normal teardown aborted while a vocal split was inside PyTorch (a crash report on macOS).
 - [x] Packaging builds both apps (Seedbox.app without PyTorch, Setbox.app without deno) into one DMG.

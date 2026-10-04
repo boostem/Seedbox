@@ -390,6 +390,11 @@ The app split in two, in one repo, on one engine (`musicreco/`) and one crates f
   analysis, mix, render, stems, setmix and setlist endpoint. An endpoint of the other app is a 404.
 - Setbox doesn't report yt-dlp (`ytdlp_version: ""`) or ask PyPI about it. `AppState.on_root_change` /
   `on_shutdown` hooks let `setbox.routes` forget and stop its services.
+- Shared settings: `AppState.settings` follows `settings.json` (its mtime, checked at most once a second). A change
+  the other app saved applies as if saved here (crates folder hooks, preview manager) and is published as
+  `settings_changed` (the UI takes the new settings and refreshes the crate list when the folder moved). A save
+  re-reads the file first and merges the patch onto it, so it never undoes the other app's change. Tests that
+  inject `save_settings` keep their in-memory settings.
 - `python -m seedbox.server --app setbox` (default port 8766; Seedbox 8765).
 
 ## Launcher (seedbox/app.py)
@@ -415,15 +420,21 @@ The app split in two, in one repo, on one engine (`musicreco/`) and one crates f
   Transitions (the BPM tolerance), System without yt-dlp / deno, Keyboard). No links between the apps.
 
 ## Two processes, one crates folder (musicreco/library.py, setbox/watcher.py)
-- `library.crate_lock(seed_dir)` is a `CrateLock`: the in-process re-entrant lock plus, on the outermost hold, an
-  exclusive `flock` on `<support>/locks/<sha1 of the crate's real path>.lock`, so a finished download (renumber,
-  tags, CSV, playlists) and Setbox's reorders / energy tags never write a crate at the same time.
-- `library.crate_busy(seed_dir)`: Seedbox's job holds a shared `flock` on `<hash>.busy` while it downloads;
-  `library.crate_downloading(seed_dir)` probes it (non-blocking exclusive lock). Setbox's CrateService uses it as
-  `busy`: a reorder is a 409 ("Seedbox is still downloading into this crate"), and the energy back-fill waits for
-  the job. The OS drops the lock when the process ends, however it ends.
+- `library.crate_lock(seed_dir)` is a `CrateLock`: the in-process re-entrant lock (keyed by the NFC, case-folded
+  real path) plus, on the outermost hold, an exclusive `flock` on `<support>/locks/<folder id>.lock`, so a finished
+  download (renumber, tags, CSV, playlists) and Setbox's reorders / energy tags never write a crate at the same
+  time. The folder id is its device + inode, the same whichever spelling each app has (Seedbox builds the name from
+  tunebat, NFC; Setbox reads it from disk, NFD on HFS+, maybe another case); a hash of the normalised path while
+  the folder doesn't exist.
+- `library.crate_busy(seed_dir)`: Seedbox's job holds an exclusive `flock` on `<folder id>.busy` while it
+  downloads (one job per crate at a time); `library.crate_downloading(seed_dir)` probes it with a non-blocking
+  shared lock, so simultaneous probes never see each other as a download. Setbox's CrateService uses it as `busy`:
+  a reorder is a 409 ("Seedbox is still downloading into this crate"), and the energy back-fill waits for the job.
+  The OS drops the lock when the process ends, however it ends.
 - `CrateWatcher` (Setbox, every 3 s): one `stat` per crate folder; a folder whose mtime moved (or that changed in
-  the last 5 s) gets its `_signature` re-read, and a changed, new or removed crate is published as `set_changed`.
+  the last 5 s) gets its `_signature` re-read. A changed, new or removed crate has its cached scan and back-filled
+  energy values dropped (`CrateService.invalidate(rerated=True)`: a finished download re-rates the crate) and is
+  published as `set_changed`.
 
 ## Packaging
 - `packaging/seedbox.spec` builds either app (`SEEDBOX_APP=seedbox|setbox`). Seedbox.app excludes `SETBOX_ONLY`

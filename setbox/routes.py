@@ -42,7 +42,11 @@ class SetboxServices:
         self.setmixes = SetMixService(self.crates, self.mixes, self.setlists, state.bus)
         self.stems = StemQueue(state.bus, idle=lambda: not (self.mixes.busy() or self.setmixes.busy()))
         self.crates.stems = self.stems
-        self.watcher = CrateWatcher(lambda: self.crates.root, state.bus)
+        self.watcher = CrateWatcher(lambda: self.crates.root, state.bus, on_change=self._crate_changed)
+
+    def _crate_changed(self, folder: str) -> None:
+        """A crate changed outside Setbox (Seedbox's finished download re-rates and renumbers it): forget its scan."""
+        self.crates.invalidate(self.crates.root / folder, rerated=True)
 
     def forget(self) -> None:
         """The crates folder changed: drop what was remembered about the old one."""

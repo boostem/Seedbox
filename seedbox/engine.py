@@ -44,6 +44,7 @@ Settings = msettings.Settings
 cache_dir = msettings.cache_dir
 load_settings = msettings.load_settings
 save_settings = msettings.save_settings
+settings_path = msettings.settings_path
 settings_to_json = msettings.to_json
 ffmpeg_path = paths.ffmpeg_path
 deno_path = paths.deno_path

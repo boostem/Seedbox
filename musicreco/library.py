@@ -117,8 +117,15 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def _lock_file(real_dir: str, suffix: str) -> Path | None:
-    """<support>/locks/<hash of the crate's real path><suffix>: a file every app's process can flock."""
+def _norm_path(seed_dir: Path) -> str:
+    """The crate's real path, Unicode-normalised (NFC) and case-folded: one key for every spelling of the folder."""
+    return unicodedata.normalize("NFC", os.path.realpath(seed_dir)).casefold()
+
+
+def _lock_file(seed_dir: Path, suffix: str) -> Path | None:
+    """<support>/locks/<name><suffix>: a file every app's process can flock. The name is the folder's device + inode,
+    the same whichever spelling each app uses (an NFD name on HFS+, a different case); a hash of _norm_path while
+    the folder doesn't exist."""
     if fcntl is None:
         return None
     try:
@@ -127,7 +134,12 @@ def _lock_file(real_dir: str, suffix: str) -> Path | None:
     except OSError as e:
         log.warning("no crate lock folder (%s): crate writes are only serialised within this app", e)
         return None
-    return d / (hashlib.sha1(real_dir.encode("utf-8", "surrogateescape")).hexdigest()[:24] + suffix)
+    try:
+        st = os.stat(seed_dir)
+        name = f"{st.st_dev:x}-{st.st_ino:x}"
+    except OSError:
+        name = hashlib.sha1(_norm_path(seed_dir).encode("utf-8", "surrogateescape")).hexdigest()[:24]
+    return d / (name + suffix)
 
 
 class CrateLock:
@@ -135,12 +147,12 @@ class CrateLock:
 
     Seedbox and Setbox run as separate processes and both write crates (a finished download renumbers and tags the
     crate; Setbox reorders it and writes energy tags), so the outermost hold also takes an exclusive flock on
-    <support>/locks/<hash>.lock, which the other process waits for. Without a lock file (no fcntl, unwritable
+    <support>/locks/<folder id>.lock, which the other process waits for. Without a lock file (no fcntl, unwritable
     support folder) it still serialises this process's threads.
     """
 
-    def __init__(self, real_dir: str) -> None:
-        self._real_dir = real_dir
+    def __init__(self, seed_dir: Path) -> None:
+        self._dir = seed_dir
         self._threads = threading.RLock()
         self._depth = 0  # the owning thread's nesting (other threads wait on _threads)
         self._fd: int | None = None
@@ -148,7 +160,7 @@ class CrateLock:
     def acquire(self) -> bool:
         self._threads.acquire()
         self._depth += 1
-        if self._depth == 1 and (path := _lock_file(self._real_dir, ".lock")) is not None:
+        if self._depth == 1 and (path := _lock_file(self._dir, ".lock")) is not None:
             try:
                 fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
             except OSError as e:
@@ -184,21 +196,23 @@ _crate_locks_guard = threading.Lock()
 def crate_lock(seed_dir: Path) -> CrateLock:
     """Re-entrant lock for one crate folder, shared with the other app's process (CrateLock); held while its
     tags/CSV/playlists are rewritten."""
-    key = os.path.realpath(seed_dir)
+    key = _norm_path(seed_dir)
     with _crate_locks_guard:
-        return _crate_locks.setdefault(key, CrateLock(key))
+        if (lock := _crate_locks.get(key)) is None:
+            lock = _crate_locks[key] = CrateLock(Path(seed_dir))
+        return lock
 
 
 @contextmanager
 def crate_busy(seed_dir: Path) -> Iterator[None]:
     """Held by Seedbox while a download job runs into this crate, so Setbox (crate_downloading) can hold off
-    reordering it: the finished job re-sorts the crate anyway. A shared flock on <support>/locks/<hash>.busy, which
-    the OS drops when the process ends, however it ends."""
+    reordering it: the finished job re-sorts the crate anyway. An exclusive flock on <support>/locks/<folder id>.busy
+    (Seedbox runs one job per crate at a time), which the OS drops when the process ends, however it ends."""
     fd = None
-    if (path := _lock_file(os.path.realpath(seed_dir), ".busy")) is not None:
+    if (path := _lock_file(seed_dir, ".busy")) is not None:
         try:
             fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
-            fcntl.flock(fd, fcntl.LOCK_SH)
+            fcntl.flock(fd, fcntl.LOCK_EX)
         except OSError as e:
             log.warning("couldn't mark %s busy: %s", seed_dir.name, e)
             if fd is not None:
@@ -212,8 +226,9 @@ def crate_busy(seed_dir: Path) -> Iterator[None]:
 
 
 def crate_downloading(seed_dir: Path) -> bool:
-    """True while a process (Seedbox's download job) holds crate_busy for this crate."""
-    path = _lock_file(os.path.realpath(seed_dir), ".busy")
+    """True while a process (Seedbox's download job) holds crate_busy for this crate. The probe is a shared lock, so
+    probes running at the same time (two requests) never take each other for a download."""
+    path = _lock_file(seed_dir, ".busy")
     if path is None or not path.is_file():
         return False
     try:
@@ -221,7 +236,7 @@ def crate_downloading(seed_dir: Path) -> bool:
     except OSError:
         return False
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
         return False
     except BlockingIOError:
         return True

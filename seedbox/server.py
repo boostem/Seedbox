@@ -132,6 +132,16 @@ class RevealRequest(BaseModel):
 # --- app state ----------------------------------------------------------------------------------------------------
 
 
+SETTINGS_RECHECK_S = 1.0  # how often settings.json is checked for changes the other app saved
+
+
+def _mtime(path: Path | None) -> int | None:
+    try:
+        return path.stat().st_mtime_ns if path is not None else None
+    except OSError:
+        return None
+
+
 class AppState:
     """Everything the endpoints share. One per app: Seedbox's tunebat / jobs / previews exist only in Seedbox;
     Setbox's services are added by setbox.routes.register (state.crates, .mixes, ...), which also hooks
@@ -147,7 +157,11 @@ class AppState:
         app: str = "seedbox",
     ) -> None:
         self.app = app
-        self.settings = settings
+        self._settings = settings
+        # Seedbox and Setbox share settings.json: follow it when saving there (tests inject their own save_settings)
+        self._settings_file: Path | None = engine.settings_path() if save_settings is None else None
+        self._settings_mtime = _mtime(self._settings_file)
+        self._settings_checked = time.monotonic()
         self._cache_dir = cache_dir
         self.save_settings = save_settings or engine.save_settings
         self.bus = EventBus(heartbeat_s=heartbeat_s)
@@ -169,6 +183,45 @@ class AppState:
             # snapshots sent when a crate opens. A snapshot is read when its turn comes, so it can never overwrite a
             # newer state that the manager reported before it.
             threading.Thread(target=self._preview_events, name="seedbox-preview-events", daemon=True).start()
+
+    @property
+    def settings(self) -> Any:
+        """The current settings, including any the other app saved since (see _follow_settings_file)."""
+        self._follow_settings_file()
+        return self._settings
+
+    @settings.setter
+    def settings(self, value: Any) -> None:
+        self._settings = value
+
+    def _follow_settings_file(self, force: bool = False) -> None:
+        """Pick up settings the other app saved: settings.json changed since this process last read or wrote it
+        (checked at most once a second). They apply as if saved here (crates folder hooks, preview manager) and a
+        `settings_changed` event tells the UI."""
+        if self._settings_file is None:
+            return
+        now = time.monotonic()
+        if not force and now - self._settings_checked < SETTINGS_RECHECK_S:
+            return
+        self._settings_checked = now
+        if _mtime(self._settings_file) == self._settings_mtime:
+            return
+        with self._lock:
+            mtime = _mtime(self._settings_file)
+            if mtime == self._settings_mtime:
+                return
+            self._settings_mtime = mtime
+            old = self._settings
+            self._settings = new = engine.load_settings()
+            log.info("settings changed outside this app (crates folder %s)", new.output_root)
+            self._settings_applied(old, new)
+        self.bus.publish("settings_changed", engine.settings_to_json(new))
+
+    def _settings_applied(self, old: Any, new: Any) -> None:
+        if Path(new.output_root) != Path(old.output_root):
+            for fn in self.on_root_change:
+                fn()
+        self._apply_preview_settings(old, new)
 
     @property
     def root(self) -> Path:
@@ -236,7 +289,8 @@ class AppState:
         if not isinstance(patch, dict):
             raise ApiError("settings must be a JSON object", 422)
         with self._lock:
-            old = self.settings
+            self._follow_settings_file(force=True)  # merge onto what is saved now: the other app may have changed it
+            old = self._settings
             merged = {**engine.settings_to_json(old), **patch}
             try:
                 new = engine.settings_from_json(merged, strict=True)
@@ -248,11 +302,9 @@ class AppState:
                 except OSError as e:
                     raise ApiError(f"can't use {new.output_root} as the crates folder: {e}") from e
             self.save_settings(new)
-            self.settings = new
-            if Path(new.output_root) != Path(old.output_root):
-                for fn in self.on_root_change:
-                    fn()
-            self._apply_preview_settings(old, new)
+            self._settings = new
+            self._settings_mtime = _mtime(self._settings_file)  # our own write isn't an outside change
+            self._settings_applied(old, new)
         return new
 
     def _apply_preview_settings(self, old: Any, new: Any) -> None:
