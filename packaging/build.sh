@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# Build Seedbox.app and Seedbox-<version>-arm64.dmg (Apple Silicon, unsigned / ad-hoc signed).
+# Build Seedbox.app + Setbox.app and Seedbox-<version>-arm64.dmg holding both (Apple Silicon, unsigned / ad-hoc
+# signed). Seedbox finds, previews, downloads and tags crates; Setbox builds sets, transitions and mixes from them.
 #
-#   packaging/build.sh [--release] [--skip-frontend] [--placeholder-web] [--skip-smoke] [--skip-dmg]
+#   packaging/build.sh [--app=seedbox|setbox] [--release] [--skip-frontend] [--placeholder-web] [--skip-smoke]
+#                      [--skip-dmg]
 #
-# Steps: [release venv] → frontend (deno task build) → icon (if missing) → deno binary → PyInstaller →
-# LSMinimumSystemVersion from every bundled Mach-O → ad-hoc codesign → smoke test (--server-only + /api/health +
-# /api/system, isolated temp dirs) → DMG with an Applications link.
+# Steps: [release venv] → frontend (deno task build) → icons (if missing) → deno binary (Seedbox) → per app:
+# PyInstaller (packaging/seedbox.spec with SEEDBOX_APP) → LSMinimumSystemVersion from every bundled Mach-O → ad-hoc
+# codesign → smoke test (--server-only + /api/health + /api/system + its page, isolated temp dirs) → one DMG with
+# the apps and an Applications link.
 #
+# --app=X    build only Seedbox.app or only Setbox.app (default: both). Seedbox.app has no PyTorch / analysis / mix
+#            engine (a fraction of the size); Setbox.app has no deno.
 # --release  build the one to share: a portable python-build-standalone CPython (uv-managed, built for macOS 11)
 #            in $SEEDBOX_RELVENV (default packaging/.relvenv, created/updated with uv), wheels picked for
 #            macOS $RELEASE_MACOS, versions pinned to what .venv has (pip freeze). Without --release the dev
@@ -19,7 +24,7 @@
 #   SEEDBOX_RELVENV    release venv folder (default packaging/.relvenv)
 #   RELEASE_PYTHON     CPython version for --release (default 3.14.7)
 #   RELEASE_MACOS      oldest macOS whose wheels --release picks (default 12.0; deno/ffmpeg need 12.0 anyway)
-#   RELEASE_TORCH      torch version --release bundles (default 2.11.0: the newest with macOS 12 wheels for Python
+#   RELEASE_TORCH      torch version --release bundles in Setbox.app (default 2.11.0: the newest with macOS 12 wheels for Python
 #                      3.14; vocal splitting runs on the GPU on macOS 14+ and on the CPU before). The dev venv's
 #                      torch isn't pinned, since newer wheels need macOS 14.
 #   SEEDBOX_DENO       deno binary to bundle (default: Homebrew's if it only links system libraries, otherwise
@@ -33,20 +38,24 @@ OUT="${SEEDBOX_BUILD_DIR:-$HERE/dist}"
 WORK="$OUT/.work"
 CACHE="$OUT/.cache"
 PYTHON="${PYTHON:-$PROJECT/.venv/bin/python}"
-SKIP_FRONTEND=0 PLACEHOLDER_WEB=0 SKIP_SMOKE=0 SKIP_DMG=0 RELEASE=0
+SKIP_FRONTEND=0 PLACEHOLDER_WEB=0 SKIP_SMOKE=0 SKIP_DMG=0 RELEASE=0 APPS="seedbox setbox"
 for arg in "$@"; do
   case "$arg" in
+    --app=seedbox|--app=setbox) APPS="${arg#--app=}" ;;
     --release) RELEASE=1 ;;
     --skip-frontend) SKIP_FRONTEND=1 ;;
     --placeholder-web) PLACEHOLDER_WEB=1 SKIP_FRONTEND=1 ;;
     --skip-smoke) SKIP_SMOKE=1 ;;
     --skip-dmg) SKIP_DMG=1 ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
 
 step() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
+app_name() { case "$1" in seedbox) echo Seedbox ;; setbox) echo Setbox ;; esac; }
+app_page() { case "$1" in seedbox) echo index.html ;; setbox) echo setbox.html ;; esac; }
+builds() { [[ " $APPS " == *" $1 "* ]]; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 system_libs_only() {  # true when a Mach-O links nothing outside /usr/lib and /System
   ! otool -L "$1" | tail -n +2 | awk '{print $1}' | grep -vqE '^(/usr/lib/|/System/Library/)'
@@ -87,14 +96,17 @@ BUILD_T0=$(date +%s)
 
 # ---------------------------------------------------------------- frontend
 if [[ $PLACEHOLDER_WEB == 1 ]]; then
-  step "frontend: placeholder page (--placeholder-web)"
+  step "frontend: placeholder pages (--placeholder-web)"
   mkdir -p "$WORK/web-placeholder"
-  cat > "$WORK/web-placeholder/index.html" <<'HTML'
-<!doctype html><html><head><meta charset="utf-8"><title>Seedbox</title></head>
+  for KEY in seedbox setbox; do
+    NAME="$(app_name "$KEY")"
+    cat > "$WORK/web-placeholder/$(app_page "$KEY")" <<HTML
+<!doctype html><html data-app="$KEY"><head><meta charset="utf-8"><title>$NAME</title></head>
 <body style="background:#0b0d10;color:#ddd;font:15px -apple-system;padding:48px">
-<h2>Seedbox</h2><p>Placeholder UI: this build was made without the frontend. The API runs at <code>/api</code>.</p>
+<h2>$NAME</h2><p>Placeholder UI: this build was made without the frontend. The API runs at <code>/api</code>.</p>
 </body></html>
 HTML
+  done
   export SEEDBOX_WEB_DIST="$WORK/web-placeholder"
 elif [[ $SKIP_FRONTEND == 0 && -f "$PROJECT/frontend/package.json" ]]; then
   step "frontend: deno task build"
@@ -103,17 +115,22 @@ elif [[ $SKIP_FRONTEND == 0 && -f "$PROJECT/frontend/package.json" ]]; then
   (cd "$PROJECT/frontend" && deno task build)
 fi
 if [[ -z "${SEEDBOX_WEB_DIST:-}" ]]; then
-  [[ -f "$PROJECT/frontend/dist/index.html" ]] || die "no frontend/dist/index.html (build the frontend or pass --placeholder-web)"
+  for KEY in $APPS; do
+    [[ -f "$PROJECT/frontend/dist/$(app_page "$KEY")" ]] \
+      || die "no frontend/dist/$(app_page "$KEY") (build the frontend or pass --placeholder-web)"
+  done
 fi
 
-# ---------------------------------------------------------------- icon
-if [[ ! -f "$HERE/icon/Seedbox.icns" ]]; then
-  step "icon"
-  "$PYTHON" "$HERE/icon/make_icon.py"
-fi
+# ---------------------------------------------------------------- icons
+for KEY in $APPS; do
+  if [[ ! -f "$HERE/icon/$(app_name "$KEY").icns" ]]; then
+    step "icon: $(app_name "$KEY")"
+    "$PYTHON" "$HERE/icon/make_icon.py" "$KEY"
+  fi
+done
 
-# ---------------------------------------------------------------- deno
-if [[ -z "${SEEDBOX_DENO:-}" ]]; then
+# ---------------------------------------------------------------- deno (Seedbox: yt-dlp's YouTube JS challenges)
+if builds seedbox && [[ -z "${SEEDBOX_DENO:-}" ]]; then
   BREW_DENO="$(command -v deno || true)"
   if [[ -n "$BREW_DENO" ]] && system_libs_only "$(realpath "$BREW_DENO")"; then
     export SEEDBOX_DENO="$(realpath "$BREW_DENO")"
@@ -146,76 +163,91 @@ if [[ -z "${SEEDBOX_DENO:-}" ]]; then
     export SEEDBOX_DENO="$DDIR/deno"
   fi
 fi
-"$SEEDBOX_DENO" --version | head -1
+builds seedbox && "$SEEDBOX_DENO" --version | head -1
 
-# ---------------------------------------------------------------- PyInstaller
-step "PyInstaller ($("$PYTHON" -c 'import PyInstaller; print(PyInstaller.__version__)'), $("$PYTHON" -V))"
-"$PYTHON" -m PyInstaller --noconfirm --clean --log-level WARN \
-  --distpath "$WORK/dist" --workpath "$WORK/build" "$HERE/seedbox.spec"
-APP="$OUT/Seedbox.app"
-rm -rf "$APP"
-mv "$WORK/dist/Seedbox.app" "$APP"
-rm -rf "$WORK/dist/Seedbox"  # the onedir COLLECT folder (already inside the .app)
-VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+MIN_OS="11.0"  # the newest any built app needs (the DMG's Read Me states it)
+newer_os() { "$PYTHON" -c "import sys; a, b = (tuple(map(int, v.split('.'))) for v in sys.argv[1:]); print(sys.argv[1] if a > b else sys.argv[2])" "$1" "$2"; }
 
-step "minimum macOS (every Mach-O in the bundle)"
-MIN_OS="$("$PYTHON" "$HERE/minos.py" "$APP" | tail -1)"
-/usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $MIN_OS" "$APP/Contents/Info.plist"
-echo "LSMinimumSystemVersion = $MIN_OS"
+for KEY in $APPS; do
+  NAME="$(app_name "$KEY")"
+  # ---------------------------------------------------------------- PyInstaller
+  step "$NAME: PyInstaller ($("$PYTHON" -c 'import PyInstaller; print(PyInstaller.__version__)'), $("$PYTHON" -V))"
+  SEEDBOX_APP="$KEY" "$PYTHON" -m PyInstaller --noconfirm --clean --log-level WARN \
+    --distpath "$WORK/dist" --workpath "$WORK/build-$KEY" "$HERE/seedbox.spec"
+  APP="$OUT/$NAME.app"
+  rm -rf "$APP"
+  mv "$WORK/dist/$NAME.app" "$APP"
+  rm -rf "${WORK:?}/dist/$NAME"  # the onedir COLLECT folder (already inside the .app)
+  VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 
-# ---------------------------------------------------------------- codesign (ad-hoc)
-step "codesign (ad-hoc)"
-xattr -cr "$APP"
-codesign --force --deep --sign - "$APP"
-codesign --verify --deep --strict "$APP"
-echo "signature ok"
+  step "$NAME: minimum macOS (every Mach-O in the bundle)"
+  APP_MIN_OS="$("$PYTHON" "$HERE/minos.py" "$APP" | tail -1)"
+  /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $APP_MIN_OS" "$APP/Contents/Info.plist"
+  echo "LSMinimumSystemVersion = $APP_MIN_OS"
+  MIN_OS="$(newer_os "$APP_MIN_OS" "$MIN_OS")"
 
-# ---------------------------------------------------------------- smoke test
-if [[ $SKIP_SMOKE == 0 ]]; then
-  step "smoke test: --server-only"
-  SMOKE="$WORK/smoke"
-  rm -rf "$SMOKE" && mkdir -p "$SMOKE"
-  PORT="$("$PYTHON" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
-  T0="$("$PYTHON" -c 'import time; print(time.time())')"
-  env MUSICRECO_OUTPUT_ROOT="$SMOKE/crates" SEEDBOX_SUPPORT_DIR="$SMOKE/support" SEEDBOX_CACHE_DIR="$SMOKE/cache" \
-      SEEDBOX_LOG_DIR="$SMOKE/logs" SEEDBOX_NO_UPDATE_CHECK=1 SEEDBOX_NO_MIGRATE=1 \
-      "$APP/Contents/MacOS/Seedbox" --server-only --port "$PORT" > "$SMOKE/server.out" 2>&1 &
-  PID=$!
-  trap 'kill $PID 2>/dev/null || true' EXIT
-  OK=0
-  for _ in $(seq 1 600); do
-    if curl -fs "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; then OK=1; break; fi
-    kill -0 $PID 2>/dev/null || break
-    sleep 0.05
-  done
-  T1="$("$PYTHON" -c 'import time; print(time.time())')"
-  if [[ $OK != 1 ]]; then cat "$SMOKE/server.out"; die "the app did not answer /api/health"; fi
-  printf 'healthy after %.2fs\n' "$("$PYTHON" -c "print($T1 - $T0)")"
-  SYSTEM="$(curl -fs "http://127.0.0.1:$PORT/api/system")"
-  echo "$SYSTEM"
-  echo "$SYSTEM" | grep -q "Seedbox.app/Contents/Frameworks/bin/ffmpeg" || die "/api/system: ffmpeg not from the bundle"
-  echo "$SYSTEM" | grep -q "Seedbox.app/Contents/Frameworks/bin/deno" || die "/api/system: deno not from the bundle"
-  curl -fs "http://127.0.0.1:$PORT/" | grep -qi "<html" || die "/ does not serve the frontend"
-  kill $PID; wait $PID 2>/dev/null || true
-  trap - EXIT
-  echo "smoke test passed"
-fi
+  # ---------------------------------------------------------------- codesign (ad-hoc)
+  step "$NAME: codesign (ad-hoc)"
+  xattr -cr "$APP"
+  codesign --force --deep --sign - "$APP"
+  codesign --verify --deep --strict "$APP"
+  echo "signature ok"
+
+  # ---------------------------------------------------------------- smoke test
+  if [[ $SKIP_SMOKE == 0 ]]; then
+    step "$NAME: smoke test (--server-only)"
+    SMOKE="$WORK/smoke-$KEY"
+    rm -rf "$SMOKE" && mkdir -p "$SMOKE"
+    PORT="$("$PYTHON" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+    T0="$("$PYTHON" -c 'import time; print(time.time())')"
+    env MUSICRECO_OUTPUT_ROOT="$SMOKE/crates" SEEDBOX_SUPPORT_DIR="$SMOKE/support" SEEDBOX_CACHE_DIR="$SMOKE/cache" \
+        SEEDBOX_LOG_DIR="$SMOKE/logs" SEEDBOX_NO_UPDATE_CHECK=1 SEEDBOX_NO_MIGRATE=1 \
+        "$APP/Contents/MacOS/$NAME" --server-only --port "$PORT" > "$SMOKE/server.out" 2>&1 &
+    PID=$!
+    trap 'kill $PID 2>/dev/null || true' EXIT
+    OK=0
+    for _ in $(seq 1 600); do
+      if curl -fs "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; then OK=1; break; fi
+      kill -0 $PID 2>/dev/null || break
+      sleep 0.05
+    done
+    T1="$("$PYTHON" -c 'import time; print(time.time())')"
+    if [[ $OK != 1 ]]; then cat "$SMOKE/server.out"; die "$NAME did not answer /api/health"; fi
+    printf 'healthy after %.2fs\n' "$("$PYTHON" -c "print($T1 - $T0)")"
+    SYSTEM="$(curl -fs "http://127.0.0.1:$PORT/api/system")"
+    echo "$SYSTEM"
+    echo "$SYSTEM" | grep -q "\"app\":\"$KEY\"" || die "/api/system: not $NAME's server"
+    echo "$SYSTEM" | grep -q "$NAME.app/Contents/Frameworks/bin/ffmpeg" || die "/api/system: ffmpeg not from the bundle"
+    if [[ $KEY == seedbox ]]; then
+      echo "$SYSTEM" | grep -q "$NAME.app/Contents/Frameworks/bin/deno" || die "/api/system: deno not from the bundle"
+    fi
+    curl -fs "http://127.0.0.1:$PORT/" | grep -qi "data-app=\"$KEY\"" || die "/ does not serve $NAME's page"
+    kill $PID; wait $PID 2>/dev/null || true
+    trap - EXIT
+    echo "smoke test passed"
+  fi
+done
 
 # ---------------------------------------------------------------- DMG
+FIRST="$(app_name "${APPS%% *}")"
 if [[ $SKIP_DMG == 0 ]]; then
   step "DMG"
   STAGE="$WORK/dmg"
   rm -rf "$STAGE" && mkdir -p "$STAGE"
-  ditto "$APP" "$STAGE/Seedbox.app"
+  for KEY in $APPS; do ditto "$OUT/$(app_name "$KEY").app" "$STAGE/$(app_name "$KEY").app"; done
   ln -s /Applications "$STAGE/Applications"
   sed "s/{{MIN_MACOS}}/$MIN_OS/g" "$HERE/README-friends.md" > "$STAGE/Read Me First.txt"
-  DMG="$OUT/Seedbox-$VERSION-arm64.dmg"
+  DMG="$OUT/$FIRST-$VERSION-arm64.dmg"
   rm -f "$DMG"
-  hdiutil create -quiet -volname "Seedbox $VERSION" -srcfolder "$STAGE" -fs HFS+ -format ULMO -ov "$DMG"
+  hdiutil create -quiet -volname "$FIRST $VERSION" -srcfolder "$STAGE" -fs HFS+ -format ULMO -ov "$DMG"
   hdiutil verify -quiet "$DMG"
   rm -rf "$STAGE"
 fi
 
 step "done in $(( $(date +%s) - BUILD_T0 ))s"
-echo "app: $APP ($(du -sh "$APP" | awk '{print $1}'), macOS $MIN_OS+, Seedbox $VERSION)"
+for KEY in $APPS; do
+  APP="$OUT/$(app_name "$KEY").app"
+  echo "app: $APP ($(du -sh "$APP" | awk '{print $1}'), macOS $(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' \
+    "$APP/Contents/Info.plist")+, $(app_name "$KEY") $VERSION)"
+done
 [[ $SKIP_DMG == 1 ]] || echo "dmg: $DMG ($(du -h "$DMG" | awk '{print $1}'))"

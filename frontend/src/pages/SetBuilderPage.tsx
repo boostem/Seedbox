@@ -1,5 +1,5 @@
 // OWNER: FRONTEND-SET agent. Set builder: running order + transitions (left), track / mix detail (right), overview.
-import { Activity, AlertTriangle, AudioLines, AudioWaveform, Check, FolderOpen, Keyboard, Search, Sprout, Undo2, Wand2 } from "lucide-react";
+import { Activity, AlertTriangle, AudioLines, AudioWaveform, Check, FolderOpen, Keyboard, Undo2, Wand2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import { usePageTitle } from "@/components/shell/pageTitle";
@@ -206,7 +206,6 @@ export function SetBuilderPage({ folder }: { folder: string }) {
             <CrateLinksButton folder={set.folder} label={seed?.name ?? set.folder} />
             <IconButton icon={Activity} label={showOverview ? "Hide set overview" : "Show set overview"} active={showOverview} onClick={toggleOverview} />
             <IconButton icon={FolderOpen} label="Reveal crate in Finder" onClick={() => void api.reveal(set.path)} />
-            {set.seed_id && <IconButton icon={Sprout} label="More recommendations for this seed" onClick={() => navigate({ name: "crate", seedId: set.seed_id! })} />}
           </>
         }
       />
@@ -214,12 +213,7 @@ export function SetBuilderPage({ folder }: { folder: string }) {
         <EmptyState
           icon={AudioWaveform}
           title="This crate has no tracks yet"
-          description="Download some recommendations into it, then build the set here."
-          action={
-            <Button variant="primary" icon={Search} onClick={() => (set.seed_id ? navigate({ name: "crate", seedId: set.seed_id }) : navigate({ name: "search" }))}>
-              {set.seed_id ? "Open recommendations" : "Search"}
-            </Button>
-          }
+          description="Download some of its recommendations in Seedbox, then build the set here."
         />
       ) : (
         <>

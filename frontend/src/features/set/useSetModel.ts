@@ -34,7 +34,7 @@ export interface SetModel {
 const OVERRIDE_GRACE_MS = 2500; // keep showing our order while slower refetches (started before the PUT) land
 
 function conflictToast(): void {
-  toast.warning("A download is still running for this crate. Re-order once it has finished; the set keeps its current order.", { title: "Can't re-order yet", key: "set-order-409" });
+  toast.warning("Seedbox is still downloading into this crate. Re-order once it has finished; the set keeps its current order.", { title: "Can't re-order yet", key: "set-order-409" });
 }
 
 export function useSetModel(folder: string): SetModel {

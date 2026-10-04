@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from musicreco import pipeline
+from musicreco import library, pipeline
 from musicreco.models import DownloadResult, Score, Track
 
 from . import engine, serializers
@@ -202,7 +202,8 @@ class JobManager:
                 if job.cancel.is_set():
                     break
             if acquired and not job.cancel.is_set():
-                self._download(job)
+                with library.crate_busy(job.seed_dir):  # Setbox (another process) holds off reordering meanwhile
+                    self._download(job)
             else:
                 for item in job.items.values():
                     self._update(job, item.track, "cancelled")

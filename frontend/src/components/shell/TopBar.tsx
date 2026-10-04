@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, CircleArrowUp } from "lucide-react";
 import { Button, IconButton, Spinner, StatusDot, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { href, type Route, useRoute } from "@/lib/router";
+import { APP_NAME, isSeedbox } from "@/lib/appMode";
 import { type ConnectionState, useActiveJobs, useApp } from "@/store/app";
 import { runYtdlpUpdate, useYtdlpPendingRestart, useYtdlpUpdate, ytdlpOutdated } from "@/store/system";
 import { usePageTitleStore } from "./pageTitle";
@@ -20,10 +21,10 @@ const TITLES: Record<Route["name"], string> = {
 };
 
 const CONNECTION: Record<ConnectionState, { tone: "ok" | "warn" | "danger" | "neutral"; label: string; help: string }> = {
-  connecting: { tone: "neutral", label: "Connecting", help: "Connecting to the Seedbox engine…" },
+  connecting: { tone: "neutral", label: "Connecting", help: `Connecting to the ${APP_NAME} engine…` },
   live: { tone: "ok", label: "Live", help: "Connected: live updates on" },
   reconnecting: { tone: "warn", label: "Reconnecting", help: "Lost the event stream, retrying" },
-  offline: { tone: "danger", label: "Offline", help: "The Seedbox engine isn't responding" },
+  offline: { tone: "danger", label: "Offline", help: `The ${APP_NAME} engine isn't responding` },
 };
 
 function PreviewActivity() {
@@ -120,7 +121,7 @@ export function TopBar() {
       <div className="flex shrink-0 items-center gap-4">
         <JobActivity />
         <PreviewActivity />
-        <YtdlpStatus />
+        {isSeedbox && <YtdlpStatus />}
         <span className="h-4 w-px bg-line-strong" />
         {mock ? (
           <Tooltip content="VITE_MOCK=1: fixtures + simulated events, no backend">

@@ -6,6 +6,7 @@
 import { useEffect, useReducer } from "react";
 import { ApiError, api } from "@/api/client";
 import type { TrackAnalysis } from "@/api/types";
+import { APP_NAME } from "@/lib/appMode";
 import { type AnalysisState, useApp } from "@/store/app";
 
 export type AnalysisView =
@@ -56,7 +57,7 @@ function load(folder: string, id: string): Promise<void> {
           ? e.status === 503
             ? "Audio analysis isn't available in this build."
             : e.isNetwork
-              ? "Can't reach the Seedbox engine."
+              ? `Can't reach the ${APP_NAME} engine.`
               : e.message
           : String(e);
       errors.set(key, msg);

@@ -1,6 +1,7 @@
 import { Download, Library, ListMusic, type LucideIcon, Search, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { CoverArt, KeyBadge, Spinner } from "@/components/ui";
+import { APP_NAME, isSetbox } from "@/lib/appMode";
 import { cn } from "@/lib/cn";
 import { comboLabel } from "@/lib/hotkeys";
 import { href, Link, type Route, useRoute } from "@/lib/router";
@@ -38,28 +39,35 @@ export function Sidebar() {
     <aside className="flex w-[212px] shrink-0 flex-col border-r border-line bg-panel">
       <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-line px-3.5">
         <Logo />
-        <span className="text-[15px] font-semibold tracking-tight">Seedbox</span>
+        <span className="text-[15px] font-semibold tracking-tight">{APP_NAME}</span>
         {version && <span className="mt-0.5 text-2xs text-fg-faint num">v{version}</span>}
       </div>
-      <nav className="flex flex-col gap-0.5 px-2 pt-3">
-        <NavItem to={{ name: "search" }} icon={Search} label="Search" combo="Mod+1" active={route.name === "search" || route.name === "crate"} />
-        <NavItem to={{ name: "crates" }} icon={Library} label="Crates" combo="Mod+2" active={route.name === "crates" || route.name === "set"} />
-        <NavItem to={{ name: "setlists" }} icon={ListMusic} label="Setlists" combo="Mod+3" active={route.name === "setlists" || route.name === "setlist"} />
-        <NavItem
-          to={active.length === 1 ? { name: "downloads", jobId: active[0].job_id } : { name: "downloads", jobId: "" }}
-          icon={Download}
-          label="Downloads"
-          active={route.name === "downloads"}
-          trailing={
-            active.length ? (
-              <span className="inline-flex items-center gap-1 text-2xs text-accent-hover num">
-                <Spinner size={10} />
-                {done}/{total}
-              </span>
-            ) : undefined
-          }
-        />
-      </nav>
+      {isSetbox ? (
+        <nav className="flex flex-col gap-0.5 px-2 pt-3">
+          <NavItem to={{ name: "crates" }} icon={Library} label="Crates" combo="Mod+1" active={route.name === "crates" || route.name === "set"} />
+          <NavItem to={{ name: "setlists" }} icon={ListMusic} label="Setlists" combo="Mod+2" active={route.name === "setlists" || route.name === "setlist"} />
+        </nav>
+      ) : (
+        <nav className="flex flex-col gap-0.5 px-2 pt-3">
+          <NavItem to={{ name: "search" }} icon={Search} label="Search" combo="Mod+1" active={route.name === "search" || route.name === "crate"} />
+          <NavItem to={{ name: "crates" }} icon={Library} label="Crates" combo="Mod+2" active={route.name === "crates"} />
+          <NavItem
+            to={active.length === 1 ? { name: "downloads", jobId: active[0].job_id } : { name: "downloads", jobId: "" }}
+            icon={Download}
+            label="Downloads"
+            combo="Mod+3"
+            active={route.name === "downloads"}
+            trailing={
+              active.length ? (
+                <span className="inline-flex items-center gap-1 text-2xs text-accent-hover num">
+                  <Spinner size={10} />
+                  {done}/{total}
+                </span>
+              ) : undefined
+            }
+          />
+        </nav>
+      )}
 
       <div className="mt-5 flex min-h-0 flex-1 flex-col">
         <div className="label-caps flex items-center justify-between px-4 pb-1.5">
@@ -68,11 +76,13 @@ export function Sidebar() {
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-2 scroll-thin">
           {recent.map((c) => {
-            const isActive = route.name === "set" && route.folder === c.folder;
+            // Setbox opens the crate's set; Seedbox its seed's recommendations (crates without a seed: the list)
+            const to: Route = isSetbox ? { name: "set", folder: c.folder } : c.seed ? { name: "crate", seedId: c.seed.id } : { name: "crates" };
+            const isActive = isSetbox ? route.name === "set" && route.folder === c.folder : route.name === "crate" && route.seedId === c.seed?.id;
             return (
               <a
                 key={c.folder}
-                href={href({ name: "set", folder: c.folder })}
+                href={href(to)}
                 draggable={false}
                 title={c.folder}
                 className={cn(
@@ -89,7 +99,9 @@ export function Sidebar() {
               </a>
             );
           })}
-          {crates && crates.length === 0 && <p className="px-2 py-1 text-xs text-fg-faint">No crates yet: search for a seed track.</p>}
+          {crates && crates.length === 0 && (
+            <p className="px-2 py-1 text-xs text-fg-faint">{isSetbox ? "No crates yet: download some with Seedbox." : "No crates yet: search for a seed track."}</p>
+          )}
         </div>
       </div>
 

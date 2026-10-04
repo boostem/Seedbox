@@ -775,7 +775,7 @@ def render(entries: list[SetEntry], plans: list[dict], out_path: Path, *, title:
     fmt = "mp3" if enc.codec == "libmp3lame" else "m4a"
     if fmt == "mp3":
         try:
-            _tag(out_path, title or "Seedbox mix", info, entries)
+            _tag(out_path, title or "Setbox mix", info, entries)
         except Exception as e:  # noqa: BLE001 - tags are a nicety
             log.warning("couldn't tag %s: %s", out_path.name, e)
     report(1.0, "Done")
@@ -795,7 +795,7 @@ def _ts(t: float, frames: bool = False) -> str:
 def cue_sheet(result: dict, title: str, audio_name: str) -> str:
     """A .cue sheet for the mix file (INDEX 01 = where each track takes over)."""
     q = lambda s: str(s).replace('"', "'")  # noqa: E731
-    lines = ['PERFORMER "Seedbox"', f'TITLE "{q(title)}"',
+    lines = ['PERFORMER "Setbox"', f'TITLE "{q(title)}"',
              f'FILE "{q(audio_name)}" {"MP3" if audio_name.lower().endswith(".mp3") else "WAVE"}']
     for n, tr in enumerate(result["tracks"], 1):
         lines += [f"  TRACK {n:02d} AUDIO", f'    TITLE "{q(tr["name"])}"',
@@ -815,7 +815,7 @@ def tracklist(result: dict, title: str) -> str:
             how = f"   ← {style}" + (f" ({', '.join(detail)})" if detail else "")
         lines.append(f"{_ts(tr['start_s']):>8}  {n:2d}. {tr['display_name']}  [{tr['camelot'] or '?'} · "
                      f"{round(tr['bpm']) if tr['bpm'] else '?'} BPM]{how}")
-    lines += ["", "Mixed with Seedbox."]
+    lines += ["", "Mixed with Setbox."]
     return "\n".join(lines) + "\n"
 
 
@@ -830,8 +830,8 @@ def _tag(path: Path, title: str, info: dict, entries: list[SetEntry]) -> None:
         tags = ID3()
     tags.delall("TIT2")
     tags.add(TIT2(encoding=3, text=title))
-    tags.add(TPE1(encoding=3, text="Seedbox"))
-    tags.add(TPE2(encoding=3, text="Seedbox"))
+    tags.add(TPE1(encoding=3, text="Setbox"))
+    tags.add(TPE2(encoding=3, text="Setbox"))
     tags.add(TALB(encoding=3, text=title))
     tags.add(COMM(encoding=3, lang="eng", desc="Tracklist", text=tracklist(info, title)))
     total_ms = int(info["duration_s"] * 1000)

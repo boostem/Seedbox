@@ -1,4 +1,4 @@
-# Seedbox TODO
+# Seedbox / Setbox TODO
 
 ## Done (2026-10-03)
 - [x] **Full set mix render**: the whole set as one continuous MP3 (every transition's MixPlan back to back, set-wide
@@ -74,6 +74,19 @@
 - [x] **Hip-hop tempos**: tunebat tempos of 70-89 BPM keep their own bars (ANALYSIS_VERSION 6). They used to be
       folded to double time, so an 86 BPM song got 8-bar "16-bar blends" and mixed against a 91 BPM one as half time.
 
+## Done (2026-10-04: two apps)
+- [x] **Seedbox and Setbox**: finding, previewing, downloading and tagging stay in Seedbox (`python -m seedbox`);
+      the set builder, transitions, vocal stems, set mixes and setlists move to Setbox (`python -m setbox`, package
+      `setbox/`). One repo, one engine, one crates folder and settings file; each app has its own window, page,
+      navigation, hotkeys, settings, logo, icon, log and dev port. Seedbox no longer loads PyTorch or the mix engine.
+- [x] **Two processes, one crates folder**: the crate lock is now a file lock as well, so a finished download and a
+      Setbox reorder never rewrite a crate at the same time; Setbox refuses to reorder while Seedbox downloads into
+      that crate (a finished download re-sorts it); Setbox notices Seedbox's changes within ~3 s and refreshes.
+- [x] **Quitting mid-split no longer crashes**: once the server has stopped the process exits straight away; the
+      normal teardown aborted while a vocal split was inside PyTorch (a crash report on macOS).
+- [x] Packaging builds both apps (Seedbox.app without PyTorch, Setbox.app without deno) into one DMG.
+      Not built on a Mac yet: the script was checked with stand-in macOS tools and a dry run of the spec.
+
 ## Machine learning plan (researched 2026-10-03)
 What the research says: no released model predicts a whole transition plan from audio (the one learned transition
 generator, DJtransGAN, rated no better than rules in its own listening test), and commercial auto-mixers (djay
@@ -120,6 +133,13 @@ Open-Unmix (old, lower quality), madmom / BeatNet (broken installs, non-commerci
 NATTEN build issues), CLAP / MERT, TensorFlow builds (0.4-1.1 GB), and bundling Essentia's AGPL library.
 
 ## Next up (ideas)
+- [ ] **Build Seedbox.app + Setbox.app on the Mac** (`packaging/build.sh --release`) and check both start, and that
+      Seedbox.app really runs without PyTorch (its smoke test only covers start-up and `/api/system`).
+- [ ] **Open in the other app**: a "Build the set in Setbox" button on a Seedbox crate (and "Find more songs in
+      Seedbox" in Setbox) that launches or focuses the other app on that crate (a URL scheme or a tiny local
+      handshake on the known ports).
+- [ ] Seedbox still imports yt-dlp in Setbox's process (`seedbox.engine` imports `musicreco.pipeline` at the top):
+      making that import lazy would trim Setbox's start-up a little.
 - [ ] **Key shift for clashing keys**: transpose a deck ±1-2 semitones with Rubber Band (key lock already runs every
       deck through it) so a clash becomes a same-key / ±1 blend (e.g. 8A → 3A: B down a semitone = 8A). In a set
       the shift has to hold for the track's whole run, so the planner picks it per track, not per pair.

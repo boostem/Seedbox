@@ -4,6 +4,7 @@
  */
 import type { EventStream } from "@/api/client";
 import type { Crate, CrateLink, CrateSet, Job, JobItem, MixPlan, Partner, PreviewStatus, ServerEvent, Setlist, SetMix, Settings, SetTrack, SystemStatus, Track } from "@/api/types";
+import { APP } from "@/lib/appMode";
 import { mockAnalysis, mockTransition } from "./analysis";
 import { emitRenderProgress, generateMixPlan, mockRender, mockStyle, validateMixPlan } from "./mixplan";
 import { crateSummary, energyRatings, FAVOUR, genreFor, HOME, initialCrates, type MockCrate, orderSet, POOL, recsFor, sanitize, SEARCH_PAGE } from "./data";
@@ -34,6 +35,7 @@ const settings: Settings = {
 };
 
 const system: SystemStatus = {
+  app: APP,
   version: "0.3.0",
   ytdlp_version: "2026.09.12",
   ytdlp_latest: "2026.09.28",

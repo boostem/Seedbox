@@ -25,9 +25,9 @@ from typing import Any
 
 from musicreco import transitions
 
-from . import engine, serializers
+from seedbox import engine, serializers
 from .crates import ApiError, CrateService, NotFound, SetFile, resolve_crate
-from .events import EventBus
+from seedbox.events import EventBus
 
 log = logging.getLogger(__name__)
 

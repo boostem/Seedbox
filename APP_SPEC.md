@@ -334,7 +334,7 @@ with the "cut" advice reworded for blends.
   Quick cut: A out on the 1, nothing else (tempo gaps over 12% or when asked).
 - Clashing keys: 8 bars, A's mids out over bars 2-3 (its vocal with them), B's mids in over bars 4-5.
 
-## Stems (musicreco/stems.py, musicreco/separator.py, musicreco/roformer.py, seedbox/stems_queue.py)
+## Stems (musicreco/stems.py, musicreco/separator.py, musicreco/roformer.py, setbox/stems_queue.py)
 - Model (`separator.MODEL`): unwa's BS-RoFormer "Resurrection" vocal model (BS-RoFormer, dim 256, depth 12, 62
   bands, STFT 2048 / hop 512, chunks of 785,920 samples with overlap 2; MVSep multisong vocals SDR 11.34, the
   cleanest "bleedless" scores among the public RoFormers, so a muted vocal leaves little behind). Weights:
@@ -364,3 +364,74 @@ with the "cut" advice reworded for blends.
 - Analysis: `ANALYSIS_VERSION = 5` adds `kick_per_bar` and `bass_per_bar` (between-kick low level vs the bar's).
   `6`: the tunebat tempo is octave-corrected into 70-180 BPM (was 90-180), so 70-89 BPM hip-hop / R&B keeps its
   own bars instead of double-time ones (an 86 BPM song had 8-bar "16-bar blends" and 4-bar phrases).
+
+# v7: two apps, Seedbox and Setbox (user-approved 2026-10-04)
+
+The app split in two, in one repo, on one engine (`musicreco/`) and one crates folder:
+- **Seedbox** (`python -m seedbox`): find songs, search tunebat, seed crates with recommendations, previews,
+  download + tag jobs, yt-dlp updates.
+- **Setbox** (`python -m setbox`): the set builder (order, auto-order, partners), analysis, mix plans and rendered
+  transitions, vocal stems, full set mixes, setlists and crate links.
+
+## Packages
+- `seedbox/`: the launcher (`app.py`, both apps), the server (`server.py`: shared endpoints + Seedbox's), the shared
+  crate helpers (`crates.py`: path containment, scan, covers, track JSON) and Seedbox's services (tunebat, jobs,
+  updater).
+- `setbox/`: Setbox's services, moved from `seedbox/` (`analysis_queue`, `crates` (CrateService), `mixes`,
+  `setlists`, `setmixes`, `stems_queue`), its endpoints (`routes.register`), the crate watcher (`watcher.py`) and
+  `__main__` (`seedbox.app.main(app="setbox")`). Seedbox never imports `setbox` (lazily imported by
+  `create_app(app="setbox")`), so it never loads the analysis, mix or stem code, PyTorch included.
+
+## Server
+- `create_app(settings, static_dir, app="seedbox"|"setbox", ...)`. Shared: health, system (`app` field), settings,
+  pick-folder, crates list, covers, files, reveal, events, the SPA (`index.html` for Seedbox, `setbox.html` for
+  Setbox). Seedbox only: search, tunebat seed / crate (`/api/crates/new/{seed_id}`), previews, jobs, yt-dlp update
+  (its `AppState` builds the tunebat client, the job manager and the preview event thread). Setbox only: every set,
+  analysis, mix, render, stems, setmix and setlist endpoint. An endpoint of the other app is a 404.
+- Setbox doesn't report yt-dlp (`ytdlp_version: ""`) or ask PyPI about it. `AppState.on_root_change` /
+  `on_shutdown` hooks let `setbox.routes` forget and stop its services.
+- `python -m seedbox.server --app setbox` (default port 8766; Seedbox 8765).
+
+## Launcher (seedbox/app.py)
+| App | Dev port | Vite (dev) | Page | Log | Dock icon from source |
+|---|---|---|---|---|---|
+| Seedbox | 8765 | http://localhost:5173 | index.html | ~/Library/Logs/Seedbox/seedbox.log | packaging/icon/seedbox-512.png |
+| Setbox | 8766 | http://localhost:5174/setbox.html | setbox.html | ~/Library/Logs/Setbox/setbox.log | packaging/icon/setbox-512.png |
+- Window title, menu name, error page and `--help` come from the profile. Seedbox only: `--update-ytdlp`,
+  `--self-test-clip`, `--no-migrate`, the legacy `downloads/` migration and the background yt-dlp check. Setbox's
+  `--self-test` reports ffmpeg, its modules and `vocal_stems` (available, why not, model downloaded).
+- Both share the settings file, `~/Library/Application Support/Seedbox/` and `~/Library/Caches/Seedbox/`.
+- After the server stops (window closed, Quit, SIGTERM), the process ends with `os._exit`: a vocal split still
+  inside PyTorch made the normal teardown abort ("terminate called without an active exception", a crash report
+  on macOS). Every output is written atomically (temp + rename), so nothing half-written stays behind.
+
+## Frontend
+- One Vite project, two HTML entries (`index.html` `data-app="seedbox"`, `setbox.html` `data-app="setbox"`, built
+  together via `rollupOptions.input`); `src/lib/appMode.ts` reads the attribute (`APP`, `isSetbox`, `APP_NAME`).
+  `deno task dev:setbox` / `dev:mock:setbox` (`SETBOX_DEV=1`: port 5174, proxy to 8766).
+- Per app: routes (a route of the other app shows "That's in Seedbox/Setbox"), sidebar, home (Seedbox: Search;
+  Setbox: Crates), hotkeys (Seedbox ⌘1 Search, ⌘2 Crates, ⌘3 Downloads, ⌘K search; Setbox ⌘1 Crates, ⌘2 Setlists),
+  crate links (Seedbox: the seed's crate; Setbox: the set), logo and favicon, settings (Setbox: Library,
+  Transitions (the BPM tolerance), System without yt-dlp / deno, Keyboard). No links between the apps.
+
+## Two processes, one crates folder (musicreco/library.py, setbox/watcher.py)
+- `library.crate_lock(seed_dir)` is a `CrateLock`: the in-process re-entrant lock plus, on the outermost hold, an
+  exclusive `flock` on `<support>/locks/<sha1 of the crate's real path>.lock`, so a finished download (renumber,
+  tags, CSV, playlists) and Setbox's reorders / energy tags never write a crate at the same time.
+- `library.crate_busy(seed_dir)`: Seedbox's job holds a shared `flock` on `<hash>.busy` while it downloads;
+  `library.crate_downloading(seed_dir)` probes it (non-blocking exclusive lock). Setbox's CrateService uses it as
+  `busy`: a reorder is a 409 ("Seedbox is still downloading into this crate"), and the energy back-fill waits for
+  the job. The OS drops the lock when the process ends, however it ends.
+- `CrateWatcher` (Setbox, every 3 s): one `stat` per crate folder; a folder whose mtime moved (or that changed in
+  the last 5 s) gets its `_signature` re-read, and a changed, new or removed crate is published as `set_changed`.
+
+## Packaging
+- `packaging/seedbox.spec` builds either app (`SEEDBOX_APP=seedbox|setbox`). Seedbox.app excludes `SETBOX_ONLY`
+  (setbox, torch, einops, pedalboard, scipy and musicreco's structure / transitions / mixplan / mixrender / setmix /
+  stems / separator / roformer) and bundles ffmpeg + deno; Setbox.app bundles ffmpeg (no deno) and all of
+  musicreco. Both keep yt-dlp: the launcher activates a downloaded yt-dlp before `seedbox.engine` imports it.
+  Bundle ids `app.seedbox.desktop` / `app.seedbox.setbox`; icons `packaging/icon/{Seedbox,Setbox}.icns`
+  (`make_icon.py seedbox|setbox|all`).
+- `packaging/build.sh [--app=seedbox|setbox]` builds both by default, smoke-tests each (`/api/system` app + bundled
+  ffmpeg (+ deno for Seedbox), `/` serves its page) and writes one DMG with both apps.
+- Set mixes are credited to Setbox (ID3 artist, `.cue` performer, "Mixed with Setbox.").

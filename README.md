@@ -1,9 +1,16 @@
-# Seedbox (desktop app)
+# Seedbox and Setbox (desktop apps)
 
-Seedbox is the desktop version of this tool. It runs the same engine (`musicreco/`) in a dark, DJ-style window.
-Search tunebat, open a seed's crate (20 s previews of every rec load in the background), tick and download. Then
-build the set: drag to reorder, with waveforms, intro/outro and mix-point analysis and suggested transitions. Under the
-hood it's a FastAPI server (`seedbox/`) on 127.0.0.1, with the React UI (`frontend/`) shown in a native pywebview window.
+Two desktop apps on the same engine (`musicreco/`) and the same crates folder, each in its own dark, DJ-style window:
+
+- **Seedbox** finds songs and builds crates. Search tunebat, open a seed's crate (20 s previews of every rec load in
+  the background), tick and download. The downloads are tagged MP3s (key, BPM, genre, energy), one folder per seed.
+- **Setbox** builds sets from those crates: the running order (drag to reorder, or auto-order), waveforms with
+  intro/outro and mix-point analysis, rendered transitions with vocal stems, full set mixes and setlists.
+
+Under the hood each one is a FastAPI server on 127.0.0.1 (`seedbox/server.py`; Setbox adds its endpoints from
+`setbox/`) with the React UI (`frontend/`, one Vite project with a page per app: `index.html` and `setbox.html`)
+shown in a native pywebview window. Seedbox never loads the analysis, mix or stem code (no PyTorch); Setbox never
+searches, previews or downloads.
 
 ### Run from source
 
@@ -11,25 +18,43 @@ Do the [Setup](#setup) below first (`.venv`, Homebrew `ffmpeg` + `deno`).
 
 ```sh
 (cd frontend && deno install && deno task build)   # once, and after frontend changes (writes frontend/dist)
-.venv/bin/python -m seedbox                        # opens the app window
+.venv/bin/python -m seedbox                        # Seedbox: find, preview, download, tag
+.venv/bin/python -m setbox                         # Setbox: sets, transitions, mixes, setlists
 ```
 
-To work on the UI with hot reload, use two terminals:
+The two can run at the same time. To work on a UI with hot reload, use two terminals per app:
 
 ```sh
-cd frontend && deno task dev          # Vite on http://localhost:5173, proxies /api to 127.0.0.1:8765
-.venv/bin/python -m seedbox --dev     # API on :8765; the window loads the Vite page
+cd frontend && deno task dev          # Seedbox UI: Vite on http://localhost:5173, proxies /api to 127.0.0.1:8765
+.venv/bin/python -m seedbox --dev     # Seedbox API on :8765; the window loads the Vite page
+
+cd frontend && deno task dev:setbox   # Setbox UI: Vite on http://localhost:5174/setbox.html, proxies /api to :8766
+.venv/bin/python -m setbox --dev      # Setbox API on :8766
 ```
 
-Other flags:
+`deno task dev:mock` and `deno task dev:mock:setbox` run either UI on mock data, with no backend.
+
+Other flags (both apps unless marked):
 - `--server-only [--port N]`: no window. Open the printed URL in a browser.
-- `--self-test [--self-test-clip]`: JSON diagnostics covering ffmpeg/deno, a YouTube Music search and the deno JS-challenge probe.
-- `--update-ytdlp`
+- `--self-test`: JSON diagnostics. Seedbox: ffmpeg/deno, a YouTube Music search and the deno JS-challenge probe
+  (`--self-test-clip` also converts a clip). Setbox: ffmpeg, the analysis and mix modules, and whether vocal
+  splitting can run here.
+- `--update-ytdlp` (Seedbox)
 - `--debug`
 
-`.venv/bin/python -m seedbox.server --port 8765 --dev` runs the bare API (no window, no built UI).
+`.venv/bin/python -m seedbox.server --app setbox --port 8766 --dev` runs Setbox's bare API (no window, no built
+UI); without `--app` it's Seedbox's, on 8765.
 
-### Transitions, full mixes and setlists
+### Running both
+
+- They share the settings file and the crates folder: changing the folder in either app changes it for both.
+- Crate writes are coordinated between the two processes. A file lock per crate (in
+  `~/Library/Application Support/Seedbox/locks/`) serialises tag, CSV and playlist rewrites. While Seedbox
+  downloads into a crate, Setbox won't reorder it, because the finished download re-sorts the crate.
+- Setbox watches the crates folder (one `stat` per crate folder every 3 s) and refreshes the crate list and the
+  open set when Seedbox adds songs or starts a crate.
+
+### Transitions, full mixes and setlists (Setbox)
 
 - **Chill mixes.** Every pair in the set builder has a rendered transition with editable automation (fader, 3-band
   EQ, filter, vocals, instrumental, tempo). Most are **phrase mixes**: a 16-bar blend done with the EQ alone. B's
@@ -66,34 +91,38 @@ Other flags:
   It lands in `<crates folder>/Mixes/<name>/` with a `.cue` sheet, a `.txt` tracklist and ID3 chapters. Rendering
   runs in the background (about a minute per 10 minutes of music on Apple Silicon); re-rendering an unchanged set is
   instant.
-- **Setlists.** Chain crates into one long set (*Setlists*, ⌘3, or *Link crates* on a set builder, which ranks how
+- **Setlists.** Chain crates into one long set (*Setlists*, ⌘2, or *Link crates* on a set builder, which ranks how
   well this crate's ending mixes into every other crate's start). Each crate keeps its own running order; the links
   between crates get their own editable transitions, *Auto-order crates* finds the best chain, and *Full mix* renders
   the whole setlist.
 
-### Build the app to share
+### Build the apps to share
 
 ```sh
-brew install uv                       # once
-packaging/build.sh --release          # → packaging/dist/Seedbox.app + Seedbox-<version>-arm64.dmg
+brew install uv                              # once
+packaging/build.sh --release                 # → packaging/dist/{Seedbox,Setbox}.app + Seedbox-<version>-arm64.dmg
+packaging/build.sh --release --app=setbox    # only one of them
 ```
 
 `--release` builds against a portable CPython in `packaging/.relvenv` (uv-managed, with package versions pinned
-to `.venv`). It bundles ffmpeg and deno, ad-hoc signs the app, runs a headless smoke test and writes the DMG. The
-app's minimum macOS (`LSMinimumSystemVersion`) is computed from the bundled binaries. Without `--release`, the build
-uses `.venv`'s Homebrew Python, and the app only runs on this Mac's macOS version or newer. Apple Silicon only.
+to `.venv`). Both apps come from `packaging/seedbox.spec` (`SEEDBOX_APP=seedbox|setbox`): Seedbox.app bundles
+ffmpeg and deno and leaves out PyTorch and the mix engine; Setbox.app bundles ffmpeg, PyTorch and the mix engine.
+The script ad-hoc signs each app, runs a headless smoke test on each and writes one DMG holding both. Each app's
+minimum macOS (`LSMinimumSystemVersion`) is computed from its bundled binaries. Without `--release`, the build uses
+`.venv`'s Homebrew Python, and the apps only run on this Mac's macOS version or newer. Apple Silicon only. The
+icons come from `packaging/icon/make_icon.py` (`seedbox`, `setbox` or `all`).
 
 ### Where things live
 
 | What | Where |
 |---|---|
 | Crates: MP3s, `tracks.csv`, `skipped.txt`, `.xml`, `.m3u8` | `~/Music/MusicReco/<Artists - Title of seed>/` (change it under Settings). The project's `downloads/` is a symlink to it: the first launch from source moved the old crates there. |
-| Crate metadata, analysis cache | `<crate>/.seedbox/` (`crate.json`, `analysis/<track id>.json`) |
-| Settings, downloaded yt-dlp updates | `~/Library/Application Support/Seedbox/` (`settings.json`, `pydeps/`) |
+| Crate metadata, analysis cache, vocal stems | `<crate>/.seedbox/` (`crate.json`, `analysis/<track id>.json`, `stems/`) |
+| Settings (both apps), the vocal model, downloaded yt-dlp updates, crate locks | `~/Library/Application Support/Seedbox/` (`settings.json`, `models/`, `pydeps/`, `locks/`) |
 | Rendered set mixes (MP3 + .cue + .txt) | `<crates folder>/Mixes/<name>/` (not a crate; index in `<crates folder>/.seedbox/setmixes.json`) |
 | Setlists | `<crates folder>/.seedbox/setlists/<id>.json` (+ `<id>/mixplans/` for edited crate-to-crate links) |
-| Preview clips (safe to delete) | `~/Library/Caches/Seedbox/previews/` (capped at 500 MB by default) |
-| Log | `~/Library/Logs/Seedbox/seedbox.log` |
+| Preview clips, rendered transitions (safe to delete) | `~/Library/Caches/Seedbox/previews/` (capped at 500 MB by default), `~/Library/Caches/Seedbox/renders/` |
+| Logs | `~/Library/Logs/Seedbox/seedbox.log`, `~/Library/Logs/Setbox/setbox.log` |
 
 For tests and scratch runs, `MUSICRECO_OUTPUT_ROOT` overrides the crates folder (it's never saved).
 `SEEDBOX_SUPPORT_DIR`, `SEEDBOX_CACHE_DIR` and `SEEDBOX_LOG_DIR` move the other folders. The terminal tool below
@@ -101,9 +130,10 @@ reads the same settings and writes to the same crates folder.
 
 ### Sharing the .dmg
 
-Send friends the `.dmg` from `packaging/dist/`. It isn't signed with an Apple developer account, so macOS blocks
-the first launch. [packaging/README-friends.md](packaging/README-friends.md) covers installing, opening it the first
-time, where files go and updating yt-dlp from Settings. It's included in the DMG as `Read Me First.txt`.
+Send friends the `.dmg` from `packaging/dist/`. The apps aren't signed with an Apple developer account, so macOS
+blocks the first launch of each. [packaging/README-friends.md](packaging/README-friends.md) covers installing,
+opening them the first time, where files go and updating yt-dlp from Settings. It's included in the DMG as
+`Read Me First.txt`.
 
 ---
 

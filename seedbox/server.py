@@ -1,12 +1,19 @@
-"""Seedbox HTTP API (FastAPI) around the musicreco engine; JSON shapes per frontend/src/api/types.ts.
+"""The HTTP API (FastAPI) of both apps around the musicreco engine; JSON shapes per frontend/src/api/types.ts.
+
+One server, two apps (`create_app(app=...)`), sharing the settings, the crates folder and the basics (system,
+settings, crates list, covers, audio files, reveal, events):
+- "seedbox": find songs, search tunebat, seed crates with recommendations, previews, download + tag jobs, yt-dlp.
+- "setbox": the set builder, mix plans and renders, vocal stems, set mixes, setlists (setbox/routes.py, imported
+  only then, so Seedbox never loads the analysis, mix or stem code).
 
 Threading model: every endpoint except the SSE stream is a plain `def`, so FastAPI runs it in its worker
 threadpool and the event loop never blocks on disk, tunebat or tag I/O. Long work runs on dedicated threads:
-one per download job (jobs.py), 1-2 analysis workers (analysis_queue.py) and the PreviewManager's own pool.
-Those threads report through the thread-safe EventBus, which hands events to each SSE client's asyncio queue.
+one per download job (jobs.py) and the PreviewManager's own pool in Seedbox; analysis workers, renders and the
+stem queue in Setbox. Those threads report through the thread-safe EventBus, which hands events to each SSE
+client's asyncio queue.
 
-Run:  python -m seedbox.server --port 8765 --dev [--static frontend/dist]
-Embed (app.py):  handle = start_server(settings, static_dir); set_folder_picker(fn); ...; handle.stop()
+Run:  python -m seedbox.server --port 8765 --dev [--static frontend/dist] [--app setbox]
+Embed (app.py):  handle = start_server(settings, static_dir, app=...); set_folder_picker(fn); ...; handle.stop()
 """
 
 from __future__ import annotations
@@ -27,7 +34,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import Body, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -42,23 +49,22 @@ updater.activate()  # before anything imports yt_dlp (`python -m seedbox.server`
 
 from musicreco import library  # noqa: E402
 from musicreco.models import Track  # noqa: E402
-from musicreco.tunebat import TunebatError  # noqa: E402
 
 from . import engine, serializers
-from .analysis_queue import AnalysisQueue
-from .crates import ApiError, CrateService, NotFound, inside, resolve_crate_file, track_json
+from .crates import ApiError, NotFound, crate_cover, inside, resolve_crate_file, summary_seed, track_json
 from .events import HEARTBEAT_S, EventBus
-from .jobs import Job, JobManager
-from .mixes import MixService
 from .serializers import JSON
-from .setlists import SetlistService
-from .setmixes import SetMixService
-from .stems_queue import StemQueue
-from .tunebat_service import TunebatService
+
+if TYPE_CHECKING:  # Seedbox only: imported where Seedbox's state is built, so Setbox never loads them
+    from .jobs import Job
+    from .tunebat_service import TunebatService
 
 log = logging.getLogger(__name__)
 
-DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"]
+APPS = ("seedbox", "setbox")
+APP_TITLES = {"seedbox": "Seedbox", "setbox": "Setbox"}
+APP_PAGES = {"seedbox": "index.html", "setbox": "setbox.html"}  # the built frontend's page for each app
 _TRACK_ID = re.compile(r"^[A-Za-z0-9]{1,64}$")
 
 
@@ -119,10 +125,6 @@ class JobRequest(BaseModel):
     track_ids: list[str]
 
 
-class OrderRequest(BaseModel):
-    track_ids: list[str]
-
-
 class RevealRequest(BaseModel):
     path: str
 
@@ -131,7 +133,9 @@ class RevealRequest(BaseModel):
 
 
 class AppState:
-    """Everything the endpoints share. One per app."""
+    """Everything the endpoints share. One per app: Seedbox's tunebat / jobs / previews exist only in Seedbox;
+    Setbox's services are added by setbox.routes.register (state.crates, .mixes, ...), which also hooks
+    on_root_change / on_shutdown."""
 
     def __init__(
         self,
@@ -140,30 +144,31 @@ class AppState:
         save_settings: Callable[[Any], None] | None,
         tunebat: TunebatService | None,
         heartbeat_s: float,
-        analysis_workers: int | None,
+        app: str = "seedbox",
     ) -> None:
+        self.app = app
         self.settings = settings
         self._cache_dir = cache_dir
         self.save_settings = save_settings or engine.save_settings
         self.bus = EventBus(heartbeat_s=heartbeat_s)
-        self.tunebat = tunebat or TunebatService()
-        self.analysis = AnalysisQueue(self.bus, workers=analysis_workers)
-        self.jobs = JobManager(self.bus, lambda: self.settings, on_finished=self._job_finished)
-        self.crates = CrateService(lambda: self.settings, self.analysis, self.bus, busy=self.jobs.busy)
-        self.mixes = MixService(self.crates, self.bus, lambda: self.cache_dir)
-        self.setlists = SetlistService(self.crates, self.mixes, self.bus)
-        self.setmixes = SetMixService(self.crates, self.mixes, self.setlists, self.bus)
-        # vocal splitting: songs in use first; the rest of a crate only while nothing renders
-        self.stems = StemQueue(self.bus, idle=lambda: not (self.mixes.busy() or self.setmixes.busy()))
-        self.crates.stems = self.stems
+        self.on_root_change: list[Callable[[], None]] = []  # the crates folder changed
+        self.on_shutdown: list[Callable[[], None]] = []
         self._lock = threading.RLock()
         self._previews: Any = None
         self._last_preload: list[Track] = []
-        # Every `preview` event goes through this one thread, in order: the manager's own status changes and the
-        # snapshots sent when a crate opens. A snapshot is read when its turn comes, so it can never overwrite a
-        # newer state that the manager reported before it.
+        self.tunebat: Any = None
+        self.jobs: Any = None
         self._preview_q: queue.SimpleQueue = queue.SimpleQueue()
-        threading.Thread(target=self._preview_events, name="seedbox-preview-events", daemon=True).start()
+        if app == "seedbox":
+            from .jobs import JobManager
+            from .tunebat_service import TunebatService
+
+            self.tunebat = tunebat or TunebatService()
+            self.jobs = JobManager(self.bus, lambda: self.settings, on_finished=self._job_finished)
+            # Every `preview` event goes through this one thread, in order: the manager's own status changes and the
+            # snapshots sent when a crate opens. A snapshot is read when its turn comes, so it can never overwrite a
+            # newer state that the manager reported before it.
+            threading.Thread(target=self._preview_events, name="seedbox-preview-events", daemon=True).start()
 
     @property
     def root(self) -> Path:
@@ -245,8 +250,8 @@ class AppState:
             self.save_settings(new)
             self.settings = new
             if Path(new.output_root) != Path(old.output_root):
-                self.analysis.forget()
-                self.stems.forget()
+                for fn in self.on_root_change:
+                    fn()
             self._apply_preview_settings(old, new)
         return new
 
@@ -268,18 +273,18 @@ class AppState:
     # jobs
 
     def _job_finished(self, job: Job) -> None:
-        self.crates.invalidate(job.seed_dir, rerated=True)  # finalize rewrote TRCK/POPM, keeping mtimes
-        self.bus.publish("set_changed", {"folder": job.folder})
-        self.crates.queue_analysis(job.seed_dir)
+        self.bus.publish("set_changed", {"folder": job.folder})  # Setbox re-reads the crate when it opens it
 
     def shutdown(self) -> None:
         self._preview_q.put(None)
         self.bus.close()
-        self.jobs.shutdown(timeout=2.0)
-        self.analysis.shutdown(timeout=1.0)
-        self.stems.shutdown(timeout=1.0)
-        self.setmixes.shutdown()
-        self.mixes.shutdown()
+        if self.jobs is not None:
+            self.jobs.shutdown(timeout=2.0)
+        for fn in self.on_shutdown:
+            try:
+                fn()
+            except Exception:  # noqa: BLE001 - shut the rest down anyway
+                log.exception("shutdown hook failed")
         with self._lock:
             mgr, self._previews = self._previews, None
         if mgr is not None:
@@ -299,13 +304,17 @@ def create_app(
     tunebat: TunebatService | None = None,
     heartbeat_s: float = HEARTBEAT_S,
     analysis_workers: int | None = None,
+    app: str = "seedbox",
 ) -> FastAPI:
-    """The Seedbox API.
+    """The API of `app`: "seedbox" (find, preview, download, tag) or "setbox" (sets, mixes, stems, setlists).
 
     `cache_dir` defaults to musicreco.settings.cache_dir() (previews go in <cache_dir>/previews), `save_settings`
     to musicreco.settings.save_settings; both are injectable for tests, as are the tunebat service and timings.
     """
-    state = AppState(settings, cache_dir, save_settings, tunebat, heartbeat_s, analysis_workers)
+    if app not in APPS:
+        raise ValueError(f"unknown app {app!r} (expected one of {', '.join(APPS)})")
+    which = app
+    state = AppState(settings, cache_dir, save_settings, tunebat, heartbeat_s, which)
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -314,12 +323,12 @@ def create_app(
         finally:
             await asyncio.to_thread(state.shutdown)
 
-    app = FastAPI(title="Seedbox", version=app_version(), lifespan=lifespan, docs_url="/api/docs" if dev else None,
+    app = FastAPI(title=APP_TITLES[which], version=app_version(), lifespan=lifespan, docs_url="/api/docs" if dev else None,
                   redoc_url=None, openapi_url="/api/openapi.json" if dev else None)  # fmt: skip
     app.state.seedbox = state
     if dev:
         app.add_middleware(CORSMiddleware, allow_origins=DEV_ORIGINS, allow_methods=["*"], allow_headers=["*"])
-    _add_error_handlers(app)
+    _add_error_handlers(app, tunebat=which == "seedbox")
 
     # ---- system + settings
 
@@ -329,30 +338,23 @@ def create_app(
 
     @app.get("/api/system")
     def system() -> Response:
-        yt = ytdlp_fields()
+        # yt-dlp is Seedbox's: Setbox doesn't report it or ask PyPI about it
+        yt = ytdlp_fields() if which == "seedbox" else {}
         return JSON({
+            "app": which,
             "version": app_version(),
-            "ytdlp_version": str(yt.get("ytdlp_version") or "unknown"),
+            "ytdlp_version": str(yt.get("ytdlp_version") or "unknown") if which == "seedbox" else "",
             "ytdlp_latest": yt.get("ytdlp_latest"),
             "ffmpeg": engine.ffmpeg_path(),
             "deno": engine.deno_path(),
             "output_root": str(state.root),
         })  # fmt: skip
 
-    @app.post("/api/system/update-ytdlp")
-    def update_ytdlp() -> Response:
-        fn = getattr(_updater(), "update_ytdlp", None)
-        if not callable(fn):
-            raise ApiError("yt-dlp updates aren't available in this build", 501)
-        result = fn()  # {ok, version, message}; never raises, refuses a second concurrent update itself
-        return JSON({"ok": bool(result.get("ok")), "version": str(result.get("version") or ""),
-                     "message": str(result.get("message") or "")})  # fmt: skip
-
     @app.post("/api/system/pick-folder")
     def pick_folder(body: dict | None = Body(None)) -> Response:  # noqa: B008
         picker = _folder_picker
         if picker is None:
-            raise ApiError("choosing a folder needs the Seedbox window (not available in a browser)", 501)
+            raise ApiError(f"choosing a folder needs the {APP_TITLES[which]} window (not available in a browser)", 501)
         initial = (body or {}).get("initial") if isinstance(body, dict) else None
         if not isinstance(initial, str) or not Path(initial).expanduser().is_dir():
             initial = str(state.root) if state.root.is_dir() else str(Path.home())
@@ -377,124 +379,143 @@ def create_app(
     def put_settings(patch: dict = Body(...)) -> Response:  # noqa: B008
         return JSON(engine.settings_to_json(state.update_settings(patch)))
 
-    # ---- search + crate
+    # ---- Seedbox: find songs, search, seed crates, previews, download + tag jobs
 
-    @app.get("/api/search")
-    def search(term: str = Query(..., min_length=1), page: int = Query(1, ge=1, le=1000)) -> Response:
-        return JSON(serializers.search_page(state.tunebat.lookup(term, page)))
+    if which == "seedbox":
+        @app.post("/api/system/update-ytdlp")
+        def update_ytdlp() -> Response:
+            fn = getattr(_updater(), "update_ytdlp", None)
+            if not callable(fn):
+                raise ApiError("yt-dlp updates aren't available in this build", 501)
+            result = fn()  # {ok, version, message}; never raises, refuses a second concurrent update itself
+            return JSON({"ok": bool(result.get("ok")), "version": str(result.get("version") or ""),
+                         "message": str(result.get("message") or "")})  # fmt: skip
 
-    @app.get("/api/crates/new/{seed_id}")
-    def new_crate(seed_id: str) -> Response:
-        _check_id(seed_id)
-        settings = state.settings  # read once: a PUT /api/settings applies from the next crate open
-        tol = float(settings.bpm_tolerance)
-        pretick_all = bool(getattr(settings, "pretick_all", False))
-        detail = state.tunebat.get_track(seed_id)
-        seed = detail.seed
-        recs, scores = engine.rank(seed, engine.unique_recs(seed, detail.recommended), tol)
-        folder = engine.crate_folder_name(seed)
-        path = state.root / folder
-        index = library.LibraryIndex(path) if path.is_dir() else None
+        # ---- search + crate
 
-        def existing(t: Track) -> Path | None:
-            if index is None:
-                return None
-            here = [p for p in index.find(t.id) if p.parent == path]
-            return here[0] if here else None
+        @app.get("/api/search")
+        def search(term: str = Query(..., min_length=1), page: int = Query(1, ge=1, le=1000)) -> Response:
+            return JSON(serializers.search_page(state.tunebat.lookup(term, page)))
 
-        crate = {
-            "folder": folder,
-            "path": str(path),
-            "seed": serializers.track(seed),
-            "seed_existing_path": str(p) if (p := existing(seed)) else None,
-            "recs": [serializers.rec(t, scores[t.id], engine.passes_rule(seed, t, tol)[1], existing(t), pretick_all)
-                     for t in recs],
-        }
-        state.preload([seed, *recs])
-        return JSON(crate)
+        @app.get("/api/crates/new/{seed_id}")
+        def new_crate(seed_id: str) -> Response:
+            _check_id(seed_id)
+            settings = state.settings  # read once: a PUT /api/settings applies from the next crate open
+            tol = float(settings.bpm_tolerance)
+            pretick_all = bool(getattr(settings, "pretick_all", False))
+            detail = state.tunebat.get_track(seed_id)
+            seed = detail.seed
+            recs, scores = engine.rank(seed, engine.unique_recs(seed, detail.recommended), tol)
+            folder = engine.crate_folder_name(seed)
+            path = state.root / folder
+            index = library.LibraryIndex(path) if path.is_dir() else None
 
-    # ---- previews
+            def existing(t: Track) -> Path | None:
+                if index is None:
+                    return None
+                here = [p for p in index.find(t.id) if p.parent == path]
+                return here[0] if here else None
 
-    @app.get("/api/previews")
-    def preview_statuses(ids: str = Query("", max_length=20_000)) -> Response:
-        wanted = list(dict.fromkeys(i for i in (x.strip() for x in ids.split(",")) if i))
-        if len(wanted) > 500:
-            raise ApiError("at most 500 ids per request")
-        for tid in wanted:
-            _check_id(tid)
-        mgr = state.previews()
-        return JSON([mgr.status(tid) for tid in wanted])
+            crate = {
+                "folder": folder,
+                "path": str(path),
+                "seed": serializers.track(seed),
+                "seed_existing_path": str(p) if (p := existing(seed)) else None,
+                "recs": [serializers.rec(t, scores[t.id], engine.passes_rule(seed, t, tol)[1], existing(t), pretick_all)
+                         for t in recs],
+            }
+            state.preload([seed, *recs])
+            return JSON(crate)
 
-    @app.get("/api/previews/{track_id}")
-    def preview_status(track_id: str) -> Response:
-        _check_id(track_id)
-        return JSON(state.previews().status(track_id))
+        # ---- previews
 
-    @app.post("/api/previews/{track_id}/prioritize")
-    def preview_prioritize(track_id: str) -> Response:
-        _check_id(track_id)
-        mgr = state.previews()
-        if engine.accepts(mgr.prioritize, "track"):
-            return JSON(mgr.prioritize(track_id, state.tunebat.track(track_id)))
-        return JSON(mgr.prioritize(track_id))
+        @app.get("/api/previews")
+        def preview_statuses(ids: str = Query("", max_length=20_000)) -> Response:
+            wanted = list(dict.fromkeys(i for i in (x.strip() for x in ids.split(",")) if i))
+            if len(wanted) > 500:
+                raise ApiError("at most 500 ids per request")
+            for tid in wanted:
+                _check_id(tid)
+            mgr = state.previews()
+            return JSON([mgr.status(tid) for tid in wanted])
 
-    @app.get("/api/previews/{track_id}/audio")
-    def preview_audio(track_id: str) -> Response:
-        _check_id(track_id)
-        path = state.previews().audio_path(track_id)
-        if path is None or not Path(path).is_file():
-            raise NotFound("preview not ready")
-        if not inside(Path(path), state.cache_dir):
-            raise ApiError("preview outside the cache folder", 403)
-        return FileResponse(path, media_type="audio/mp4")
+        @app.get("/api/previews/{track_id}")
+        def preview_status(track_id: str) -> Response:
+            _check_id(track_id)
+            return JSON(state.previews().status(track_id))
 
-    # ---- jobs
+        @app.post("/api/previews/{track_id}/prioritize")
+        def preview_prioritize(track_id: str) -> Response:
+            _check_id(track_id)
+            mgr = state.previews()
+            if engine.accepts(mgr.prioritize, "track"):
+                return JSON(mgr.prioritize(track_id, state.tunebat.track(track_id)))
+            return JSON(mgr.prioritize(track_id))
 
-    @app.post("/api/jobs")
-    def start_job(req: JobRequest) -> Response:
-        _check_id(req.seed_id)
-        if not req.track_ids:
-            raise ApiError("no tracks selected")
-        tol = float(state.settings.bpm_tolerance)
-        detail = state.tunebat.get_track(req.seed_id)
-        seed = detail.seed
-        recs, scores = engine.rank(seed, engine.unique_recs(seed, detail.recommended), tol)
-        everything = [seed, *recs]
-        known = {t.id for t in everything}
-        if req.seed_id not in known:  # tunebat answered with a relinked ID for the seed
-            known.add(req.seed_id)
-        unknown = [i for i in req.track_ids if i not in known]
-        if unknown:
-            raise ApiError(f"not part of this crate: {', '.join(unknown[:5])}")
-        wanted = set(req.track_ids)
-        if req.seed_id in wanted:
-            wanted.add(seed.id)
-        selected = [t for t in everything if t.id in wanted]
-        try:
-            job = state.jobs.start(seed, recs, scores, selected, library.seed_dir(seed, root=state.root))
-        except RuntimeError as e:
-            raise ApiError(str(e), 503) from e
-        return JSON(job.to_json())
+        @app.get("/api/previews/{track_id}/audio")
+        def preview_audio(track_id: str) -> Response:
+            _check_id(track_id)
+            path = state.previews().audio_path(track_id)
+            if path is None or not Path(path).is_file():
+                raise NotFound("preview not ready")
+            if not inside(Path(path), state.cache_dir):
+                raise ApiError("preview outside the cache folder", 403)
+            return FileResponse(path, media_type="audio/mp4")
 
-    @app.get("/api/jobs")
-    def list_jobs() -> Response:
-        return JSON([j.to_json() for j in state.jobs.list()])
+        # ---- jobs
 
-    @app.get("/api/jobs/{job_id}")
-    def get_job(job_id: str) -> Response:
-        job = state.jobs.get(job_id)
-        if job is None:
-            raise NotFound("no such job")
-        return JSON(job.to_json())
+        @app.post("/api/jobs")
+        def start_job(req: JobRequest) -> Response:
+            _check_id(req.seed_id)
+            if not req.track_ids:
+                raise ApiError("no tracks selected")
+            tol = float(state.settings.bpm_tolerance)
+            detail = state.tunebat.get_track(req.seed_id)
+            seed = detail.seed
+            recs, scores = engine.rank(seed, engine.unique_recs(seed, detail.recommended), tol)
+            everything = [seed, *recs]
+            known = {t.id for t in everything}
+            if req.seed_id not in known:  # tunebat answered with a relinked ID for the seed
+                known.add(req.seed_id)
+            unknown = [i for i in req.track_ids if i not in known]
+            if unknown:
+                raise ApiError(f"not part of this crate: {', '.join(unknown[:5])}")
+            wanted = set(req.track_ids)
+            if req.seed_id in wanted:
+                wanted.add(seed.id)
+            selected = [t for t in everything if t.id in wanted]
+            try:
+                job = state.jobs.start(seed, recs, scores, selected, library.seed_dir(seed, root=state.root))
+            except RuntimeError as e:
+                raise ApiError(str(e), 503) from e
+            return JSON(job.to_json())
 
-    @app.delete("/api/jobs/{job_id}")
-    def cancel_job(job_id: str) -> Response:
-        job = state.jobs.cancel(job_id)
-        if job is None:
-            raise NotFound("no such job")
-        return JSON(job.to_json())
+        @app.get("/api/jobs")
+        def list_jobs() -> Response:
+            return JSON([j.to_json() for j in state.jobs.list()])
 
-    # ---- crate library + set builder
+        @app.get("/api/jobs/{job_id}")
+        def get_job(job_id: str) -> Response:
+            job = state.jobs.get(job_id)
+            if job is None:
+                raise NotFound("no such job")
+            return JSON(job.to_json())
+
+        @app.delete("/api/jobs/{job_id}")
+        def cancel_job(job_id: str) -> Response:
+            job = state.jobs.cancel(job_id)
+            if job is None:
+                raise NotFound("no such job")
+            return JSON(job.to_json())
+
+    # ---- Setbox: the set builder, mixes, stems, set mixes, setlists (only now imported)
+
+    else:
+        from setbox.routes import register
+
+        register(app, state, analysis_workers=analysis_workers)
+
+    # ---- the crates folder (both apps)
 
     @app.get("/api/crates")
     def crates() -> Response:
@@ -503,157 +524,16 @@ def create_app(
             out.append({
                 "folder": c["folder"],
                 "path": str(c["path"]),
-                "seed": state.crates.summary_seed(Path(c["path"]), track_json(c.get("seed"))),
+                "seed": summary_seed(Path(c["path"]), track_json(c.get("seed"))),
                 "track_count": int(c.get("track_count") or 0),
                 "updated_at": str(c.get("updated_at") or ""),
             })  # fmt: skip
         return JSON(out)
 
-    def with_styles(data: dict) -> dict:
-        """CrateSet + the planned style of each transition (the set's style chain) and, in chill mode, its plan's notes
-        (what the mix will do: the suggestion's own notes describe a hand-mixing recipe); the set works without them."""
-        try:
-            summaries = state.mixes.crate_summaries(data["folder"])
-        except Exception:  # noqa: BLE001
-            log.exception("planning the styles of %s failed", data.get("folder"))
-            return data
-        for t, (st, notes) in zip(data["transitions"], summaries):
-            t["style"] = st
-            t["plan_notes"] = notes
-        return data
-
-    @app.get("/api/crates/{folder}/set")
-    def crate_set(folder: str) -> Response:
-        return JSON(with_styles(state.crates.crate_set(folder)))
-
-    @app.put("/api/crates/{folder}/order")
-    def crate_order(folder: str, req: OrderRequest) -> Response:
-        return JSON(with_styles(state.crates.set_order(folder, req.track_ids)))
-
-    @app.post("/api/crates/{folder}/auto-order")
-    def crate_auto_order(folder: str) -> Response:
-        return JSON(with_styles(state.crates.auto_order(folder)))
-
-    @app.get("/api/crates/{folder}/stems")
-    def crate_stems(folder: str) -> Response:
-        return JSON(state.crates.stems_status(folder))
-
-    @app.get("/api/crates/{folder}/partners/{track_id}")
-    def crate_partners(folder: str, track_id: str, direction: str = Query("out")) -> Response:
-        return JSON(state.crates.partners(folder, track_id, direction))
-
-    # ---- v4 mix plans + rendered transitions
-
-    @app.get("/api/crates/{folder}/mix/{from_id}/{to_id}")
-    def mix_plan(folder: str, from_id: str, to_id: str, technique: str | None = Query(None),
-                 bars: int | None = Query(None), style: str | None = Query(None),
-                 swap: str | None = Query(None)) -> Response:  # fmt: skip
-        return JSON(state.mixes.plan(folder, from_id, to_id, technique, bars, style, swap))
-
-    @app.put("/api/crates/{folder}/mix/{from_id}/{to_id}")
-    def mix_save(folder: str, from_id: str, to_id: str, body: Any = Body(...)) -> Response:  # noqa: B008
-        return JSON(state.mixes.save(folder, from_id, to_id, body))
-
-    @app.delete("/api/crates/{folder}/mix/{from_id}/{to_id}")
-    def mix_reset(folder: str, from_id: str, to_id: str) -> Response:
-        return JSON(state.mixes.delete(folder, from_id, to_id))
-
-    @app.post("/api/crates/{folder}/mix/{from_id}/{to_id}/render")
-    def mix_render(folder: str, from_id: str, to_id: str, body: Any = Body(None)) -> Response:  # noqa: B008
-        return JSON(state.mixes.render(folder, from_id, to_id, body))
-
-    @app.get("/api/renders/{render_id}.m4a")
-    def render_audio(render_id: str) -> Response:
-        return FileResponse(state.mixes.audio_path(render_id), media_type="audio/mp4")
-
-    # ---- full set mixes (one continuous MP3 of a crate's set or a setlist)
-
-    @app.post("/api/crates/{folder}/setmix")
-    def crate_setmix_start(folder: str) -> Response:
-        return JSON(state.setmixes.start(f"crate:{folder}"))
-
-    @app.get("/api/crates/{folder}/setmix")
-    def crate_setmix(folder: str) -> Response:
-        return JSON(state.setmixes.current(f"crate:{folder}"))
-
-    @app.get("/api/setmix/{mix_id}")
-    def setmix_get(mix_id: str) -> Response:
-        return JSON(state.setmixes.get(mix_id))
-
-    @app.delete("/api/setmix/{mix_id}")
-    def setmix_cancel(mix_id: str) -> Response:
-        return JSON(state.setmixes.cancel(mix_id))
-
-    @app.get("/api/setmix/{mix_id}/audio")
-    def setmix_audio(mix_id: str) -> Response:
-        path = state.setmixes.audio_path(mix_id)
-        return FileResponse(path, media_type="audio/mpeg" if path.suffix.lower() == ".mp3" else "audio/mp4")
-
-    # ---- setlists (crates back to back) + crate-to-crate links
-
-    @app.get("/api/crates/{folder}/links")
-    def crate_links(folder: str) -> Response:
-        return JSON(state.setlists.links(folder))
-
-    @app.get("/api/setlists")
-    def setlists() -> Response:
-        return JSON(state.setlists.list())
-
-    @app.post("/api/setlists")
-    def setlist_create(body: dict = Body(...)) -> Response:  # noqa: B008
-        return JSON(state.setlists.create(body.get("name"), body.get("crates")))
-
-    @app.get("/api/setlists/{sid}")
-    def setlist_get(sid: str) -> Response:
-        return JSON(state.setlists.get(sid))
-
-    @app.put("/api/setlists/{sid}")
-    def setlist_update(sid: str, body: dict = Body(...)) -> Response:  # noqa: B008
-        return JSON(state.setlists.update(sid, body))
-
-    @app.delete("/api/setlists/{sid}")
-    def setlist_delete(sid: str) -> Response:
-        return JSON(state.setlists.delete(sid))
-
-    @app.post("/api/setlists/{sid}/auto-order")
-    def setlist_auto_order(sid: str) -> Response:
-        return JSON(state.setlists.auto_order(sid))
-
-    @app.get("/api/setlists/{sid}/mix/{from_id}/{to_id}")
-    def setlist_mix_plan(sid: str, from_id: str, to_id: str, technique: str | None = Query(None),
-                         bars: int | None = Query(None), style: str | None = Query(None),
-                         swap: str | None = Query(None)) -> Response:  # fmt: skip
-        return JSON(state.mixes.plan_pair(state.setlists.pair(sid, from_id, to_id), technique, bars, style=style,
-                                          swap=swap))
-
-    @app.put("/api/setlists/{sid}/mix/{from_id}/{to_id}")
-    def setlist_mix_save(sid: str, from_id: str, to_id: str, body: Any = Body(...)) -> Response:  # noqa: B008
-        return JSON(state.mixes.save_pair(state.setlists.pair(sid, from_id, to_id), body))
-
-    @app.delete("/api/setlists/{sid}/mix/{from_id}/{to_id}")
-    def setlist_mix_reset(sid: str, from_id: str, to_id: str) -> Response:
-        return JSON(state.mixes.delete_pair(state.setlists.pair(sid, from_id, to_id)))
-
-    @app.post("/api/setlists/{sid}/mix/{from_id}/{to_id}/render")
-    def setlist_mix_render(sid: str, from_id: str, to_id: str, body: Any = Body(None)) -> Response:  # noqa: B008
-        return JSON(state.mixes.render_pair(state.setlists.pair(sid, from_id, to_id), body))
-
-    @app.post("/api/setlists/{sid}/setmix")
-    def setlist_setmix_start(sid: str) -> Response:
-        return JSON(state.setmixes.start(f"setlist:{sid}"))
-
-    @app.get("/api/setlists/{sid}/setmix")
-    def setlist_setmix(sid: str) -> Response:
-        return JSON(state.setmixes.current(f"setlist:{sid}"))
-
-    @app.get("/api/analysis/{folder}/{track_id}")
-    def analysis(folder: str, track_id: str) -> Response:
-        return JSON(state.crates.track_analysis(folder, track_id))
-
     @app.get("/api/covers/{folder}/{track_id}")
     def cover(folder: str, track_id: str, request: Request) -> Response:
         _check_id(track_id)
-        _path, mime, data = state.crates.cover(folder, track_id)
+        _path, mime, data = crate_cover(state.root, folder, track_id)
         etag = '"' + hashlib.md5(data, usedforsecurity=False).hexdigest()[:16] + '"'
         headers = {"Cache-Control": "public, max-age=86400", "ETag": etag}
         if etag in request.headers.get("if-none-match", ""):
@@ -697,7 +577,7 @@ def create_app(
     # ---- frontend
 
     if static_dir is not None:
-        _add_spa(app, Path(static_dir))
+        _add_spa(app, Path(static_dir), APP_PAGES[which])
     return app
 
 
@@ -706,7 +586,8 @@ def _check_id(track_id: str) -> None:
         raise ApiError("invalid track id")
 
 
-def _add_spa(app: FastAPI, static_dir: Path) -> None:
+def _add_spa(app: FastAPI, static_dir: Path, page: str = "index.html") -> None:
+    """The built frontend: its files, and `page` (the app's HTML entry) for every other path (client routing)."""
     root = static_dir.resolve()
 
     @app.get("/{full_path:path}", include_in_schema=False)
@@ -719,20 +600,23 @@ def _add_spa(app: FastAPI, static_dir: Path) -> None:
                 hashed = full_path.startswith("assets/")  # Vite's content-hashed bundles
                 return FileResponse(candidate, headers={"Cache-Control": "public, max-age=31536000, immutable"}
                                     if hashed else None)  # fmt: skip
-        index = root / "index.html"
+        index = root / page
         if not index.is_file():
             raise NotFound("frontend not built")
         return FileResponse(index, headers={"Cache-Control": "no-cache"})
 
 
-def _add_error_handlers(app: FastAPI) -> None:
+def _add_error_handlers(app: FastAPI, tunebat: bool = True) -> None:
     @app.exception_handler(ApiError)
     async def api_error(_req: Request, e: ApiError) -> Response:
         return JSON({"detail": e.detail}, status_code=e.status)
 
-    @app.exception_handler(TunebatError)
-    async def tunebat_error(_req: Request, e: TunebatError) -> Response:
-        return JSON({"detail": f"tunebat: {e}"}, status_code=502)
+    if tunebat:
+        from musicreco.tunebat import TunebatError
+
+        @app.exception_handler(TunebatError)
+        async def tunebat_error(_req: Request, e: TunebatError) -> Response:
+            return JSON({"detail": f"tunebat: {e}"}, status_code=502)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(_req: Request, e: RequestValidationError) -> Response:
@@ -818,29 +702,33 @@ def start_server(
     thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, name="seedbox-server", daemon=True)
     thread.start()
     deadline = time.monotonic() + timeout
+    name = APP_TITLES.get(app_kwargs.get("app", "seedbox"), "Seedbox")
     while not server.started:
         if not thread.is_alive():
-            raise RuntimeError("the Seedbox server failed to start")
+            raise RuntimeError(f"the {name} server failed to start")
         if time.monotonic() > deadline:
             server.should_exit = True
-            raise RuntimeError("the Seedbox server didn't start in time")
+            raise RuntimeError(f"the {name} server didn't start in time")
         time.sleep(0.02)
     return ServerHandle(f"http://{host}:{real_port}", real_port, app, server, thread)
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="python -m seedbox.server", description="Seedbox API server")
+    parser = argparse.ArgumentParser(prog="python -m seedbox.server", description="Seedbox / Setbox API server")
+    parser.add_argument("--app", choices=APPS, default="seedbox", help="which app's API (default: seedbox)")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--dev", action="store_true", help="allow the Vite dev server (localhost:5173) via CORS")
+    parser.add_argument("--port", type=int, default=None, help="default 8765 (Seedbox) / 8766 (Setbox)")
+    parser.add_argument("--dev", action="store_true", help="allow the Vite dev servers (localhost:5173 / 5174) via CORS")
     parser.add_argument("--static", type=Path, default=None, help="serve this built frontend (dist/) at /")
     parser.add_argument("--log-level", default="info")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    if args.static is not None and not (args.static / "index.html").is_file():
-        parser.error(f"--static {args.static}: no index.html there")
-    app = create_app(engine.load_settings(), args.static, dev=args.dev)
-    _uvicorn_server(app, args.log_level, args.host, args.port).run()
+    page = APP_PAGES[args.app]
+    if args.static is not None and not (args.static / page).is_file():
+        parser.error(f"--static {args.static}: no {page} there")
+    port = args.port if args.port is not None else (8766 if args.app == "setbox" else 8765)
+    app = create_app(engine.load_settings(), args.static, dev=args.dev, app=args.app)
+    _uvicorn_server(app, args.log_level, args.host, port).run()
 
 
 if __name__ == "__main__":

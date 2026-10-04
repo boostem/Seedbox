@@ -1,12 +1,11 @@
 /** Crate page header: the seed (cover, key, BPM, energy, links) + its own preview. */
-import { ExternalLink, FolderOpen, Layers, Sprout } from "lucide-react";
+import { ExternalLink, FolderOpen, Sprout } from "lucide-react";
 import type { ReactNode } from "react";
 import { api } from "@/api/client";
 import type { Crate, CrateSummary } from "@/api/types";
 import { Button, CoverArt, KeyBadge, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { fmtBpm, fmtTime, plural } from "@/lib/format";
-import { navigate } from "@/lib/router";
 import { PreviewButton, PreviewWave } from "./PreviewControls";
 import { fmtReleaseDate, pct01, tunebatUrl } from "./trackMeta";
 
@@ -89,16 +88,11 @@ export function SeedHeader({ crate, library }: { crate: Crate; library: CrateSum
           <ExtLink href={s.spotify_url}>Spotify</ExtLink>
           <ExtLink href={tunebatUrl(s)}>tunebat</ExtLink>
           {library && (
-            <>
-              <Tooltip content="Reveal the crate folder in Finder">
-                <Button variant="ghost" size="sm" icon={FolderOpen} onClick={() => void api.reveal(library.path)}>
-                  Reveal
-                </Button>
-              </Tooltip>
-              <Button size="sm" icon={Layers} onClick={() => navigate({ name: "set", folder: library.folder })}>
-                Open set
+            <Tooltip content="Reveal the crate folder in Finder">
+              <Button variant="ghost" size="sm" icon={FolderOpen} onClick={() => void api.reveal(library.path)}>
+                Reveal
               </Button>
-            </>
+            </Tooltip>
           )}
         </div>
         <div className="flex w-full items-center gap-2.5 rounded-md border border-line bg-panel/60 py-1.5 pr-2.5 pl-1.5">

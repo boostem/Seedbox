@@ -4,6 +4,7 @@ crate metadata (.seedbox/crate.json), set order edits and the one-off move out o
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import logging
 import math
@@ -23,7 +24,12 @@ from typing import Any
 from mutagen.id3 import ID3
 
 from .models import BeatportInfo, DownloadResult, Score, Track, YTCandidate
-from .settings import load_settings
+from .settings import app_support_dir, load_settings
+
+try:
+    import fcntl  # advisory file locks between Seedbox's and Setbox's processes (macOS / Linux)
+except ImportError:  # pragma: no cover - elsewhere crate writes are only serialised within one process
+    fcntl = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -111,15 +117,118 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-_crate_locks: dict[str, threading.RLock] = {}
+def _lock_file(real_dir: str, suffix: str) -> Path | None:
+    """<support>/locks/<hash of the crate's real path><suffix>: a file every app's process can flock."""
+    if fcntl is None:
+        return None
+    try:
+        d = app_support_dir() / "locks"
+        d.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        log.warning("no crate lock folder (%s): crate writes are only serialised within this app", e)
+        return None
+    return d / (hashlib.sha1(real_dir.encode("utf-8", "surrogateescape")).hexdigest()[:24] + suffix)
+
+
+class CrateLock:
+    """Re-entrant lock for one crate folder, held while its tags/CSV/playlists are rewritten.
+
+    Seedbox and Setbox run as separate processes and both write crates (a finished download renumbers and tags the
+    crate; Setbox reorders it and writes energy tags), so the outermost hold also takes an exclusive flock on
+    <support>/locks/<hash>.lock, which the other process waits for. Without a lock file (no fcntl, unwritable
+    support folder) it still serialises this process's threads.
+    """
+
+    def __init__(self, real_dir: str) -> None:
+        self._real_dir = real_dir
+        self._threads = threading.RLock()
+        self._depth = 0  # the owning thread's nesting (other threads wait on _threads)
+        self._fd: int | None = None
+
+    def acquire(self) -> bool:
+        self._threads.acquire()
+        self._depth += 1
+        if self._depth == 1 and (path := _lock_file(self._real_dir, ".lock")) is not None:
+            try:
+                fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+            except OSError as e:
+                log.warning("couldn't open the crate lock %s: %s", path, e)
+            else:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX)  # waits while the other app writes this crate
+                    self._fd = fd
+                except OSError as e:
+                    os.close(fd)
+                    log.warning("couldn't lock %s: %s", path, e)
+        return True
+
+    def release(self) -> None:
+        if self._depth == 1 and self._fd is not None:
+            os.close(self._fd)  # closing drops the flock
+            self._fd = None
+        self._depth -= 1
+        self._threads.release()
+
+    def __enter__(self) -> CrateLock:
+        self.acquire()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.release()
+
+
+_crate_locks: dict[str, CrateLock] = {}
 _crate_locks_guard = threading.Lock()
 
 
-def crate_lock(seed_dir: Path) -> threading.RLock:
-    """Process-wide re-entrant lock for one crate folder; held while its tags/CSV/playlists are rewritten."""
+def crate_lock(seed_dir: Path) -> CrateLock:
+    """Re-entrant lock for one crate folder, shared with the other app's process (CrateLock); held while its
+    tags/CSV/playlists are rewritten."""
     key = os.path.realpath(seed_dir)
     with _crate_locks_guard:
-        return _crate_locks.setdefault(key, threading.RLock())
+        return _crate_locks.setdefault(key, CrateLock(key))
+
+
+@contextmanager
+def crate_busy(seed_dir: Path) -> Iterator[None]:
+    """Held by Seedbox while a download job runs into this crate, so Setbox (crate_downloading) can hold off
+    reordering it: the finished job re-sorts the crate anyway. A shared flock on <support>/locks/<hash>.busy, which
+    the OS drops when the process ends, however it ends."""
+    fd = None
+    if (path := _lock_file(os.path.realpath(seed_dir), ".busy")) is not None:
+        try:
+            fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+            fcntl.flock(fd, fcntl.LOCK_SH)
+        except OSError as e:
+            log.warning("couldn't mark %s busy: %s", seed_dir.name, e)
+            if fd is not None:
+                os.close(fd)
+                fd = None
+    try:
+        yield
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
+def crate_downloading(seed_dir: Path) -> bool:
+    """True while a process (Seedbox's download job) holds crate_busy for this crate."""
+    path = _lock_file(os.path.realpath(seed_dir), ".busy")
+    if path is None or not path.is_file():
+        return False
+    try:
+        fd = os.open(path, os.O_RDWR)
+    except OSError:
+        return False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return False
+    except BlockingIOError:
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(fd)  # also drops the probe's own lock
 
 
 @contextmanager

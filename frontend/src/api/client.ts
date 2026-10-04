@@ -3,6 +3,7 @@
  * Errors: non-2xx / network failures throw `ApiError` AND show an error toast, unless `{ quiet: true }`
  * (then the caller handles it). With VITE_MOCK=1 the same calls are served by src/mock/server.ts.
  */
+import { APP_NAME } from "@/lib/appMode";
 import { toast } from "@/store/toasts";
 import type { Crate, CrateLinks, CrateSet, CrateSummary, Job, OkResponse, Partner, PickFolderResult, PreviewStatus, SearchPage, Setlist, SetlistSummary, SetMix, SetMixStatus, Settings, StemsStatus, SystemStatus, TrackAnalysis, UpdateResult } from "./types";
 
@@ -95,7 +96,7 @@ export async function request<T>(method: Method, path: string, body?: unknown, o
     ({ status, data } = await send(method, path, body, opts.signal));
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
-    const err = new ApiError(0, "Can't reach the Seedbox engine", e);
+    const err = new ApiError(0, `Can't reach the ${APP_NAME} engine`, e);
     if (!opts.quiet) toast.error(err.message, { key: "network", title: "Connection" });
     throw err;
   }

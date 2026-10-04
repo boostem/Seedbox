@@ -106,7 +106,7 @@ export function SetlistsPage() {
           <EmptyState
             icon={ListMusic}
             title="No setlists yet"
-            description="Chain two or more crates into a long set. Seedbox scores each crate's ending against the next crate's start and renders the whole thing as one mix."
+            description="Chain two or more crates into a long set. Setbox scores each crate's ending against the next crate's start and renders the whole thing as one mix."
             action={
               <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
                 New setlist

@@ -94,6 +94,7 @@ export interface Settings {
 }
 
 export interface SystemStatus {
+  app?: "seedbox" | "setbox"; // which app this server runs (the page's <html data-app> decides the UI)
   version: string;
   ytdlp_version: string;
   ytdlp_latest: string | null;

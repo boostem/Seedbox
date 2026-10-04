@@ -8,6 +8,7 @@ import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { api, MOCK } from "@/api/client";
 import type { CrateSummary, FinalStatus, Job, JobItem, PreviewStatus, ServerEvent, SetMix, Settings, SetTrack, StemState, StemsStatus, SystemStatus, Track } from "@/api/types";
+import { isSeedbox } from "@/lib/appMode";
 import { toast } from "./toasts";
 
 export type ConnectionState = "connecting" | "live" | "reconnecting" | "offline";
@@ -259,7 +260,11 @@ export const useApp = create<AppState>()((set, get) => ({
   },
 
   refreshBasics: async () => {
-    const [system, settings, jobs] = await Promise.allSettled([api.system({ quiet: true }), api.settings({ quiet: true }), api.jobs({ quiet: true })]);
+    const [system, settings, jobs] = await Promise.allSettled([
+      api.system({ quiet: true }),
+      api.settings({ quiet: true }),
+      isSeedbox ? api.jobs({ quiet: true }) : Promise.resolve([]), // download jobs live in Seedbox
+    ]);
     if (system.status === "fulfilled") set({ system: system.value });
     if (settings.status === "fulfilled") set({ settings: settings.value });
     if (jobs.status === "fulfilled") set((s) => ({ jobs: { ...Object.fromEntries(jobs.value.map((j) => [j.job_id, j])), ...s.jobs } }));
@@ -279,8 +284,8 @@ export function setMixTrack(m: SetMix): Track {
   return {
     id: `setmix:${m.mix_id}`,
     name: m.title,
-    artists: ["Seedbox mix"],
-    display_name: `Seedbox mix - ${m.title}`,
+    artists: ["Setbox mix"],
+    display_name: `Setbox mix - ${m.title}`,
     album: "",
     release_date: "",
     duration_s: m.result?.duration_s ?? 0,

@@ -14,8 +14,8 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import engine
-from .events import EventBus
+from seedbox import engine
+from seedbox.events import EventBus
 
 log = logging.getLogger(__name__)
 

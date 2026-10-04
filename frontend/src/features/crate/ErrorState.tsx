@@ -2,6 +2,7 @@ import { CloudOff, RotateCw, SearchX, TriangleAlert, Unplug } from "lucide-react
 import type { ReactNode } from "react";
 import { ApiError } from "@/api/client";
 import { Button, EmptyState } from "@/components/ui";
+import { APP_NAME } from "@/lib/appMode";
 
 export interface FriendlyError {
   icon: typeof CloudOff;
@@ -15,7 +16,7 @@ export function describeError(error: unknown, what = "this"): FriendlyError {
   const e = error instanceof ApiError ? error : null;
   const msg = (error as Error | null)?.message ?? String(error);
   if (e?.isNetwork) {
-    return { icon: Unplug, title: "Can't reach the Seedbox engine", description: "The app's engine isn't responding. It reconnects on its own, so try again in a moment.", retryable: true };
+    return { icon: Unplug, title: `Can't reach the ${APP_NAME} engine`, description: "The app's engine isn't responding. It reconnects on its own, so try again in a moment.", retryable: true };
   }
   if (e?.status === 502) {
     const limited = /429|rate|too many/i.test(msg);

@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:setbox": "SETBOX_DEV=1 vite",
     "dev:mock": "VITE_MOCK=1 vite",
+    "dev:mock:setbox": "SETBOX_DEV=1 VITE_MOCK=1 vite",
     "build": "tsc -p tsconfig.json && vite build",
     "build:mock": "tsc -p tsconfig.json && VITE_MOCK=1 vite build --outDir dist-mock",
     "preview": "vite preview --port 4173",

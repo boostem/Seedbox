@@ -1,14 +1,17 @@
-"""Seedbox desktop app: the API server on 127.0.0.1 (background thread) inside a native pywebview window.
+"""The desktop apps: the API server on 127.0.0.1 (background thread) inside a native pywebview window.
 
-`python -m seedbox` from source, or Seedbox.app (PyInstaller). Flags:
+`python -m seedbox` (find, preview, download, tag) and `python -m setbox` (sets, transitions, mixes, setlists) from
+source, or Seedbox.app (PyInstaller); both run this launcher with their own profile (PROFILES). Flags:
   --server-only   no window; serve until Ctrl-C (tests, bundles, headless use)
-  --port N        fixed port (default: a free one; 8765 with --dev, where Vite proxies /api)
-  --dev           the window loads the Vite dev server (http://localhost:5173) instead of the built frontend
+  --port N        fixed port (default: a free one; with --dev 8765 for Seedbox / 8766 for Setbox, where Vite proxies
+                  /api)
+  --dev           the window loads the Vite dev server (Seedbox http://localhost:5173, Setbox http://localhost:5174)
+                  instead of the built frontend
   --no-migrate    never move the legacy project downloads/ folder (see maybe_migrate_legacy)
   --self-test     print a JSON report (binaries, modules, yt-dlp, one YouTube Music search + format probe), exit
   --update-ytdlp  download + verify the newest yt-dlp (same as the UI button), print the result, exit
 
-Logs go to ~/Library/Logs/Seedbox/seedbox.log ($SEEDBOX_LOG_DIR overrides).
+Logs go to ~/Library/Logs/Seedbox/seedbox.log or ~/Library/Logs/Setbox/setbox.log ($SEEDBOX_LOG_DIR overrides).
 """
 
 from __future__ import annotations
@@ -31,13 +34,34 @@ import urllib.request  # noqa: E402
 import webbrowser  # noqa: E402
 from pathlib import Path  # noqa: E402
 from collections.abc import Callable  # noqa: E402
-from typing import Any  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
+from typing import Any, NoReturn  # noqa: E402
 
 from seedbox import __version__  # noqa: E402
 
+
+@dataclass(frozen=True)
+class Profile:
+    """One app on the shared launcher."""
+
+    key: str  # seedbox.server app mode
+    name: str  # window, menu bar, logs
+    dev_port: int  # API port with --dev (its Vite dev server proxies /api there)
+    dev_url: str  # the Vite dev server page
+    page: str  # the built frontend's HTML entry
+    description: str
+
+
+PROFILES = {
+    "seedbox": Profile("seedbox", "Seedbox", 8765, "http://localhost:5173", "index.html",
+                       "Seedbox: find songs, preview, download and tag DJ crates"),
+    "setbox": Profile("setbox", "Setbox", 8766, "http://localhost:5174/setbox.html", "setbox.html",
+                      "Setbox: set order, transitions, vocal stems, full mixes and setlists for your crates"),
+}
+PROFILE = PROFILES["seedbox"]  # main(app=...) picks the app
 APP_NAME = "Seedbox"
-DEV_URL = "http://localhost:5173"
-DEV_PORT = 8765
+DEV_URL = PROFILES["seedbox"].dev_url
+DEV_PORT = PROFILES["seedbox"].dev_port
 BACKGROUND = "#0b0d10"  # window colour before the page paints (no white flash)
 WINDOW_SIZE = (1440, 900)
 MIN_SIZE = (1100, 680)
@@ -46,9 +70,12 @@ LOG_DIR_ENV = "SEEDBOX_LOG_DIR"
 STATIC_DIR_ENV = "SEEDBOX_STATIC_DIR"
 NO_MIGRATE_ENV = "SEEDBOX_NO_MIGRATE"
 SELF_TEST_QUERY = "Daft Punk - One More Time"
-SELF_TEST_MODULES = ("numpy", "scipy.signal", "scipy.ndimage", "mutagen.id3", "uvicorn", "fastapi", "AppKit", "WebKit",
-                     "webview.platforms.cocoa", "musicreco.previews", "musicreco.structure", "musicreco.transitions", "musicreco.mixplan", "musicreco.mixrender", "pedalboard",
-                     "seedbox.server")
+_SELF_TEST_COMMON = ("numpy", "mutagen.id3", "uvicorn", "fastapi", "AppKit", "WebKit", "webview.platforms.cocoa", "seedbox.server")
+SELF_TEST_MODULES = {  # what each app loads lazily
+    "seedbox": (*_SELF_TEST_COMMON, "musicreco.previews", "cloudscraper"),
+    "setbox": (*_SELF_TEST_COMMON, "scipy.signal", "scipy.ndimage", "musicreco.structure", "musicreco.transitions",
+               "musicreco.mixplan", "musicreco.mixrender", "musicreco.setmix", "pedalboard", "setbox.routes"),
+}
 
 log = logging.getLogger("seedbox.app")
 
@@ -75,13 +102,14 @@ def static_dir() -> Path | None:
         candidates = [Path(sys._MEIPASS) / "web"]  # type: ignore[attr-defined]
     else:
         candidates = [project_root() / "frontend" / "dist"]
-    return next((d for d in candidates if (d / "index.html").is_file()), None)
+    return next((d for d in candidates if (d / PROFILE.page).is_file()), None)
 
 
 def icon_path() -> Path | None:
     """Dock icon when running from source (the frozen app uses its .icns)."""
-    p = project_root() / "packaging" / "icon" / "seedbox-512.png"
-    return p if not frozen() and p.is_file() else None
+    icons = project_root() / "packaging" / "icon"
+    p = next((i for i in (icons / f"{PROFILE.key}-512.png", icons / "seedbox-512.png") if i.is_file()), None)
+    return p if not frozen() else None
 
 
 def prepare_environment() -> None:
@@ -99,9 +127,9 @@ def prepare_environment() -> None:
 
 def setup_logging(console: bool, debug: bool = False) -> Path:
     """Rotating log file (+ stderr when `console`); returns the log file path."""
-    log_dir = Path(os.environ.get(LOG_DIR_ENV) or Path.home() / "Library" / "Logs" / APP_NAME).expanduser()
+    log_dir = Path(os.environ.get(LOG_DIR_ENV) or Path.home() / "Library" / "Logs" / PROFILE.name).expanduser()
     log_dir.mkdir(parents=True, exist_ok=True)
-    path = log_dir / "seedbox.log"
+    path = log_dir / f"{PROFILE.key}.log"
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(threadName)s %(name)s: %(message)s")
     root = logging.getLogger()
     root.setLevel(logging.DEBUG if debug else logging.INFO)
@@ -195,33 +223,40 @@ def start_api(args: argparse.Namespace) -> Any:
     from seedbox.server import start_server
 
     settings = msettings.load_settings()
-    if migration_allowed(args):
+    if PROFILE.key == "seedbox" and migration_allowed(args):  # moving crates around is Seedbox's job
         try:
             maybe_migrate_legacy(settings.output_root)
         except Exception:  # noqa: BLE001 - never block startup on it
             log.exception("legacy downloads/ migration failed")
-    port = args.port if args.port is not None else (DEV_PORT if args.dev else 0)
+    port = args.port if args.port is not None else (PROFILE.dev_port if args.dev else 0)
     static = None if args.dev else static_dir()
     if static is None and not args.dev:
         log.warning("no built frontend found (frontend/dist); the window will only show the API")
     t0 = time.monotonic()
-    handle = start_server(settings, static, port=port, dev=args.dev, log_level="debug" if args.debug else "warning")
+    handle = start_server(settings, static, port=port, dev=args.dev, log_level="debug" if args.debug else "warning",
+                          app=PROFILE.key)
     wait_healthy(handle.url, alive=lambda: handle.running)
-    log.info("Seedbox %s API on %s (%.2fs, static=%s)", __version__, handle.url, time.monotonic() - t0, static)
+    log.info("%s %s API on %s (%.2fs, static=%s)", PROFILE.name, __version__, handle.url, time.monotonic() - t0, static)
     return handle
 
 
-def _finish(code: int) -> int:
-    """Exit now if worker threads (a running download, preview fetches) would keep the process alive."""
+def _finish(code: int) -> NoReturn:
+    """End the process once the server has stopped, skipping the interpreter's teardown. A worker may still be inside
+    native code (a vocal split in PyTorch, a render, a download), and tearing the runtime down under it aborts the
+    process ("terminate called without an active exception", a crash report on macOS) or keeps it alive. Everything
+    worth keeping is on disk by then."""
     logging.shutdown()
-    if any(t.is_alive() and not t.daemon for t in threading.enumerate() if t is not threading.main_thread()):
-        os._exit(code)
-    return code
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except Exception:  # noqa: BLE001
+            pass
+    os._exit(code)
 
 
 def run_server_only(args: argparse.Namespace) -> int:
     handle = start_api(args)
-    print(f"Seedbox {__version__} API on {handle.url}  (Ctrl-C to stop)", flush=True)
+    print(f"{PROFILE.name} {__version__} API on {handle.url}  (Ctrl-C to stop)", flush=True)
     stop = threading.Event()
     try:
         import signal
@@ -233,7 +268,7 @@ def run_server_only(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         pass
     handle.stop()
-    return _finish(0)
+    _finish(0)
 
 
 # ---------------------------------------------------------------- window
@@ -257,14 +292,14 @@ def _dark_window(window: Any) -> None:
 
 
 def _rename_menu_app() -> None:
-    """From source the menu bar says "Python"; call it Seedbox (the bundle has CFBundleName)."""
+    """From source the menu bar says "Python"; call it after the app (the bundle has CFBundleName)."""
     if frozen():
         return
     try:
         from Foundation import NSBundle
 
         info = NSBundle.mainBundle().localizedInfoDictionary() or NSBundle.mainBundle().infoDictionary()
-        info["CFBundleName"] = APP_NAME
+        info["CFBundleName"] = PROFILE.name
     except Exception:  # noqa: BLE001
         pass
 
@@ -306,7 +341,7 @@ def _error_html(message: str, log_file: Path) -> str:
     import html
 
     return (f"<html><body style='background:{BACKGROUND};color:#e8e8e8;font:14px -apple-system;padding:48px'>"
-            f"<h2 style='color:#ff6b6b'>Seedbox could not start</h2><p>{html.escape(message)}</p>"
+            f"<h2 style='color:#ff6b6b'>{PROFILE.name} could not start</h2><p>{html.escape(message)}</p>"
             f"<p style='color:#999'>Details are in {html.escape(str(log_file))}</p></body></html>")
 
 
@@ -316,14 +351,14 @@ def run_window(args: argparse.Namespace, log_file: Path) -> int:
     except Exception as e:  # noqa: BLE001 - no pywebview/pyobjc: fall back to the browser
         log.warning("pywebview unavailable (%s); opening the default browser instead", e)
         handle = start_api(args)
-        webbrowser.open(DEV_URL if args.dev else handle.url)
+        webbrowser.open(PROFILE.dev_url if args.dev else handle.url)
         try:
             while handle.running:
                 time.sleep(0.5)
         except KeyboardInterrupt:
             pass
         handle.stop()
-        return _finish(0)
+        _finish(0)
 
     _rename_menu_app()
     size, min_size = _window_geometry(webview)
@@ -331,18 +366,19 @@ def run_window(args: argparse.Namespace, log_file: Path) -> int:
     handle = None
     try:
         handle = start_api(args)
-        url = DEV_URL if args.dev else f"{handle.url}/"
-        window = webview.create_window(APP_NAME, url, **common)
+        url = PROFILE.dev_url if args.dev else f"{handle.url}/"
+        window = webview.create_window(PROFILE.name, url, **common)
         from seedbox.server import set_folder_picker
 
         set_folder_picker(make_folder_picker(window))  # POST /api/system/pick-folder
     except Exception as e:  # noqa: BLE001 - show the problem instead of vanishing
         log.exception("startup failed")
-        window = webview.create_window(APP_NAME, html=_error_html(str(e), log_file), **common)
+        window = webview.create_window(PROFILE.name, html=_error_html(str(e), log_file), **common)
     stopped = threading.Event()
 
     def shutdown() -> None:
-        # runs from `closing` too: the menu's Quit ends the process inside AppKit, after webview.start can return
+        # runs from `closing` too: the menu's Quit would end the process inside AppKit (exit(), which aborts while a
+        # vocal split is inside PyTorch), so the process ends here once the server has stopped
         if handle is not None and not stopped.is_set():
             stopped.set()
             log.info("window closing; stopping the server")
@@ -350,24 +386,26 @@ def run_window(args: argparse.Namespace, log_file: Path) -> int:
 
             set_folder_picker(None)
             handle.stop(timeout=4.0)
+            _finish(0)
 
     window.events.before_show += _dark_window
     window.events.closing += shutdown
     webview.start(gui="cocoa", debug=bool(args.dev or args.debug), private_mode=False,
                   icon=str(icon_path()) if icon_path() else None)
     shutdown()
-    return _finish(0)
+    _finish(0)
 
 
 # ---------------------------------------------------------------- self-test
 
 def self_test(query: str = SELF_TEST_QUERY, clip: bool = False) -> int:
-    """Diagnostics as JSON on stdout: binaries, yt-dlp versions, a YT Music search, a format probe (deno), and with
-    `clip` a 10 s preview clip + MP3 conversion in a temp dir (ffmpeg without ffprobe). Exit code 0 when everything passed."""
+    """Diagnostics as JSON on stdout. Seedbox: binaries, yt-dlp versions, a YT Music search, a format probe (deno), and
+    with `clip` a 10 s preview clip + MP3 conversion in a temp dir (ffmpeg without ffprobe). Setbox: ffmpeg, the modules
+    the analysis and mixes load, and whether vocal splitting can run. Exit code 0 when everything passed."""
     from musicreco import paths
 
-    report: dict[str, Any] = {"app": __version__, "frozen": frozen(), "python": sys.version.split()[0],
-                              "executable": sys.executable}
+    report: dict[str, Any] = {"app": PROFILE.name, "version": __version__, "frozen": frozen(),
+                              "python": sys.version.split()[0], "executable": sys.executable}
     ok = True
 
     def run(cmd: list[str]) -> str:
@@ -377,13 +415,24 @@ def self_test(query: str = SELF_TEST_QUERY, clip: bool = False) -> int:
         except Exception as e:  # noqa: BLE001
             return f"error: {e}"
 
-    ffmpeg, deno = paths.ffmpeg_path(), paths.deno_path()
+    ffmpeg = paths.ffmpeg_path()
     report["ffmpeg"] = {"path": ffmpeg, "version": run([ffmpeg, "-version"]) if ffmpeg else None,
                         "ffprobe_next_to_it": bool(ffmpeg and (Path(ffmpeg).parent / "ffprobe").exists())}
-    report["deno"] = {"path": deno, "version": run([deno, "--version"]) if deno else None}
-    ok &= bool(ffmpeg and deno)
+    ok &= bool(ffmpeg)
     report["modules"] = _import_check()
     ok &= all(v == "ok" for v in report["modules"].values())
+    if PROFILE.key == "setbox":
+        from musicreco import separator
+
+        can, why = separator.available()  # optional: mixes fall back to EQ-only vocals without it
+        report["vocal_stems"] = {"available": can, "why_not": why or None, "model": str(separator.model_path()),
+                                 "model_downloaded": separator.model_path().is_file()}
+        report["ok"] = bool(ok)
+        print(json.dumps(report, indent=2), flush=True)
+        return 0 if ok else 1
+    deno = paths.deno_path()
+    report["deno"] = {"path": deno, "version": run([deno, "--version"]) if deno else None}
+    ok &= bool(deno)
     report["updater"] = updater.describe()
 
     from musicreco import youtube
@@ -419,19 +468,20 @@ def _import_check() -> dict[str, str]:
     import importlib
 
     result = {}
-    for name in SELF_TEST_MODULES:
+    for name in SELF_TEST_MODULES[PROFILE.key]:
         try:
             importlib.import_module(name)
             result[name] = "ok"
         except Exception as e:  # noqa: BLE001
             result[name] = f"{type(e).__name__}: {e}"
-    try:
-        import cloudscraper
+    if PROFILE.key == "seedbox":
+        try:
+            import cloudscraper
 
-        cloudscraper.create_scraper()  # reads its bundled browser data files
-        result["cloudscraper.create_scraper"] = "ok"
-    except Exception as e:  # noqa: BLE001
-        result["cloudscraper.create_scraper"] = f"{type(e).__name__}: {e}"
+            cloudscraper.create_scraper()  # reads its bundled browser data files
+            result["cloudscraper.create_scraper"] = "ok"
+        except Exception as e:  # noqa: BLE001
+            result["cloudscraper.create_scraper"] = f"{type(e).__name__}: {e}"
     return result
 
 
@@ -494,34 +544,41 @@ def _clip_test(youtube: Any, cand: Any) -> dict:
 # ---------------------------------------------------------------- entry
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(prog="seedbox", description="Seedbox: tunebat-powered DJ crate builder")
+    p = argparse.ArgumentParser(prog=PROFILE.key, description=PROFILE.description)
     p.add_argument("--server-only", action="store_true", help="run the API without a window")
-    p.add_argument("--port", type=int, default=None, help="API port (default: free port; 8765 with --dev)")
-    p.add_argument("--dev", action="store_true", help=f"load the Vite dev server ({DEV_URL}) in the window")
-    p.add_argument("--no-migrate", action="store_true", help="don't move the legacy project downloads/ folder")
+    p.add_argument("--port", type=int, default=None, help=f"API port (default: free port; {PROFILE.dev_port} with --dev)")
+    p.add_argument("--dev", action="store_true", help=f"load the Vite dev server ({PROFILE.dev_url}) in the window")
     p.add_argument("--debug", action="store_true", help="verbose logs, web inspector")
     p.add_argument("--self-test", action="store_true", help="print a diagnostics report and exit")
-    p.add_argument("--self-test-query", default=SELF_TEST_QUERY, help=argparse.SUPPRESS)
-    p.add_argument("--self-test-clip", action="store_true", help="with --self-test: also convert a 10 s clip")
-    p.add_argument("--update-ytdlp", action="store_true", help="update yt-dlp now (as the UI button does) and exit")
-    p.add_argument("--rollback-ytdlp", action="store_true", help=argparse.SUPPRESS)
-    p.add_argument("--force", action="store_true", help=argparse.SUPPRESS)  # with --update-ytdlp: reinstall
+    if PROFILE.key == "seedbox":  # downloads, YouTube and yt-dlp: Seedbox's side
+        p.add_argument("--no-migrate", action="store_true", help="don't move the legacy project downloads/ folder")
+        p.add_argument("--self-test-query", default=SELF_TEST_QUERY, help=argparse.SUPPRESS)
+        p.add_argument("--self-test-clip", action="store_true", help="with --self-test: also convert a 10 s clip")
+        p.add_argument("--update-ytdlp", action="store_true", help="update yt-dlp now (as the UI button does) and exit")
+        p.add_argument("--rollback-ytdlp", action="store_true", help=argparse.SUPPRESS)
+        p.add_argument("--force", action="store_true", help=argparse.SUPPRESS)  # with --update-ytdlp: reinstall
+    else:
+        p.set_defaults(no_migrate=True, self_test_query=SELF_TEST_QUERY, self_test_clip=False, update_ytdlp=False,
+                       rollback_ytdlp=False, force=False)
     # macOS may pass -psn_0_12345 to apps launched from Finder on old systems
     args, _unknown = p.parse_known_args(argv)
     return args
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, app: str = "seedbox") -> int:
+    """Run `app` ("seedbox" or "setbox"; `python -m setbox` passes the latter)."""
+    global PROFILE
+    PROFILE = PROFILES[app]
     args = parse_args(argv)
     prepare_environment()
     gui = not (args.server_only or args.self_test or args.update_ytdlp or args.rollback_ytdlp)
     log_file = setup_logging(console=not (gui and frozen()), debug=args.debug)
     if gui and frozen():
         _redirect_std_streams(log_file)
-    log.info("Seedbox %s starting (frozen=%s, python %s, bundled yt-dlp %s, downloaded yt-dlp %s, active: %s)",
-             __version__, frozen(), sys.version.split()[0], updater.bundled_version(), updater.installed_version(),
-             updater.active_dir() or "bundled")
-    if os.environ.get("SEEDBOX_NO_UPDATE_CHECK") != "1":
+    ytdlp = (f", bundled yt-dlp {updater.bundled_version()}, downloaded yt-dlp {updater.installed_version()}, "
+             f"active: {updater.active_dir() or 'bundled'}") if PROFILE.key == "seedbox" else ""
+    log.info("%s %s starting (frozen=%s, python %s%s)", PROFILE.name, __version__, frozen(), sys.version.split()[0], ytdlp)
+    if PROFILE.key == "seedbox" and os.environ.get("SEEDBOX_NO_UPDATE_CHECK") != "1":
         updater.check_in_background()
     if args.self_test:
         return self_test(args.self_test_query, clip=args.self_test_clip)

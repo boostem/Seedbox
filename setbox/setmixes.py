@@ -23,9 +23,9 @@ from typing import Any
 
 from musicreco import library
 
-from . import engine, serializers
+from seedbox import engine, serializers
 from .crates import ApiError, Conflict, CrateService, NotFound, SetFile, inside, resolve_crate
-from .events import EventBus
+from seedbox.events import EventBus
 from .mixes import MixService, Pair, _write_json_atomic
 
 log = logging.getLogger(__name__)

@@ -22,9 +22,9 @@ from typing import Any
 
 from musicreco import library, transitions
 
-from . import serializers
+from seedbox import serializers
 from .crates import ApiError, CrateService, NotFound, SetFile, audio_url, resolve_crate, track_json, with_cover
-from .events import EventBus
+from seedbox.events import EventBus
 from .mixes import MixService, Pair, _write_json_atomic, check_ids
 
 log = logging.getLogger(__name__)

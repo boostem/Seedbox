@@ -7,6 +7,7 @@ import { Badge, Button, Field, InfoRow, Input, Kbd, Page, PageBody, PageHeader, 
 import { cn } from "@/lib/cn";
 import { fmtMb, tildify } from "@/lib/format";
 import { useHotkey } from "@/lib/hotkeys";
+import { APP_NAME, isSeedbox, isSetbox, OTHER_APP_NAME } from "@/lib/appMode";
 import { useApp } from "@/store/app";
 import { runYtdlpUpdate, useYtdlpPendingRestart, useYtdlpUpdate, ytdlpOutdated } from "@/store/system";
 import { toast } from "@/store/toasts";
@@ -23,16 +24,31 @@ const DEFAULTS: Settings = {
 
 const CACHE_STEPS = [100, 250, 500, 1000, 2000, 5000];
 
-const SHORTCUTS: [string, string][] = [
-  ["Space", "Play / stop the selected track's preview"],
-  ["Mod+k", "Focus search (from any page)"],
-  ["Mod+.", "Stop playback"],
-  ["Mod+1", "Search"],
-  ["Mod+2", "Crates"],
-  ["Mod+,", "Settings"],
-  ["Mod+[", "Back"],
-  ["Mod+]", "Forward"],
-];
+const SHORTCUTS: [string, string][] = isSetbox
+  ? [
+      ["Space", "Play / stop the selected track or transition"],
+      ["Enter", "Open / close the selected transition"],
+      ["Alt+ArrowUp", "Move the selected track up"],
+      ["Alt+ArrowDown", "Move the selected track down"],
+      ["Mod+z", "Undo the last reorder"],
+      ["Mod+.", "Stop playback"],
+      ["Mod+1", "Crates"],
+      ["Mod+2", "Setlists"],
+      ["Mod+,", "Settings"],
+      ["Mod+[", "Back"],
+      ["Mod+]", "Forward"],
+    ]
+  : [
+      ["Space", "Play / stop the selected track's preview"],
+      ["Mod+k", "Focus search (from any page)"],
+      ["Mod+.", "Stop playback"],
+      ["Mod+1", "Search"],
+      ["Mod+2", "Crates"],
+      ["Mod+3", "Downloads"],
+      ["Mod+,", "Settings"],
+      ["Mod+[", "Back"],
+      ["Mod+]", "Forward"],
+    ];
 
 function diff(a: Settings, b: Settings): Partial<Settings> {
   const out: Partial<Settings> = {};
@@ -85,86 +101,93 @@ function SliderField({
   );
 }
 
-function SystemPanel() {
+/** Seedbox's yt-dlp rows: the version, whether a newer one is offered, and the update button. */
+function YtdlpRows() {
   const system = useApp((s) => s.system);
   const { running, result, error } = useYtdlpUpdate();
   const pending = useYtdlpPendingRestart(system?.ytdlp_version);
-  const outdated = system ? ytdlpOutdated(system.ytdlp_version, system.ytdlp_latest) : false;
+  if (!system) return null;
+  const outdated = ytdlpOutdated(system.ytdlp_version, system.ytdlp_latest);
+  return (
+    <>
+      <InfoRow label="yt-dlp">
+        <span className="font-medium num">{system.ytdlp_version}</span>
+        {pending ? (
+          <Badge tone="ok" size="xs">
+            {pending} installed · restart to apply
+          </Badge>
+        ) : outdated ? (
+          <Badge tone="warn" size="xs">
+            {system.ytdlp_latest} available
+          </Badge>
+        ) : (
+          <span className="text-xs text-fg-subtle">no update offered</span>
+        )}
+      </InfoRow>
+      <div className="border-b border-line/60 px-4 py-3">
+        <p className="mb-2.5 text-xs text-fg-subtle">YouTube changes often: update first when downloads or previews fail. Updates apply the next time Seedbox starts.</p>
+        <div className="flex items-center gap-3">
+          <Button variant={outdated ? "primary" : "secondary"} icon={CircleArrowUp} loading={running} onClick={() => void runYtdlpUpdate()}>
+            {running ? "Updating yt-dlp…" : outdated ? `Update to ${system.ytdlp_latest}` : "Check for update"}
+          </Button>
+        </div>
+        {running && <ProgressBar className="mt-3" value={null} size="xs" label="Updating yt-dlp" />}
+        {!running && result && (
+          <p className={cn("mt-2.5 text-xs select-text", result.ok ? "text-ok" : "text-warn")}>
+            {result.ok ? "✓ " : ""}
+            {result.message}
+            {result.ok && pending ? ". Restart Seedbox to start using it." : ""}
+          </p>
+        )}
+        {!running && error && <p className="mt-2.5 text-xs text-danger select-text">{error}</p>}
+      </div>
+    </>
+  );
+}
+
+function ToolRow({ label, path, missing, tone }: { label: string; path: string | null; missing: string; tone: "danger" | "warn" }) {
+  return (
+    <InfoRow label={label}>
+      {path ? (
+        <>
+          <Badge tone="ok" size="xs">
+            found
+          </Badge>
+          <span className="truncate font-mono text-xs text-fg-muted select-text" title={path}>
+            {tildify(path)}
+          </span>
+        </>
+      ) : (
+        <Badge tone={tone} size="xs">
+          {missing}
+        </Badge>
+      )}
+    </InfoRow>
+  );
+}
+
+function SystemPanel() {
+  const system = useApp((s) => s.system);
   return (
     <Panel>
-      <PanelHeader title="System" description="Bundled tools the engine uses" />
+      <PanelHeader title="System" description={isSetbox ? "Tools the analysis and mixes use" : "Bundled tools the engine uses"} />
       {!system ? (
         <div className="flex items-center gap-2 px-4 py-4 text-sm text-fg-subtle">
           <Spinner /> Loading system status…
         </div>
       ) : (
         <div>
-          <InfoRow label="Seedbox">
+          <InfoRow label={APP_NAME}>
             <span className="num">v{system.version}</span>
           </InfoRow>
-          <InfoRow label="yt-dlp">
-            <span className="font-medium num">{system.ytdlp_version}</span>
-            {pending ? (
-              <Badge tone="ok" size="xs">
-                {pending} installed · restart to apply
-              </Badge>
-            ) : outdated ? (
-              <Badge tone="warn" size="xs">
-                {system.ytdlp_latest} available
-              </Badge>
-            ) : (
-              <span className="text-xs text-fg-subtle">no update offered</span>
-            )}
-          </InfoRow>
-          <div className="border-b border-line/60 px-4 py-3">
-            <p className="mb-2.5 text-xs text-fg-subtle">YouTube changes often: update first when downloads or previews fail. Updates apply the next time Seedbox starts.</p>
-            <div className="flex items-center gap-3">
-              <Button variant={outdated ? "primary" : "secondary"} icon={CircleArrowUp} loading={running} onClick={() => void runYtdlpUpdate()}>
-                {running ? "Updating yt-dlp…" : outdated ? `Update to ${system.ytdlp_latest}` : "Check for update"}
-              </Button>
-            </div>
-            {running && <ProgressBar className="mt-3" value={null} size="xs" label="Updating yt-dlp" />}
-            {!running && result && (
-              <p className={cn("mt-2.5 text-xs select-text", result.ok ? "text-ok" : "text-warn")}>
-                {result.ok ? "✓ " : ""}
-                {result.message}
-                {result.ok && pending ? ". Restart Seedbox to start using it." : ""}
-              </p>
-            )}
-            {!running && error && <p className="mt-2.5 text-xs text-danger select-text">{error}</p>}
-          </div>
-          <InfoRow label="ffmpeg">
-            {system.ffmpeg ? (
-              <>
-                <Badge tone="ok" size="xs">
-                  found
-                </Badge>
-                <span className="truncate font-mono text-xs text-fg-muted select-text" title={system.ffmpeg}>
-                  {tildify(system.ffmpeg)}
-                </span>
-              </>
-            ) : (
-              <Badge tone="danger" size="xs">
-                missing: downloads can't encode MP3
-              </Badge>
-            )}
-          </InfoRow>
-          <InfoRow label="deno">
-            {system.deno ? (
-              <>
-                <Badge tone="ok" size="xs">
-                  found
-                </Badge>
-                <span className="truncate font-mono text-xs text-fg-muted select-text" title={system.deno}>
-                  {tildify(system.deno)}
-                </span>
-              </>
-            ) : (
-              <Badge tone="warn" size="xs">
-                missing: some YouTube videos may fail
-              </Badge>
-            )}
-          </InfoRow>
+          {isSeedbox && <YtdlpRows />}
+          <ToolRow
+            label="ffmpeg"
+            path={system.ffmpeg}
+            tone="danger"
+            missing={isSetbox ? "missing: songs can't be analysed or mixed" : "missing: downloads can't encode MP3"}
+          />
+          {isSeedbox && <ToolRow label="deno" path={system.deno} tone="warn" missing="missing: some YouTube videos may fail" />}
           <InfoRow label="Crates folder">
             <span className="truncate font-mono text-xs text-fg-muted select-text" title={system.output_root}>
               {tildify(system.output_root)}
@@ -253,7 +276,7 @@ export function SettingsPage() {
     <Page>
       <PageHeader
         title="Settings"
-        subtitle="Stored in ~/Library/Application Support/Seedbox/settings.json"
+        subtitle={`Stored in ~/Library/Application Support/Seedbox/settings.json, shared by ${APP_NAME} and ${OTHER_APP_NAME}`}
         actions={
           <>
             {dirty && <span className="text-xs text-warn">Unsaved changes</span>}
@@ -275,17 +298,24 @@ export function SettingsPage() {
           <div className="mx-auto flex max-w-[1180px] items-start gap-5">
             <div className="flex min-w-0 flex-1 flex-col gap-5">
               <Panel>
-                <PanelHeader title="Library" description="Where crates are written" />
+                <PanelHeader title="Library" description={isSetbox ? "Where Setbox finds crates (the folder Seedbox downloads into)" : "Where crates are written"} />
                 <div className="flex flex-col gap-4 px-4 py-4">
                   <Field
                     label="Crates folder"
                     htmlFor="output_root"
                     error={rootError}
                     hint={
-                      <>
-                        Each seed gets a sub-folder: <span className="font-mono">{tildify(form.output_root) || "…"}/Artists - Title/</span>. Changing this
-                        doesn't move existing crates.
-                      </>
+                      isSetbox ? (
+                        <>
+                          Every sub-folder of <span className="font-mono">{tildify(form.output_root) || "…"}/</span> is a crate. Shared with Seedbox:
+                          changing it here changes it there too, and doesn't move existing crates.
+                        </>
+                      ) : (
+                        <>
+                          Each seed gets a sub-folder: <span className="font-mono">{tildify(form.output_root) || "…"}/Artists - Title/</span>. Changing this
+                          doesn't move existing crates.
+                        </>
+                      )
                     }
                   >
                     <div className="flex items-center gap-2">
@@ -316,114 +346,150 @@ export function SettingsPage() {
                 </div>
               </Panel>
 
-              <Panel>
-                <PanelHeader title="Downloads" description="YouTube Music first, regular YouTube as fallback; MP3 192 kbps" />
-                <div className="grid grid-cols-2 gap-x-8 gap-y-5 px-4 py-4">
-                  <SliderField
-                    label="Parallel downloads"
-                    value={form.workers}
-                    display={form.workers}
-                    min={1}
-                    max={6}
-                    step={1}
-                    onChange={(v) => set("workers", v)}
-                    isDefault={form.workers === DEFAULTS.workers}
-                    hint="Tracks downloaded at the same time. More than 3 risks YouTube rate limits."
-                  />
-                  <SliderField
-                    label="Length tolerance"
-                    value={form.tolerance_s}
-                    display={`±${form.tolerance_s} s`}
-                    min={5}
-                    max={30}
-                    step={1}
-                    onChange={(v) => set("tolerance_s", v)}
-                    minLabel="5 s"
-                    maxLabel="30 s"
-                    isDefault={form.tolerance_s === DEFAULTS.tolerance_s}
-                    hint="A YouTube match must be this close to the Spotify length, otherwise the track is skipped (never guessed)."
-                  />
-                </div>
-              </Panel>
+              {isSeedbox && (
+                <>
+                  <Panel>
+                    <PanelHeader title="Downloads" description="YouTube Music first, regular YouTube as fallback; MP3 192 kbps" />
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-5 px-4 py-4">
+                      <SliderField
+                        label="Parallel downloads"
+                        value={form.workers}
+                        display={form.workers}
+                        min={1}
+                        max={6}
+                        step={1}
+                        onChange={(v) => set("workers", v)}
+                        isDefault={form.workers === DEFAULTS.workers}
+                        hint="Tracks downloaded at the same time. More than 3 risks YouTube rate limits."
+                      />
+                      <SliderField
+                        label="Length tolerance"
+                        value={form.tolerance_s}
+                        display={`±${form.tolerance_s} s`}
+                        min={5}
+                        max={30}
+                        step={1}
+                        onChange={(v) => set("tolerance_s", v)}
+                        minLabel="5 s"
+                        maxLabel="30 s"
+                        isDefault={form.tolerance_s === DEFAULTS.tolerance_s}
+                        hint="A YouTube match must be this close to the Spotify length, otherwise the track is skipped (never guessed)."
+                      />
+                    </div>
+                  </Panel>
 
-              <Panel>
-                <PanelHeader title="Mixing rule" description="Which recommendations start ticked" />
-                <div className="flex items-start justify-between gap-6 border-b border-line/60 px-4 py-4">
-                  <div className="min-w-0">
-                    <label htmlFor="pretick_all" className="text-sm font-medium text-fg">
-                      Pre-tick all recommendations
-                    </label>
-                    <p className="mt-1 text-xs text-fg-subtle">
-                      On: every tunebat recommendation starts ticked. Off: only key-adjacent tracks within the BPM tolerance start ticked.
-                    </p>
-                  </div>
-                  <span className="flex shrink-0 items-center gap-2 pt-0.5">
-                    {form.pretick_all === DEFAULTS.pretick_all && <span className="text-xs text-fg-faint">default</span>}
-                    <Switch id="pretick_all" checked={form.pretick_all} onChange={(v) => set("pretick_all", v)} />
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-x-8 gap-y-5 px-4 py-4">
-                  <SliderField
-                    label="BPM tolerance"
-                    value={Math.round(form.bpm_tolerance * 100)}
-                    display={`±${Math.round(form.bpm_tolerance * 100)}%`}
-                    min={2}
-                    max={20}
-                    step={1}
-                    onChange={(v) => set("bpm_tolerance", v / 100)}
-                    minLabel="2%"
-                    maxLabel="20%"
-                    isDefault={Math.abs(form.bpm_tolerance - DEFAULTS.bpm_tolerance) < 1e-9}
-                    hint={
-                      form.pretick_all
-                        ? "The mixing rule: tracks in this tempo range (half/double time counts) that are also key-adjacent pass (✓, ranked first)."
-                        : "Pre-tick tracks within this tempo range of the seed (half/double time counts) that are also adjacent on the Camelot wheel."
-                    }
-                  />
-                  <div className="rounded-sm border border-line bg-bg/40 px-3 py-2.5 text-xs leading-relaxed text-fg-subtle">
-                    <div className="mb-1 font-medium text-fg-muted">Example at ±{Math.round(form.bpm_tolerance * 100)}%</div>
-                    A 128 BPM seed {form.pretick_all ? "passes" : "pre-ticks"} tracks at{" "}
-                    <span className="whitespace-nowrap text-fg num">
-                      {Math.round(128 * (1 - form.bpm_tolerance))}–{Math.round(128 * (1 + form.bpm_tolerance))} BPM
-                    </span>
-                    , or{" "}
-                    <span className="whitespace-nowrap text-fg num">
-                      {Math.round(64 * (1 - form.bpm_tolerance))}–{Math.round(64 * (1 + form.bpm_tolerance))}
-                    </span>{" "}
-                    at half time. Key: same, ±1 or relative.
-                  </div>
-                </div>
-              </Panel>
+                  <Panel>
+                    <PanelHeader title="Mixing rule" description="Which recommendations start ticked" />
+                    <div className="flex items-start justify-between gap-6 border-b border-line/60 px-4 py-4">
+                      <div className="min-w-0">
+                        <label htmlFor="pretick_all" className="text-sm font-medium text-fg">
+                          Pre-tick all recommendations
+                        </label>
+                        <p className="mt-1 text-xs text-fg-subtle">
+                          On: every tunebat recommendation starts ticked. Off: only key-adjacent tracks within the BPM tolerance start ticked.
+                        </p>
+                      </div>
+                      <span className="flex shrink-0 items-center gap-2 pt-0.5">
+                        {form.pretick_all === DEFAULTS.pretick_all && <span className="text-xs text-fg-faint">default</span>}
+                        <Switch id="pretick_all" checked={form.pretick_all} onChange={(v) => set("pretick_all", v)} />
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-5 px-4 py-4">
+                      <SliderField
+                        label="BPM tolerance"
+                        value={Math.round(form.bpm_tolerance * 100)}
+                        display={`±${Math.round(form.bpm_tolerance * 100)}%`}
+                        min={2}
+                        max={20}
+                        step={1}
+                        onChange={(v) => set("bpm_tolerance", v / 100)}
+                        minLabel="2%"
+                        maxLabel="20%"
+                        isDefault={Math.abs(form.bpm_tolerance - DEFAULTS.bpm_tolerance) < 1e-9}
+                        hint={
+                          form.pretick_all
+                            ? "The mixing rule: tracks in this tempo range (half/double time counts) that are also key-adjacent pass (✓, ranked first)."
+                            : "Pre-tick tracks within this tempo range of the seed (half/double time counts) that are also adjacent on the Camelot wheel."
+                        }
+                      />
+                      <div className="rounded-sm border border-line bg-bg/40 px-3 py-2.5 text-xs leading-relaxed text-fg-subtle">
+                        <div className="mb-1 font-medium text-fg-muted">Example at ±{Math.round(form.bpm_tolerance * 100)}%</div>
+                        A 128 BPM seed {form.pretick_all ? "passes" : "pre-ticks"} tracks at{" "}
+                        <span className="whitespace-nowrap text-fg num">
+                          {Math.round(128 * (1 - form.bpm_tolerance))}–{Math.round(128 * (1 + form.bpm_tolerance))} BPM
+                        </span>
+                        , or{" "}
+                        <span className="whitespace-nowrap text-fg num">
+                          {Math.round(64 * (1 - form.bpm_tolerance))}–{Math.round(64 * (1 + form.bpm_tolerance))}
+                        </span>{" "}
+                        at half time. Key: same, ±1 or relative.
+                      </div>
+                    </div>
+                  </Panel>
 
-              <Panel>
-                <PanelHeader title="Previews" description="20 s clips preloaded when a crate opens" />
-                <div className="grid grid-cols-2 gap-x-8 gap-y-5 px-4 py-4">
-                  <SliderField
-                    label="Clips loaded at once"
-                    value={form.preview_concurrency}
-                    display={form.preview_concurrency}
-                    min={1}
-                    max={6}
-                    step={1}
-                    onChange={(v) => set("preview_concurrency", v)}
-                    isDefault={form.preview_concurrency === DEFAULTS.preview_concurrency}
-                    hint="Background preloading in parallel. Ticked and high-score tracks go first."
-                  />
-                  <SliderField
-                    label="Preview cache"
-                    value={cacheIdx}
-                    display={fmtMb(form.preview_cache_mb)}
-                    min={0}
-                    max={CACHE_STEPS.length - 1}
-                    step={1}
-                    onChange={(i) => set("preview_cache_mb", CACHE_STEPS[i])}
-                    minLabel={fmtMb(CACHE_STEPS[0])}
-                    maxLabel={fmtMb(CACHE_STEPS[CACHE_STEPS.length - 1])}
-                    isDefault={form.preview_cache_mb === DEFAULTS.preview_cache_mb}
-                    hint="Disk space for clips, shared across sessions (~0.3 MB each). Oldest clips are evicted first."
-                  />
-                </div>
-              </Panel>
+                  <Panel>
+                    <PanelHeader title="Previews" description="20 s clips preloaded when a crate opens" />
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-5 px-4 py-4">
+                      <SliderField
+                        label="Clips loaded at once"
+                        value={form.preview_concurrency}
+                        display={form.preview_concurrency}
+                        min={1}
+                        max={6}
+                        step={1}
+                        onChange={(v) => set("preview_concurrency", v)}
+                        isDefault={form.preview_concurrency === DEFAULTS.preview_concurrency}
+                        hint="Background preloading in parallel. Ticked and high-score tracks go first."
+                      />
+                      <SliderField
+                        label="Preview cache"
+                        value={cacheIdx}
+                        display={fmtMb(form.preview_cache_mb)}
+                        min={0}
+                        max={CACHE_STEPS.length - 1}
+                        step={1}
+                        onChange={(i) => set("preview_cache_mb", CACHE_STEPS[i])}
+                        minLabel={fmtMb(CACHE_STEPS[0])}
+                        maxLabel={fmtMb(CACHE_STEPS[CACHE_STEPS.length - 1])}
+                        isDefault={form.preview_cache_mb === DEFAULTS.preview_cache_mb}
+                        hint="Disk space for clips, shared across sessions (~0.3 MB each). Oldest clips are evicted first."
+                      />
+                    </div>
+                  </Panel>
+                </>
+              )}
+              {isSetbox && (
+                <Panel>
+                  <PanelHeader title="Transitions" description="How strict the set builder is about tempo" />
+                  <div className="grid grid-cols-2 gap-x-8 gap-y-5 px-4 py-4">
+                    <SliderField
+                      label="BPM tolerance"
+                      value={Math.round(form.bpm_tolerance * 100)}
+                      display={`±${Math.round(form.bpm_tolerance * 100)}%`}
+                      min={2}
+                      max={20}
+                      step={1}
+                      onChange={(v) => set("bpm_tolerance", v / 100)}
+                      minLabel="2%"
+                      maxLabel="20%"
+                      isDefault={Math.abs(form.bpm_tolerance - DEFAULTS.bpm_tolerance) < 1e-9}
+                      hint="A transition that pitches the next song further than this gets a warning, and auto-order and partner suggestions favour pairs inside it (half/double time counts). Shared with Seedbox's mixing rule."
+                    />
+                    <div className="rounded-sm border border-line bg-bg/40 px-3 py-2.5 text-xs leading-relaxed text-fg-subtle">
+                      <div className="mb-1 font-medium text-fg-muted">Example at ±{Math.round(form.bpm_tolerance * 100)}%</div>
+                      After a 128 BPM song, the next one mixes without a warning from{" "}
+                      <span className="whitespace-nowrap text-fg num">
+                        {Math.round(128 * (1 - form.bpm_tolerance))}–{Math.round(128 * (1 + form.bpm_tolerance))} BPM
+                      </span>
+                      , or{" "}
+                      <span className="whitespace-nowrap text-fg num">
+                        {Math.round(64 * (1 - form.bpm_tolerance))}–{Math.round(64 * (1 + form.bpm_tolerance))}
+                      </span>{" "}
+                      at half time.
+                    </div>
+                  </div>
+                </Panel>
+              )}
             </div>
 
             <div className="flex w-[400px] shrink-0 flex-col gap-5">

@@ -1,4 +1,4 @@
-import { ArrowRight, FolderOpen, LayoutGrid, Library, List, RefreshCw, Search, Sprout } from "lucide-react";
+import { ArrowRight, FolderOpen, LayoutGrid, Library, List, RefreshCw, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { CrateSummary } from "@/api/types";
@@ -25,6 +25,7 @@ import {
   THead,
   Tr,
 } from "@/components/ui";
+import { isSetbox } from "@/lib/appMode";
 import { parseCamelot } from "@/lib/camelot";
 import { cn } from "@/lib/cn";
 import { fmtBpm, fmtDateTime, fmtRelative, plural, tildify } from "@/lib/format";
@@ -68,7 +69,10 @@ function compare(a: CrateSummary, b: CrateSummary, key: SortKey): number {
   }
 }
 
-const open = (c: CrateSummary) => navigate({ name: "set", folder: c.folder });
+// Setbox opens the crate's set; Seedbox its seed's recommendations (a crate without a seed: Finder)
+const open = (c: CrateSummary) =>
+  isSetbox ? navigate({ name: "set", folder: c.folder }) : c.seed ? navigate({ name: "crate", seedId: c.seed.id }) : void api.reveal(c.path);
+const OPEN_LABEL = isSetbox ? "Open set" : "Open crate";
 const reveal = (c: CrateSummary) => void api.reveal(c.path);
 
 function CrateCard({ crate }: { crate: CrateSummary }) {
@@ -86,7 +90,7 @@ function CrateCard({ crate }: { crate: CrateSummary }) {
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-black/0 opacity-0 transition-opacity group-hover:opacity-100" />
         <div className="absolute inset-x-2 bottom-2 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
           <Button size="xs" variant="primary" iconRight={ArrowRight} onClick={(e) => (e.stopPropagation(), open(crate))}>
-            Open set
+            {OPEN_LABEL}
           </Button>
           <span className="flex-1" />
           <IconButton
@@ -99,18 +103,6 @@ function CrateCard({ crate }: { crate: CrateSummary }) {
               reveal(crate);
             }}
           />
-          {s && (
-            <IconButton
-              icon={Sprout}
-              label="More recommendations for this seed"
-              size="sm"
-              variant="secondary"
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate({ name: "crate", seedId: s.id });
-              }}
-            />
-          )}
         </div>
         <span className="absolute top-2 right-2 rounded-xs bg-black/65 px-1.5 py-0.5 text-2xs font-semibold text-white backdrop-blur-sm num">{crate.track_count}</span>
       </div>
@@ -185,9 +177,8 @@ function CrateTable({ crates, sort, onSort }: { crates: CrateSummary[]; sort: { 
               </Td>
               <Td align="right" className="pr-4">
                 <span className="inline-flex items-center gap-0.5 opacity-60 group-hover/row:opacity-100">
-                  {c.seed && <IconButton icon={Sprout} label="More recommendations for this seed" size="sm" onClick={() => navigate({ name: "crate", seedId: c.seed!.id })} />}
                   <IconButton icon={FolderOpen} label="Reveal in Finder" size="sm" onClick={() => reveal(c)} />
-                  <IconButton icon={ArrowRight} label="Open set builder" size="sm" onClick={() => open(c)} />
+                  <IconButton icon={ArrowRight} label={OPEN_LABEL} size="sm" onClick={() => open(c)} />
                 </span>
               </Td>
             </Tr>
@@ -259,9 +250,11 @@ export function CratesPage() {
                 Reveal folder
               </Button>
             )}
-            <Button icon={Search} variant="primary" onClick={() => navigate({ name: "search" })}>
-              New crate
-            </Button>
+            {!isSetbox && (
+              <Button icon={Search} variant="primary" onClick={() => navigate({ name: "search" })}>
+                New crate
+              </Button>
+            )}
           </>
         }
       >
@@ -313,11 +306,17 @@ export function CratesPage() {
           className="flex-1"
           icon={Library}
           title="No crates yet"
-          description="Search for a seed track, tick the recommendations you like and download them. Each seed becomes a crate here."
+          description={
+            isSetbox
+              ? "Crates come from Seedbox: search for a seed there and download its recommendations. They show up here to build sets from."
+              : "Search for a seed track, tick the recommendations you like and download them. Each seed becomes a crate here."
+          }
           action={
-            <Button variant="primary" icon={Search} onClick={() => navigate({ name: "search" })}>
-              Search for a seed
-            </Button>
+            isSetbox ? undefined : (
+              <Button variant="primary" icon={Search} onClick={() => navigate({ name: "search" })}>
+                Search for a seed
+              </Button>
+            )
           }
         />
       ) : shown.length === 0 ? (
