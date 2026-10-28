@@ -7,11 +7,12 @@ import copy
 import numpy as np
 import pytest
 
-from musicreco import mixplan, structure, transitions
+from musicreco import mixplan, settings, structure, transitions
 
 from .fixtures import (
-    BUILD_END, COLD_END, DROP_HEAVY, DROP_HEAVY_B, FAST, HALF_TIME, INSERT, LONG_OUTRO, OUTRO_24, PAIRS, PICKUP,
-    SHORT_INTRO_DROP, SHORT_OUTRO, STANDARD, VOCAL_INTRO, VOCAL_OUTRO, Spec, analysis, track,
+    BUILD_END, CLUB_PAIRS, COLD_END, DROP_HEAVY, DROP_HEAVY_B, FAST, HALF_TIME, HOUSE, HOUSE_B, INSERT, LONG_OUTRO,
+    OUTRO_24, PAIRS, PICKUP, SHORT_INTRO_DROP, SHORT_OUTRO, STANDARD, TECHNO, TECHNO_B, VOCAL_INTRO, VOCAL_OUTRO,
+    Spec, analysis, track,
 )  # fmt: skip
 
 PHRASE = transitions.PHRASE
@@ -36,6 +37,10 @@ EXPECTED = {
     "build end -> short intro drop": ("phrase blend", 8, "slam", 4),
     "build end -> fast": ("phrase blend", 16, "slam", 4),
     "build end -> standard": ("phrase blend", 16, "long blend", 16),
+    "house -> house": ("long blend", 16, "long blend", 16),
+    "techno -> techno": ("long blend", 32, "long blend", 32),
+    "music outro -> house": ("phrase blend", 16, "long blend", 16),
+    "short edges -> short edges": ("phrase blend", 8, "phrase blend", 8),  # 8 bars only when forced
 }
 IDS = [name for name, _, _ in PAIRS]
 
@@ -115,7 +120,7 @@ def test_plan_cold_end_echoes_out() -> None:
 def test_plan_vocal_clash_drops_the_blend_for_a_drop_swap() -> None:
     ga, gb = _grids(DROP_HEAVY, DROP_HEAVY_B)
     blend = transitions._best_blend(ga, gb, key_clash=False)
-    assert blend is not None and len(blend.clash) > transitions._MAX_CLASH_BARS
+    assert blend is not None and len(blend.clash) > transitions._max_clash(blend.length)
     p = transitions._plan(ga, gb, key_clash=False)
     assert (p.technique, p.a0, p.b0, p.length) == ("drop swap", 136, 24, 0)
 
@@ -314,13 +319,30 @@ def test_generate_big_tempo_gap_cuts_and_jumps_tempo() -> None:
     assert any(m["label"] == "echo throw" for m in plan["markers"])
 
 
-def test_generate_vocal_clash_ducks_a_mids() -> None:
+def test_generate_vocal_clash_ducks_b_while_a_leads() -> None:
     sung = Spec("sung_to_the_end", outro_drums=False, vocals=[(64, 128)])  # no clash-free 16-bar window
     plan = _generate(sung, VOCAL_INTRO, technique="phrase blend", bars=16)
-    assert any("A's mids are ducked" in n for n in plan["notes"])
-    # B is sung through bar 8 of the blend: A's mids are down by bar 3 (a 2-bar ease) and stay down
-    mids = mixplan.lane_value(plan["a"]["lanes"]["eq_mid"], np.arange(8.0, 32.0))
+    assert plan["bars"] == 16, "the clash is ducked, not cut short"
+    assert any("B's mids are ducked" in n for n in plan["notes"])
+    # B is sung through bar 8 of the blend, before the swap on bar 9: B's mids are down from its first beat to the
+    # swap and back up 2 bars later, A's are never ducked
+    mids = mixplan.lane_value(plan["b"]["lanes"]["eq_mid"], np.arange(0.0, 33.0))
     assert np.all(mids <= mixplan._VOCAL_CUT + 1e-9)
+    assert mixplan.lane_value(plan["b"]["lanes"]["eq_mid"], 40.0) == pytest.approx(0.0)
+    assert min(k["value"] for k in plan["a"]["lanes"]["eq_mid"]) > mixplan._VOCAL_CUT
+
+
+def test_vocal_clash_after_the_swap_ducks_a_to_the_end() -> None:
+    A, B = mixplan._lanes(), mixplan._lanes()
+    mixplan._blend_lanes("bass swap", 16, 8, A, B)
+    on_b, on_a = mixplan._duck_mids(A, B, [6, 7, 8, 9, 10], 8, 16)
+    assert (on_b, on_a) == ([6, 7], [8, 9, 10])
+    a_mid = [{"beat": b, "value": v, "curve": c} for b, v, c in A["eq_mid"]]
+    b_mid = [{"beat": b, "value": v, "curve": c} for b, v, c in B["eq_mid"]]
+    assert np.all(mixplan.lane_value(a_mid, np.arange(32.0, 65.0)) <= mixplan._VOCAL_CUT + 1e-9)
+    assert mixplan.lane_value(a_mid, 20.0) == pytest.approx(0.0)  # A untouched until 2 bars before the swap
+    assert np.all(mixplan.lane_value(b_mid, np.arange(24.0, 33.0)) <= mixplan._VOCAL_CUT + 1e-9)
+    assert mixplan.lane_value(b_mid, 40.0) == pytest.approx(0.0)
 
 
 def test_generate_drop_swap_cuts_on_both_drops() -> None:
@@ -410,7 +432,7 @@ def test_generate_every_technique_and_length(technique: str, bars: int | None) -
 
 def test_generate_without_analyses_is_a_rough_plan() -> None:
     plan = mixplan.generate(track(STANDARD), None, track(LONG_OUTRO), None, "folder")
-    assert plan["technique"] == "bass swap" and plan["bars"] == 8
+    assert plan["technique"] == "bass swap" and plan["bars"] == 16
     assert any("Rough plan" in n for n in plan["notes"])
 
 
@@ -451,3 +473,63 @@ def test_validate_rejects(breakage) -> None:  # noqa: ANN001
     breakage(plan)
     with pytest.raises(ValueError):
         mixplan.validate(plan)
+
+
+# --- blend length ----------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("name", "a", "b"), CLUB_PAIRS, ids=[p[0] for p in CLUB_PAIRS])
+def test_club_pairs_blend_16_bars_or_more(name: str, a: Spec, b: Spec) -> None:
+    tr = transitions.suggest(track(a), analysis(a), track(b), analysis(b))
+    plan = _generate(a, b)
+    assert tr["overlap_bars"] >= 16 and plan["bars"] >= 16
+    assert plan["technique"] in ("long blend", "bass swap", "phrase blend")
+
+
+@pytest.mark.parametrize(
+    ("a", "b", "bars"),
+    [
+        (TECHNO, TECHNO_B, {"short": 8, "normal": 32, "long": 32}),
+        (HOUSE, HOUSE_B, {"short": 8, "normal": 16, "long": 16}),
+        (STANDARD, LONG_OUTRO, {"short": 8, "normal": 16, "long": 32}),  # B's 32-bar drum intro
+    ],
+    ids=["techno", "house", "into a 32-bar intro"],
+)
+def test_mix_length_preference(a: Spec, b: Spec, bars: dict[str, int]) -> None:
+    for pref, n in bars.items():
+        tr = transitions.suggest(track(a), analysis(a), track(b), analysis(b), mix_length=pref)
+        assert tr["overlap_bars"] == n, pref
+        assert _generate(a, b, mix_length=pref)["bars"] == n, pref
+
+
+def test_mix_length_sets_the_rough_plan_length() -> None:
+    for pref, n in (("short", 8), ("normal", 16), ("long", 16)):  # no analysis: never longer than 16
+        plan = mixplan.generate(track(STANDARD), None, track(LONG_OUTRO), None, "folder", mix_length=pref)
+        assert plan["bars"] == n, pref
+
+
+def test_blend_lanes_are_phrased() -> None:
+    plan = _generate(TECHNO, TECHNO_B)  # 32 bars, bass swap on bar 17
+    a, b = plan["a"]["lanes"], plan["b"]["lanes"]
+
+    def at(lane: list[dict], bar: float) -> float:
+        return float(mixplan.lane_value(lane, 4.0 * bar))
+
+    assert at(b["volume"], 4) < 1.0 and at(b["volume"], 8) == 1.0, "B's fader comes up over the first 8 bars"
+    assert at(b["eq_high"], 8) == 0.0 and at(b["eq_mid"], 12) == -4.0 and at(b["eq_mid"], 18) == 0.0
+    assert at(b["eq_low"], 16) == mixplan._KILL and at(b["eq_low"], 16.5) == 0.0, "the lows swap on bar 17"
+    for lane in ("volume", "eq_mid", "eq_high", "filter"):  # the ride: A untouched through bar 24
+        assert at(a[lane], 23.9) == mixplan.LANE_DEFAULTS[lane], lane
+    assert at(a["eq_mid"], 26) == 0.0 and at(a["eq_high"], 28) == -12.0 and at(a["volume"], 28) == 1.0, \
+        "highs out first"
+    assert at(a["eq_mid"], 30) == -10.0 and 0.0 < at(a["volume"], 30) < 1.0, "then mids, then the fader"
+    assert at(a["volume"], 32) == 0.0
+
+
+def test_settings_mix_length() -> None:
+    assert settings.Settings().mix_length == "normal"
+    assert settings.from_json({"mix_length": "long"}).mix_length == "long"
+    assert settings.from_json({"mix_length": "huge"}).mix_length == "normal"
+    with pytest.raises(ValueError, match="mix_length"):
+        settings.from_json({"mix_length": "huge"}, strict=True)
+    assert settings.to_json(settings.from_json({"mix_length": "short"}))["mix_length"] == "short"

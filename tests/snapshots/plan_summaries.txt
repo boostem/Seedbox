@@ -6,69 +6,69 @@ plan: long blend, 16 bars, swap bar 9
   markers: B_in@0 bass_swap@32 A_out@64
   A volume: 1@-32h 1@48e 0@64h
   A eq_low: 0@-32h 0@0h 0@32l -30@33h
-  A eq_mid: 0@-32h 0@32e -8@64h
-  A eq_high: 0@-32h 0@32e -10@64h
-  A filter: 0@-32h 0@16e 0.35@64h
+  A eq_mid: 0@-32h 0@40e -10@56h
+  A eq_high: 0@-32h 0@32e -12@48h
+  A filter: 0@-32h 0@32e 0.35@64h
   A echo_send: 0@-32h 0@56l 0.4@64h 0@68h
   A echo_feedback: 0.6@-32h
   A reverb_send: 0@-32h 0@60l 0.35@64h 0@68h
   B volume: 0@-32h 0@0e 1@16h
   B eq_low: -30@-32h -30@0h -30@32l 0@33h
-  B eq_mid: -15@-32h -15@0e 0@32h
+  B eq_mid: -15@-32h -15@0e -4@32e 0@36h
   B eq_high: -12@-32h -12@0e 0@32h
   B filter: 0.4@-32h 0.4@0e 0@32h
   note: A's 32-bar outro is drums-only; B's 16-bar intro too → 16-bar long blend: B in at A 3:37 (bar 113, on the phrase) from B 0:00, swap the bass on the 1 of bar 9 (A 3:52), A out by 4:08.
-  note: B comes in with its lows killed behind a gentle high-pass, its highs and mids opening over the first 8 bars; A's mids and highs ease down over the second half under a high-pass rising from bar 5, its echo builds over the last 2 bars and a reverb wash opens on its last.
+  note: In phrases: bars 1–8 bring B in with its lows killed behind a gentle filter (fader up over 4 bars, highs opening, mids held 4 dB down until the swap); from bar 9 both ride together while the last 8 bars take A out — highs, then mids, then the fader — under a slowly rising high-pass, A's echo building over its last 2 bars and a reverb wash on its last.
   note: Same tempo (124.0 BPM), no pitch moves.
 
 ## standard -> long outro
-suggest: long blend, 16 bars, swap 9, A out 216.774 s, B in 30.968 s, score 99
+suggest: long blend, 16 bars, swap 9, A out 216.774 s, B in 30.968 s, score 100
 plan: long blend, 16 bars, swap bar 9
   cue: A bar 112 (216.77 s) / B bar 16 (30.97 s)
   tempo: 124 BPM, window -32..96 beats
   markers: B_in@0 bass_swap@32 A_out@64
   A volume: 1@-32h 1@48e 0@64h
   A eq_low: 0@-32h 0@0h 0@32l -30@33h
-  A eq_mid: 0@-32h 0@32e -8@64h
-  A eq_high: 0@-32h 0@32e -10@64h
-  A filter: 0@-32h 0@16e 0.35@64h
+  A eq_mid: 0@-32h 0@40e -10@56h
+  A eq_high: 0@-32h 0@32e -12@48h
+  A filter: 0@-32h 0@32e 0.35@64h
   A echo_send: 0@-32h 0@56l 0.4@64h 0@68h
   A echo_feedback: 0.6@-32h
   A reverb_send: 0@-32h 0@60l 0.35@64h 0@68h
   B volume: 0@-32h 0@0e 1@16h
   B eq_low: -30@-32h -30@0h -30@32l 0@33h
-  B eq_mid: -15@-32h -15@0e 0@32h
+  B eq_mid: -15@-32h -15@0e -4@32e 0@36h
   B eq_high: -12@-32h -12@0e 0@32h
   B filter: 0.4@-32h 0.4@0e 0@32h
   note: A's 16-bar outro is drums-only; B's 32-bar intro too → 16-bar long blend: B in at A 3:37 (bar 113, on the phrase) from B 0:31, swap the bass on the 1 of bar 9 (A 3:52), A out by 4:08.
-  note: B comes in with its lows killed behind a gentle high-pass, its highs and mids opening over the first 8 bars; A's mids and highs ease down over the second half under a high-pass rising from bar 5, its echo builds over the last 2 bars and a reverb wash opens on its last.
+  note: In phrases: bars 1–8 bring B in with its lows killed behind a gentle filter (fader up over 4 bars, highs opening, mids held 4 dB down until the swap); from bar 9 both ride together while the last 8 bars take A out — highs, then mids, then the fader — under a slowly rising high-pass, A's echo building over its last 2 bars and a reverb wash on its last.
   note: Same tempo (124.0 BPM), no pitch moves.
 
 ## short outro -> standard
-suggest: phrase blend, 16 bars, swap 9, A out 216.774 s, B in 0.0 s, score 99
+suggest: phrase blend, 16 bars, swap 9, A out 216.774 s, B in 0.0 s, score 100
 plan: long blend, 16 bars, swap bar 9
   cue: A bar 112 (216.77 s) / B bar 0 (0.00 s)
   tempo: 124 BPM, window -32..96 beats
   markers: B_in@0 bass_swap@32 A_out@64
   A volume: 1@-32h 1@48e 0@64h
   A eq_low: 0@-32h 0@0h 0@32l -30@33h
-  A eq_mid: 0@-32h 0@32e -8@64h
-  A eq_high: 0@-32h 0@32e -10@64h
-  A filter: 0@-32h 0@16e 0.35@64h
+  A eq_mid: 0@-32h 0@40e -10@56h
+  A eq_high: 0@-32h 0@32e -12@48h
+  A filter: 0@-32h 0@32e 0.35@64h
   A echo_send: 0@-32h 0@56l 0.4@64h 0@68h
   A echo_feedback: 0.6@-32h
   A reverb_send: 0@-32h 0@60l 0.35@64h 0@68h
   B volume: 0@-32h 0@0e 1@16h
   B eq_low: -30@-32h -30@0h -30@32l 0@33h
-  B eq_mid: -15@-32h -15@0e 0@32h
+  B eq_mid: -15@-32h -15@0e -4@32e 0@36h
   B eq_high: -12@-32h -12@0e 0@32h
   B filter: 0.4@-32h 0.4@0e 0@32h
   note: A's 8-bar outro carries bass and music; B's 16-bar intro is drums-only → 16-bar long blend: B in at A 3:37 (bar 113, on the phrase) from B 0:00, swap the bass on the 1 of bar 9 (A 3:52), A out by 4:08.
-  note: B comes in with its lows killed behind a gentle high-pass, its highs and mids opening over the first 8 bars; A's mids and highs ease down over the second half under a high-pass rising from bar 5, its echo builds over the last 2 bars and a reverb wash opens on its last.
+  note: In phrases: bars 1–8 bring B in with its lows killed behind a gentle filter (fader up over 4 bars, highs opening, mids held 4 dB down until the swap); from bar 9 both ride together while the last 8 bars take A out — highs, then mids, then the fader — under a slowly rising high-pass, A's echo building over its last 2 bars and a reverb wash on its last.
   note: Same tempo (124.0 BPM), no pitch moves.
 
 ## cold end -> standard
-suggest: echo out, 16 bars, swap 9, A out 216.774 s, B in 0.0 s, score 98
+suggest: echo out, 16 bars, swap 9, A out 216.774 s, B in 0.0 s, score 100
 plan: echo out, 16 bars, swap bar 9
   cue: A bar 112 (216.77 s) / B bar 0 (0.00 s)
   tempo: 124 BPM, window -32..96 beats
@@ -77,13 +77,13 @@ plan: echo out, 16 bars, swap bar 9
   A eq_low: 0@-32h 0@0h 0@32l -30@33h
   A eq_mid: 0@-32h 0@32e -6@64h
   A eq_high: 0@-32h 0@32e -6@64h
-  A filter: 0@-32h 0@16e 0.35@64h
+  A filter: 0@-32h 0@32e 0.35@64h
   A echo_send: 0@-32h 0@62l 0.9@64h 0@68h
   A echo_feedback: 0.7@-32h
   A reverb_send: 0@-32h 0@60l 0.35@64h 0@68h
   B volume: 0@-32h 0@0e 1@16h
   B eq_low: -30@-32h -30@0h -30@32l 0@33h
-  B eq_mid: -15@-32h -15@0e 0@32h
+  B eq_mid: -15@-32h -15@0e -4@32e 0@36h
   B eq_high: -12@-32h -12@0e 0@32h
   B filter: 0.3@-32h 0.3@0e 0@32h
   note: A stops cold (full power to the end); B's 16-bar intro is drums-only → 16-bar blend from A 3:37 (bar 113), swap the bass on the 1 of bar 9 (A 3:52), then echo A out on its last beat and cut it on the 1 at 4:08.
@@ -98,15 +98,15 @@ plan: filter sweep, 16 bars, swap bar 9
   markers: B_in@0 bass_swap@32 A_out@64
   A volume: 1@-32h 1@48e 0@64h
   A eq_low: 0@-32h 0@0h 0@32l -30@33h
-  A eq_mid: 0@-32h 0@32e -8@64h
-  A eq_high: 0@-32h 0@32e -10@64h
+  A eq_mid: 0@-32h 0@40e -10@56h
+  A eq_high: 0@-32h 0@32e -12@48h
   A filter: 0@-32h 0@0e 0.85@64h
   A echo_send: 0@-32h 0@56l 0.4@64h 0@68h
   A echo_feedback: 0.6@-32h
   A reverb_send: 0@-32h 0@60l 0.35@64h 0@68h
   B volume: 0@-32h 0@0e 1@16h
   B eq_low: -30@-32h -30@0h -30@32l 0@33h
-  B eq_mid: -15@-32h -15@0e 0@32h
+  B eq_mid: -15@-32h -15@0e -4@32e 0@36h
   B eq_high: -12@-32h -12@0e 0@32h
   B filter: -0.6@-32h -0.6@0e 0@32h
   note: A's 16-bar outro has vocals; B's 16-bar intro is drums-only → 16-bar filter sweep: B opens up from a closed low-pass under A from A 3:37 (bar 113) while A rides a high-pass sweep out by 4:08; swap the bass on the 1 of bar 9 (A 3:52).
@@ -114,26 +114,26 @@ plan: filter sweep, 16 bars, swap bar 9
   note: Same tempo (124.0 BPM), no pitch moves.
 
 ## vocal outro -> vocal intro
-suggest: bass swap, 16 bars, swap 9, A out 185.806 s, B in 0.0 s, score 93
+suggest: bass swap, 16 bars, swap 9, A out 185.806 s, B in 0.0 s, score 96
 plan: long blend, 16 bars, swap bar 9
   cue: A bar 96 (185.81 s) / B bar 0 (0.00 s)
   tempo: 124 BPM, window -32..96 beats
   markers: B_in@0 bass_swap@32 A_out@64
   A volume: 1@-32h 1@48e 0@64h
   A eq_low: 0@-32h 0@0h 0@32l -30@33h
-  A eq_mid: 0@-32h 0@32e -8@64h
-  A eq_high: 0@-32h 0@32e -10@64h
-  A filter: 0@-32h 0@16e 0.35@64h
+  A eq_mid: 0@-32h 0@40e -10@56h
+  A eq_high: 0@-32h 0@32e -12@48h
+  A filter: 0@-32h 0@32e 0.35@64h
   A echo_send: 0@-32h 0@56l 0.4@64h 0@68h
   A echo_feedback: 0.6@-32h
   A reverb_send: 0@-32h 0@60l 0.35@64h 0@68h
   B volume: 0@-32h 0@0e 1@16h
   B eq_low: -30@-32h -30@0h -30@32l 0@33h
-  B eq_mid: -15@-32h -15@0e 0@32h
+  B eq_mid: -15@-32h -15@0e -4@32e 0@36h
   B eq_high: -12@-32h -12@0e 0@32h
   B filter: 0.4@-32h 0.4@0e 0@32h
   note: A's 16-bar outro has vocals; B's 16-bar intro has vocals → 16-bar long blend: B in at A 3:06 (bar 97, on the phrase) from B 0:00, swap the bass on the 1 of bar 9 (A 3:21), A out by 3:37.
-  note: B comes in with its lows killed behind a gentle high-pass, its highs and mids opening over the first 8 bars; A's mids and highs ease down over the second half under a high-pass rising from bar 5, its echo builds over the last 2 bars and a reverb wash opens on its last.
+  note: In phrases: bars 1–8 bring B in with its lows killed behind a gentle filter (fader up over 4 bars, highs opening, mids held 4 dB down until the swap); from bar 9 both ride together while the last 8 bars take A out — highs, then mids, then the fader — under a slowly rising high-pass, A's echo building over its last 2 bars and a reverb wash on its last.
   note: Same tempo (124.0 BPM), no pitch moves.
 
 ## drop heavy -> drop heavy
@@ -157,19 +157,19 @@ plan: long blend, 16 bars, swap bar 9
   markers: B_in@0 bass_swap@32 A_out@64
   A volume: 1@-32h 1@48e 0@64h
   A eq_low: 0@-32h 0@0h 0@32l -30@33h
-  A eq_mid: 0@-32h 0@32e -8@64h
-  A eq_high: 0@-32h 0@32e -10@64h
-  A filter: 0@-32h 0@16e 0.35@64h
+  A eq_mid: 0@-32h 0@40e -10@56h
+  A eq_high: 0@-32h 0@32e -12@48h
+  A filter: 0@-32h 0@32e 0.35@64h
   A echo_send: 0@-32h 0@56l 0.4@64h 0@68h
   A echo_feedback: 0.6@-32h
   A reverb_send: 0@-32h 0@60l 0.35@64h 0@68h
   B volume: 0@-32h 0@0e 1@16h
   B eq_low: -30@-32h -30@0h -30@32l 0@33h
-  B eq_mid: -15@-32h -15@0e 0@32h
+  B eq_mid: -15@-32h -15@0e -4@32e 0@36h
   B eq_high: -12@-32h -12@0e 0@32h
   B filter: 0.4@-32h 0.4@0e 0@32h
   note: A's 16-bar outro is drums-only; B's 20-bar intro too → 16-bar long blend: B in at A 3:37 (bar 113, on the phrase) from B 0:08, swap the bass on the 1 of bar 9 (A 3:52), A out by 4:08.
-  note: B comes in with its lows killed behind a gentle high-pass, its highs and mids opening over the first 8 bars; A's mids and highs ease down over the second half under a high-pass rising from bar 5, its echo builds over the last 2 bars and a reverb wash opens on its last.
+  note: In phrases: bars 1–8 bring B in with its lows killed behind a gentle filter (fader up over 4 bars, highs opening, mids held 4 dB down until the swap); from bar 9 both ride together while the last 8 bars take A out — highs, then mids, then the fader — under a slowly rising high-pass, A's echo building over its last 2 bars and a reverb wash on its last.
   note: Same tempo (124.0 BPM), no pitch moves.
 
 ## standard -> fast
@@ -195,19 +195,19 @@ plan: long blend, 16 bars, swap bar 9
   markers: tempo_ramp@-128 B_in@0 bass_swap@32 A_out@64 tempo_ramp@64
   A volume: 1@-96h 1@48e 0@64h
   A eq_low: 0@-96h 0@0h 0@32l -30@33h
-  A eq_mid: 0@-96h 0@32e -8@64h
-  A eq_high: 0@-96h 0@32e -10@64h
-  A filter: 0@-96h 0@16e 0.35@64h
+  A eq_mid: 0@-96h 0@40e -10@56h
+  A eq_high: 0@-96h 0@32e -12@48h
+  A filter: 0@-96h 0@32e 0.35@64h
   A echo_send: 0@-96h 0@56l 0.4@64h 0@68h
   A echo_feedback: 0.6@-96h
   A reverb_send: 0@-96h 0@60l 0.35@64h 0@68h
   B volume: 0@-96h 0@0e 1@16h
   B eq_low: -30@-96h -30@0h -30@32l 0@33h
-  B eq_mid: -15@-96h -15@0e 0@32h
+  B eq_mid: -15@-96h -15@0e -4@32e 0@36h
   B eq_high: -12@-96h -12@0e 0@32h
   B filter: 0.4@-96h 0.4@0e 0@32h
   note: A's 16-bar outro is drums-only; B's 16-bar intro too → 16-bar long blend: B in at A 3:37 (bar 113, on the phrase) from B 0:00, swap the bass on the 1 of bar 9 (A 3:52), A out by 4:08.
-  note: B comes in with its lows killed behind a gentle high-pass, its highs and mids opening over the first 8 bars; A's mids and highs ease down over the second half under a high-pass rising from bar 5, its echo builds over the last 2 bars and a reverb wash opens on its last.
+  note: In phrases: bars 1–8 bring B in with its lows killed behind a gentle filter (fader up over 4 bars, highs opening, mids held 4 dB down until the swap); from bar 9 both ride together while the last 8 bars take A out — highs, then mids, then the fader — under a slowly rising high-pass, A's echo building over its last 2 bars and a reverb wash on its last.
   note: B is half-time (64 BPM), mixed at 128.0. Tempo gap +3.2%: A drifts from 124.0 to 126.0 BPM over the 32 bars before B comes in, both play at 126.0 through the blend (key lock on), then the tempo drifts on to B's own 128.0 BPM over 32 bars.
 
 ## standard -> clash key
@@ -218,19 +218,19 @@ plan: long blend, 16 bars, swap bar 9
   markers: B_in@0 bass_swap@32 A_out@64
   A volume: 1@-32h 1@48e 0@64h
   A eq_low: 0@-32h 0@0h 0@32l -30@33h
-  A eq_mid: 0@-32h 0@32e -8@64h
-  A eq_high: 0@-32h 0@32e -10@64h
-  A filter: 0@-32h 0@16e 0.35@64h
+  A eq_mid: 0@-32h 0@40e -10@56h
+  A eq_high: 0@-32h 0@32e -12@48h
+  A filter: 0@-32h 0@32e 0.35@64h
   A echo_send: 0@-32h 0@56l 0.4@64h 0@68h
   A echo_feedback: 0.6@-32h
   A reverb_send: 0@-32h 0@60l 0.35@64h 0@68h
   B volume: 0@-32h 0@0e 1@16h
   B eq_low: -30@-32h -30@0h -30@32l 0@33h
-  B eq_mid: -15@-32h -15@0e 0@32h
+  B eq_mid: -15@-32h -15@0e -4@32e 0@36h
   B eq_high: -12@-32h -12@0e 0@32h
   B filter: 0.4@-32h 0.4@0e 0@32h
   note: A's 16-bar outro is drums-only; B's 16-bar intro too → 16-bar long blend: B in at A 3:37 (bar 113, on the phrase) from B 0:00, swap the bass on the 1 of bar 9 (A 3:52), A out by 4:08.
-  note: B comes in with its lows killed behind a gentle high-pass, its highs and mids opening over the first 8 bars; A's mids and highs ease down over the second half under a high-pass rising from bar 5, its echo builds over the last 2 bars and a reverb wash opens on its last.
+  note: In phrases: bars 1–8 bring B in with its lows killed behind a gentle filter (fader up over 4 bars, highs opening, mids held 4 dB down until the swap); from bar 9 both ride together while the last 8 bars take A out — highs, then mids, then the fader — under a slowly rising high-pass, A's echo building over its last 2 bars and a reverb wash on its last.
   note: Same tempo (124.0 BPM), no pitch moves.
 
 ## short outro -> clash key
@@ -241,15 +241,15 @@ plan: filter sweep, 16 bars, swap bar 9
   markers: B_in@0 bass_swap@32 A_out@64
   A volume: 1@-32h 1@48e 0@64h
   A eq_low: 0@-32h 0@0h 0@32l -30@33h
-  A eq_mid: 0@-32h 0@32e -8@64h
-  A eq_high: 0@-32h 0@32e -10@64h
+  A eq_mid: 0@-32h 0@40e -10@56h
+  A eq_high: 0@-32h 0@32e -12@48h
   A filter: 0@-32h 0@0e 0.85@64h
   A echo_send: 0@-32h 0@56l 0.4@64h 0@68h
   A echo_feedback: 0.6@-32h
   A reverb_send: 0@-32h 0@60l 0.35@64h 0@68h
   B volume: 0@-32h 0@0e 1@16h
   B eq_low: -30@-32h -30@0h -30@32l 0@33h
-  B eq_mid: -15@-32h -15@0e 0@32h
+  B eq_mid: -15@-32h -15@0e -4@32e 0@36h
   B eq_high: -12@-32h -12@0e 0@32h
   B filter: -0.6@-32h -0.6@0e 0@32h
   note: A's 8-bar outro carries bass and music; B's 16-bar intro is drums-only → 16-bar filter sweep: B opens up from a closed low-pass under A from A 3:37 (bar 113) while A rides a high-pass sweep out by 4:08; swap the bass on the 1 of bar 9 (A 3:52).
@@ -264,19 +264,19 @@ plan: long blend, 16 bars, swap bar 9
   markers: B_in@0 bass_swap@32 A_out@64
   A volume: 1@-32h 1@48e 0@64h
   A eq_low: 0@-32h 0@0h 0@32l -30@33h
-  A eq_mid: 0@-32h 0@32e -8@64h
-  A eq_high: 0@-32h 0@32e -10@64h
-  A filter: 0@-32h 0@16e 0.35@64h
+  A eq_mid: 0@-32h 0@40e -10@56h
+  A eq_high: 0@-32h 0@32e -12@48h
+  A filter: 0@-32h 0@32e 0.35@64h
   A echo_send: 0@-32h 0@56l 0.4@64h 0@68h
   A echo_feedback: 0.6@-32h
   A reverb_send: 0@-32h 0@60l 0.35@64h 0@68h
   B volume: 0@-32h 0@0e 1@16h
   B eq_low: -30@-32h -30@0h -30@32l 0@33h
-  B eq_mid: -15@-32h -15@0e 0@32h
+  B eq_mid: -15@-32h -15@0e -4@32e 0@36h
   B eq_high: -12@-32h -12@0e 0@32h
   B filter: 0.4@-32h 0.4@0e 0@32h
   note: A's 16-bar outro is drums-only; B's 16-bar intro too → 16-bar long blend: B in at A 3:45 (bar 117, on the phrase) from B 0:00, swap the bass on the 1 of bar 9 (A 4:00), A out by 4:15.
-  note: B comes in with its lows killed behind a gentle high-pass, its highs and mids opening over the first 8 bars; A's mids and highs ease down over the second half under a high-pass rising from bar 5, its echo builds over the last 2 bars and a reverb wash opens on its last.
+  note: In phrases: bars 1–8 bring B in with its lows killed behind a gentle filter (fader up over 4 bars, highs opening, mids held 4 dB down until the swap); from bar 9 both ride together while the last 8 bars take A out — highs, then mids, then the fader — under a slowly rising high-pass, A's echo building over its last 2 bars and a reverb wash on its last.
   note: Same tempo (124.0 BPM), no pitch moves.
 
 ## outro 24 -> standard
@@ -287,19 +287,110 @@ plan: long blend, 16 bars, swap bar 9
   markers: B_in@0 bass_swap@32 A_out@64
   A volume: 1@-32h 1@48e 0@64h
   A eq_low: 0@-32h 0@0h 0@32l -30@33h
-  A eq_mid: 0@-32h 0@32e -8@64h
-  A eq_high: 0@-32h 0@32e -10@64h
-  A filter: 0@-32h 0@16e 0.35@64h
+  A eq_mid: 0@-32h 0@40e -10@56h
+  A eq_high: 0@-32h 0@32e -12@48h
+  A filter: 0@-32h 0@32e 0.35@64h
   A echo_send: 0@-32h 0@56l 0.4@64h 0@68h
   A echo_feedback: 0.6@-32h
   A reverb_send: 0@-32h 0@60l 0.35@64h 0@68h
   B volume: 0@-32h 0@0e 1@16h
   B eq_low: -30@-32h -30@0h -30@32l 0@33h
-  B eq_mid: -15@-32h -15@0e 0@32h
+  B eq_mid: -15@-32h -15@0e -4@32e 0@36h
   B eq_high: -12@-32h -12@0e 0@32h
   B filter: 0.4@-32h 0.4@0e 0@32h
   note: A's 24-bar outro is drums-only; B's 16-bar intro too → 16-bar long blend: B in at A 3:21 (bar 105, on the phrase) from B 0:00, swap the bass on the 1 of bar 9 (A 3:37), A out by 3:52.
-  note: B comes in with its lows killed behind a gentle high-pass, its highs and mids opening over the first 8 bars; A's mids and highs ease down over the second half under a high-pass rising from bar 5, its echo builds over the last 2 bars and a reverb wash opens on its last.
+  note: In phrases: bars 1–8 bring B in with its lows killed behind a gentle filter (fader up over 4 bars, highs opening, mids held 4 dB down until the swap); from bar 9 both ride together while the last 8 bars take A out — highs, then mids, then the fader — under a slowly rising high-pass, A's echo building over its last 2 bars and a reverb wash on its last.
+  note: Same tempo (124.0 BPM), no pitch moves.
+
+## house -> house
+suggest: long blend, 16 bars, swap 9, A out 247.742 s, B in 0.0 s, score 92
+plan: long blend, 16 bars, swap bar 9
+  cue: A bar 128 (247.74 s) / B bar 0 (0.00 s)
+  tempo: 124 -> 123 BPM, window -32..96 beats
+  markers: B_in@0 bass_swap@32 A_out@64 tempo_ramp@64
+  A volume: 1@-32h 1@48e 0@64h
+  A eq_low: 0@-32h 0@0h 0@32l -30@33h
+  A eq_mid: 0@-32h 0@40e -10@56h
+  A eq_high: 0@-32h 0@32e -12@48h
+  A filter: 0@-32h 0@32e 0.35@64h
+  A echo_send: 0@-32h 0@56l 0.4@64h 0@68h
+  A echo_feedback: 0.6@-32h
+  A reverb_send: 0@-32h 0@60l 0.35@64h 0@68h
+  B volume: 0@-32h 0@0e 1@16h
+  B eq_low: -30@-32h -30@0h -30@32l 0@33h
+  B eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  B eq_high: -12@-32h -12@0e 0@32h
+  B filter: 0.4@-32h 0.4@0e 0@32h
+  note: A's 16-bar outro is drums-only; B's 16-bar intro too → 16-bar long blend: B in at A 4:08 (bar 129, on the phrase) from B 0:00, swap the bass on the 1 of bar 9 (A 4:23), A out by 4:39.
+  note: In phrases: bars 1–8 bring B in with its lows killed behind a gentle filter (fader up over 4 bars, highs opening, mids held 4 dB down until the swap); from bar 9 both ride together while the last 8 bars take A out — highs, then mids, then the fader — under a slowly rising high-pass, A's echo building over its last 2 bars and a reverb wash on its last.
+  note: B is pitched +0.8% to A's 124.0 BPM through the blend (key lock on), then the tempo drifts to B's own 123.0 BPM over 16 bars once A is out.
+
+## techno -> techno
+suggest: long blend, 32 bars, swap 17, A out 295.385 s, B in 0.0 s, score 92
+plan: long blend, 32 bars, swap bar 17
+  cue: A bar 160 (295.38 s) / B bar 0 (0.00 s)
+  tempo: 130 -> 131 BPM, window -32..160 beats
+  markers: B_in@0 bass_swap@64 A_out@128 tempo_ramp@128
+  A volume: 1@-32h 1@112e 0@128h
+  A eq_low: 0@-32h 0@0h 0@64l -30@65h
+  A eq_mid: 0@-32h 0@104e -10@120h
+  A eq_high: 0@-32h 0@96e -12@112h
+  A filter: 0@-32h 0@96e 0.35@128h
+  A echo_send: 0@-32h 0@120l 0.4@128h 0@132h
+  A echo_feedback: 0.6@-32h
+  A reverb_send: 0@-32h 0@124l 0.35@128h 0@132h
+  B volume: 0@-32h 0@0e 1@32h
+  B eq_low: -30@-32h -30@0h -30@64l 0@65h
+  B eq_mid: -15@-32h -15@0e -4@32h -4@64e 0@68h
+  B eq_high: -12@-32h -12@0e 0@32h
+  B filter: 0.4@-32h 0.4@0e 0@32h
+  note: A's 32-bar outro is drums-only; B's 32-bar intro too → 32-bar long blend: B in at A 4:55 (bar 161, on the phrase) from B 0:00, swap the bass on the 1 of bar 17 (A 5:25), A out by 5:54.
+  note: In phrases: bars 1–8 bring B in with its lows killed behind a gentle filter (fader up over 8 bars, highs opening, mids held 4 dB down until the swap); both ride together through bars 9–24; the last 8 bars take A out — highs, then mids, then the fader — under a slowly rising high-pass, A's echo building over its last 2 bars and a reverb wash on its last.
+  note: B is pitched -0.8% to A's 130.0 BPM through the blend (key lock on), then the tempo drifts to B's own 131.0 BPM over 16 bars once A is out.
+
+## music outro -> house
+suggest: phrase blend, 16 bars, swap 9, A out 216.774 s, B in 0.0 s, score 92
+plan: long blend, 16 bars, swap bar 9
+  cue: A bar 112 (216.77 s) / B bar 0 (0.00 s)
+  tempo: 124 -> 123 BPM, window -32..96 beats
+  markers: B_in@0 bass_swap@32 A_out@64 tempo_ramp@64
+  A volume: 1@-32h 1@48e 0@64h
+  A eq_low: 0@-32h 0@0h 0@32l -30@33h
+  A eq_mid: 0@-32h 0@40e -10@56h
+  A eq_high: 0@-32h 0@32e -12@48h
+  A filter: 0@-32h 0@32e 0.35@64h
+  A echo_send: 0@-32h 0@56l 0.4@64h 0@68h
+  A echo_feedback: 0.6@-32h
+  A reverb_send: 0@-32h 0@60l 0.35@64h 0@68h
+  B volume: 0@-32h 0@0e 1@16h
+  B eq_low: -30@-32h -30@0h -30@32l 0@33h
+  B eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  B eq_high: -12@-32h -12@0e 0@32h
+  B filter: 0.4@-32h 0.4@0e 0@32h
+  note: A's 16-bar outro carries bass and music; B's 16-bar intro is drums-only → 16-bar long blend: B in at A 3:37 (bar 113, on the phrase) from B 0:00, swap the bass on the 1 of bar 9 (A 3:52), A out by 4:08.
+  note: In phrases: bars 1–8 bring B in with its lows killed behind a gentle filter (fader up over 4 bars, highs opening, mids held 4 dB down until the swap); from bar 9 both ride together while the last 8 bars take A out — highs, then mids, then the fader — under a slowly rising high-pass, A's echo building over its last 2 bars and a reverb wash on its last.
+  note: B is pitched +0.8% to A's 124.0 BPM through the blend (key lock on), then the tempo drifts to B's own 123.0 BPM over 16 bars once A is out.
+
+## short edges -> short edges
+suggest: phrase blend, 8 bars, swap None, A out 232.258 s, B in 0.0 s, score 100
+plan: phrase blend, 8 bars, swap -
+  cue: A bar 120 (232.26 s) / B bar 0 (0.00 s)
+  tempo: 124 BPM, window -64..64 beats
+  markers: B_in@0 A_out@32
+  A volume: 1@-64h 1@28h 0@32h
+  A eq_mid: 0@-64h 0@16e -6@32h
+  A eq_high: 0@-64h 0@16e -6@32h
+  A filter: 0@-64h 0@24e 0.12@32h
+  A echo_send: 0@-64h 0@24l 0.25@32h 0@36h
+  A echo_feedback: 0.6@-64h
+  A reverb_send: 0@-64h 0@28l 0.35@32h 0@36h
+  B volume: 0@-64h 0@0e 1@8h
+  B eq_low: -30@-64h -30@0h 0@32h
+  B eq_mid: -15@-64h -15@0e -4@16e 0@20h
+  B eq_high: -12@-64h -12@0e 0@16h
+  B filter: 0.3@-64h 0.3@0e 0@16h
+  note: A's 8-bar outro is drums-only; B's 8-bar intro too → 8-bar phrase blend: B in at A 3:52 (bar 121) from B 0:00, A's bass carries the blend and is cut on the 1 at 4:08.
+  note: In phrases: bars 1–4 bring B in with its lows killed behind a gentle filter (fader up over 2 bars, highs opening, mids held 4 dB down until A's last phrase); from bar 5 both ride together while the last 4 bars ease A's highs and mids down while its bass carries to the 1 where B's lows come in, A's echo building over its last 2 bars and a reverb wash on its last.
   note: Same tempo (124.0 BPM), no pitch moves.
 
 ## standard -> short intro drop

@@ -102,10 +102,12 @@ class MixService:
         self.crates.want_analyses(seed_dir, [a, b])  # both start now, so a 409 retry finds both done
         a_an = self.crates.ready_analysis(seed_dir, a)
         b_an = self.crates.ready_analysis(seed_dir, b)
-        transition = transitions.suggest(a.track, a_an, b.track, b_an, bpm_tol=self.crates.bpm_tol)
+        mix_length = self.crates.mix_length
+        transition = transitions.suggest(a.track, a_an, b.track, b_an, bpm_tol=self.crates.bpm_tol,
+                                         mix_length=mix_length)  # fmt: skip
         try:
             plan = mixplan.generate(a.track, a_an, b.track, b_an, seed_dir.name, technique=technique, bars=bars,
-                                    transition=transition)  # fmt: skip
+                                    transition=transition, mix_length=mix_length)  # fmt: skip
         except ValueError as e:
             raise ApiError(f"can't plan this transition: {e}", 422) from e
         return {**plan, "edited": False}

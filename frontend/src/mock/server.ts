@@ -31,6 +31,7 @@ const settings: Settings = {
   preview_concurrency: 3,
   preview_cache_mb: 500,
   pretick_all: true,
+  mix_length: "normal",
 };
 
 const system: SystemStatus = {
