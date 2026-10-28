@@ -23,5 +23,6 @@ export default defineConfig({
       },
     },
   },
-  build: { outDir: "dist", emptyOutDir: true, sourcemap: false, chunkSizeWarningLimit: 900 },
+  // mock mode's chunk carries the engine fixtures (src/mock/fixtures/engine.json, ~3 MB of JSON)
+  build: { outDir: "dist", emptyOutDir: true, sourcemap: false, chunkSizeWarningLimit: process.env.VITE_MOCK ? 4000 : 900 },
 });

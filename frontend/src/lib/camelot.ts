@@ -24,7 +24,7 @@ export function parseCamelot(code: string | null | undefined): CamelotCode | nul
 }
 
 /** Hue (HSL degrees) per wheel position. */
-export const CAMELOT_HUES: Record<number, number> = {
+const CAMELOT_HUES: Record<number, number> = {
   1: 168, 2: 140, 3: 102, 4: 64, 5: 42, 6: 22, 7: 356, 8: 328, 9: 292, 10: 262, 11: 228, 12: 198,
 };
 
