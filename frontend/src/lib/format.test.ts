@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { energyStars, fmtBpm, fmtDateTime, fmtMb, fmtPitch, fmtRelative, fmtTime, plural, tildify } from "./format";
+import { energyStars, fmtBpm, fmtDateTime, fmtMb, fmtPitch, fmtRelative, fmtTime, pitchTone, plural, tildify } from "./format";
 
 describe("fmtTime", () => {
   it("formats minutes and hours", () => {
@@ -27,12 +27,23 @@ describe("fmtPitch", () => {
   it("signs the rounded value", () => {
     expect(fmtPitch(1.53)).toBe("+1.5%");
     expect(fmtPitch(-2.26)).toBe("−2.3%");
-    expect(fmtPitch(-0.04)).toBe("0.0%");
+    expect(fmtPitch(-0.04)).toBe("±0.0%");
+    expect(fmtPitch(0)).toBe("±0.0%");
     expect(fmtPitch(1.234, 2)).toBe("+1.23%");
   });
   it("renders a dash for missing input", () => {
     expect(fmtPitch(null)).toBe("—");
     expect(fmtPitch(Number.NaN)).toBe("—");
+  });
+});
+
+describe("pitchTone", () => {
+  it("grades by how far the deck is pushed", () => {
+    expect(pitchTone(null)).toBe("text-fg-faint");
+    expect(pitchTone(0.04)).toBe("text-fg-subtle");
+    expect(pitchTone(-4)).toBe("text-fg-muted");
+    expect(pitchTone(4.5)).toBe("text-warn");
+    expect(pitchTone(-6.1)).toBe("text-danger");
   });
 });
 

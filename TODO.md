@@ -16,7 +16,6 @@
       across crates' last/first tracks; build and order a multi-crate setlist (pairs with the full set mix render).
 
 ## Later / ideas
-- [ ] Unify pitch formatting ("±0%" in the set builder vs "0.0%" on the crate page).
 - [ ] Waveform: "first downbeat" cue label overlaps "INTRO 16" at bar 1.
 - [ ] "Order not saved" copy after a failed auto-order is misleading.
 - [ ] Vocal detection is heuristic — consider a better vocal-activity model.

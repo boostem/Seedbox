@@ -3,9 +3,9 @@ import { memo, type MouseEvent, type KeyboardEvent, type Ref } from "react";
 import type { Rec, Track } from "@/api/types";
 import { Badge, Checkbox, CoverArt, KeyBadge, MoveChip, ScoreChip, Table, TableScroll, TBody, Td, Th, THead, Tooltip, Tr, type SortDir } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { fmtBpm, fmtPitch, fmtTime } from "@/lib/format";
+import { fmtBpm, fmtPitch, fmtTime, pitchTone } from "@/lib/format";
 import { PreviewButton, PreviewWave } from "./PreviewControls";
-import { pitchTone, pitchVsSeed } from "./trackMeta";
+import { pitchVsSeed } from "./trackMeta";
 
 export interface CrateRow {
   track: Track;
