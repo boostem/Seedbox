@@ -20,6 +20,7 @@ const ROUTES: [name: string, hash: string][] = [
   ["crates", "#/crates"],
   ["crate", `#/crate/${seed.id}`],
   ["set", `#/set/${folder}`],
+  ["track", `#/set/${folder}?t=1`], // ?t=<n> opens track n in the track view
   ["mix", `#/set/${folder}?x=1`], // ?x=<n> opens transition n in the mix view
 ];
 
