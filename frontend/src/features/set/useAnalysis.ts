@@ -70,7 +70,8 @@ function load(folder: string, id: string): Promise<void> {
 }
 
 export function useTrackAnalysis(folder: string, trackId: string | null | undefined, fallback?: AnalysisState): AnalysisView {
-  const live = useApp((s) => (trackId ? s.analysis[folder]?.[trackId] : undefined)) ?? fallback;
+  const liveState = useApp((s) => (trackId ? s.analysis[folder]?.[trackId] : undefined));
+  const live = liveState ?? fallback;
   const [, bump] = useReducer((x: number) => x + 1, 0);
   const key = trackId ? k(folder, trackId) : null;
 

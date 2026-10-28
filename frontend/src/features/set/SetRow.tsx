@@ -40,7 +40,8 @@ function RowProgress({ id }: { id: string }) {
 export const SetRow = memo(function SetRow({ st, folder, selected, isSeed, onSelect, handleRef, handleProps, overlay, ghost }: SetRowProps) {
   const t = st.track;
   const playing = useIsPlaying(t.id);
-  const live = useApp((s) => s.analysis[folder]?.[t.id]) ?? st.analysis_state;
+  const liveState = useApp((s) => s.analysis[folder]?.[t.id]);
+  const live = liveState ?? st.analysis_state;
   const an = useTrackAnalysis(folder, overlay ? null : t.id, st.analysis_state);
   const wrong = an.status === "ready" && tempoMismatch(t.bpm, an.analysis) ? an.analysis.bpm : null;
   return (

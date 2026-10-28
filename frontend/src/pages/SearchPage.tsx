@@ -26,7 +26,8 @@ function openSeed(t: Track) {
 }
 
 export function SearchPage() {
-  const q = useHashQuery().get("q")?.trim() ?? "";
+  const query = useHashQuery();
+  const q = query.get("q")?.trim() ?? "";
   const [initial] = useState(() => {
     const m = searchMemo.get();
     return m && (!q || m.term === q) ? m : null;
