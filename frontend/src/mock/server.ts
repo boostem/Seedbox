@@ -3,10 +3,10 @@
  * animates preview preloading, download jobs and analysis progress. State lives in memory (resets on reload).
  */
 import type { EventStream } from "@/api/client";
-import type { Crate, CrateSet, Job, JobItem, MixPlan, Partner, PreviewStatus, ServerEvent, Settings, SetTrack, SystemStatus, Track } from "@/api/types";
-import { mockAnalysis, mockTransition } from "./analysis";
-import { emitRenderProgress, generateMixPlan, mockRender, validateMixPlan } from "./mixplan";
-import { crateSummary, energyRatings, FAVOUR, genreFor, HOME, initialCrates, type MockCrate, orderSet, POOL, recsFor, sanitize, SEARCH_PAGE } from "./data";
+import type { Crate, CrateSet, Job, JobItem, MixPlan, MixTechnique, PreviewStatus, ServerEvent, Settings, SetTrack, SystemStatus, Track } from "@/api/types";
+import { crateSummary, FAVOUR, genreFor, HOME, type MockCrate, POOL, SEARCH_PAGE } from "./data";
+import { analysisFor, energyRating, engineOrder, fileStem, initialCrates, mixPlan, partners, recsFor, setTransitions, TECHNIQUES } from "./engine";
+import { emitRenderProgress, mockRender } from "./render";
 import { between, hash, rng, sleep } from "./rng";
 
 type AnalysisState = SetTrack["analysis_state"];
@@ -43,7 +43,14 @@ const system: SystemStatus = {
   output_root: settings.output_root,
 };
 
-const crates: MockCrate[] = initialCrates();
+const ago = (hours: number) => new Date(Date.now() - hours * 3600_000).toISOString();
+const crates: MockCrate[] = initialCrates().map((c) => ({
+  folder: c.folder,
+  seed: c.seed_id ? POOL.get(c.seed_id) ?? null : null,
+  trackIds: c.track_ids,
+  ratings: c.ratings,
+  updatedAt: ago(c.hours_ago),
+}));
 const analysis = new Map<string, Map<string, AnalysisState>>();
 const analysing = new Set<string>();
 const previews = new Map<string, PreviewStatus>();
@@ -69,7 +76,7 @@ crates.forEach((c, ci) => {
 const crateByFolder = (folder: string) => crates.find((c) => c.folder === folder);
 const track = (id: string) => POOL.get(id);
 const crateDir = (folder: string) => `${settings.output_root}/${folder}`;
-const fileName = (t: Track) => `${sanitize(t.display_name)}.mp3`;
+const fileName = (t: Track) => `${fileStem(t)}.mp3`;
 
 // ---------------------------------------------------------------------------------------------------- SSE
 
@@ -178,18 +185,16 @@ function preload(ids: string[]) {
 function crateSet(c: MockCrate): CrateSet {
   const states = analysis.get(c.folder) ?? new Map<string, AnalysisState>();
   const tracks = c.trackIds.map((id) => track(id)).filter((t): t is Track => !!t);
-  const ratings = energyRatings(tracks);
   const setTracks: SetTrack[] = tracks.map((t, i) => ({
     track: t,
     path: `${crateDir(c.folder)}/${fileName(t)}`,
     audio_url: `/api/files/${enc(c.folder)}/${enc(fileName(t))}`,
     order: i + 1,
-    energy_rating: ratings[t.id] ?? null,
+    energy_rating: energyRating(c.ratings, t.id),
     genre: genreFor(t),
     analysis_state: states.get(t.id) ?? "missing",
   }));
-  const an = (t: Track) => (states.get(t.id) === "ready" ? mockAnalysis(t) : null);
-  const transitions = tracks.slice(1).map((b, i) => mockTransition(tracks[i], an(tracks[i]), b, an(b), settings.bpm_tolerance));
+  const transitions = setTransitions(tracks, (id) => states.get(id) === "ready");
   return { folder: c.folder, path: crateDir(c.folder), seed_id: c.seed?.id ?? null, tracks: setTracks, transitions };
 }
 
@@ -302,12 +307,12 @@ async function runJobNow(job: Job, seed: Track) {
   const have = job.items.filter((i) => i.status === "downloaded" || i.status === "copied" || i.status === "exists").map((i) => i.track);
   let c = crate;
   if (!c) {
-    c = { folder: job.folder, seed, trackIds: [], updatedAt: "" };
+    c = { folder: job.folder, seed, trackIds: [], ratings: {}, updatedAt: "" };
     crates.unshift(c);
     analysis.set(c.folder, new Map());
   }
-  const ids = new Set([...c.trackIds, ...have.map((t) => t.id)]);
-  c.trackIds = orderSet(seed, [...ids].map((id) => track(id)!).filter(Boolean)).map((t) => t.id);
+  const ids = [...new Set([...c.trackIds, ...have.map((t) => t.id)])];
+  c.trackIds = engineOrder(ids) ?? ids;
   touch(c);
   const states = analysis.get(c.folder)!;
   for (const t of have) if (!states.has(t.id)) states.set(t.id, "queued");
@@ -386,10 +391,10 @@ on("GET", "/api/crates/new/([^/]+)", async ([seedId]) => {
   await sleep(650);
   const seed = track(seedId);
   if (!seed) return fail(404, `Track ${seedId} not found on tunebat`);
-  const folder = sanitize(seed.display_name);
+  const folder = fileStem(seed);
   const existing = crateByFolder(folder);
   const path = crateDir(folder);
-  const recs = recsFor(seed, settings.bpm_tolerance, new Set(existing?.trackIds ?? []), path, settings.pretick_all);
+  const recs = recsFor(seed, new Set(existing?.trackIds ?? []), path, settings.pretick_all);
   const crate: Crate = { folder, path, seed, seed_existing_path: existing?.trackIds.includes(seed.id) ? `${path}/${fileName(seed)}` : null, recs };
   const order = [seed.id, ...recs.filter((r) => r.score.passed).map((r) => r.track.id), ...recs.filter((r) => !r.score.passed).map((r) => r.track.id)];
   setTimeout(() => preload(order), 50);
@@ -412,7 +417,7 @@ on("POST", "/api/jobs", (_m, body) => {
   if (!ids.length) return fail(422, "No tracks to download");
   const job: Job = {
     job_id: `job-${++jobSeq}-${Date.now().toString(36)}`,
-    folder: sanitize(seed.display_name),
+    folder: fileStem(seed),
     state: "running",
     items: ids.map((id) => ({ track: track(id)!, text: "queued", status: null, reason: null, genre: null, path: null, youtube_url: null })),
     started_at: new Date().toISOString(),
@@ -455,7 +460,7 @@ on("POST", "/api/crates/([^/]+)/auto-order", async ([folder]) => {
   if (!c) return fail(404, `No crate "${folder}"`);
   if (hasRunningJob(folder)) return fail(409, "This crate has a running download job — try again when it finishes");
   await sleep(450);
-  c.trackIds = orderSet(c.seed, c.trackIds.map((id) => track(id)!)).map((t) => t.id);
+  c.trackIds = engineOrder(c.trackIds) ?? c.trackIds;
   touch(c);
   setTimeout(() => emit({ type: "set_changed", data: { folder } }), 20);
   return ok(crateSet(c));
@@ -466,14 +471,10 @@ on("GET", "/api/crates/([^/]+)/partners/([^/]+)", ([folder, id], _b, q) => {
   if (!c || !me) return fail(404, "Not found");
   const dir = q.get("direction") === "in" ? "in" : "out";
   const states = analysis.get(folder);
-  const an = (t: Track) => (states?.get(t.id) === "ready" ? mockAnalysis(t) : null);
-  const partners: Partner[] = c.trackIds
-    .filter((x) => x !== id)
-    .map((x) => track(x)!)
-    .map((t) => ({ track: t, direction: dir, transition: dir === "out" ? mockTransition(me, an(me), t, an(t)) : mockTransition(t, an(t), me, an(me)) }));
-  return ok(partners.sort((a, b) => b.transition.score - a.transition.score).slice(0, 8));
+  const others = c.trackIds.map((x) => track(x)).filter((t): t is Track => !!t);
+  return ok(partners(me, others, dir, (x) => states?.get(x) === "ready"));
 });
-// ---- v4 mix plans + renders (mock/mixplan.ts; added by FRONTEND-SET)
+// ---- v4 mix plans (mock/engine.ts) + renders (mock/render.ts)
 const savedPlans = new Map<string, MixPlan>();
 const renderedIds = new Set<string>();
 function mixPair(folder: string, from: string, to: string): { c: MockCrate; a: Track; b: Track } | Resp {
@@ -485,9 +486,11 @@ function mixPair(folder: string, from: string, to: string): { c: MockCrate; a: T
   if (st?.get(from) !== "ready" || st?.get(to) !== "ready") return fail(409, "both tracks need their analysis first");
   return { c, a, b };
 }
-function genPlan(folder: string, a: Track, b: Track, technique?: string | null, bars?: number | null): MixPlan {
-  const t = mockTransition(a, mockAnalysis(a), b, mockAnalysis(b), settings.bpm_tolerance);
-  return generateMixPlan(folder, a, mockAnalysis(a), b, mockAnalysis(b), t, technique, bars);
+function genPlan(folder: string, a: Track, b: Track, technique?: string | null, bars?: number | null): Resp {
+  if (technique && !TECHNIQUES.includes(technique as MixTechnique)) return fail(422, `unknown technique '${technique}'`);
+  if (bars && ![4, 8, 16, 32].includes(bars)) return fail(422, "bars must be 4, 8, 16 or 32");
+  const plan = mixPlan(folder, a.id, b.id, technique, bars);
+  return plan ? ok({ ...plan, folder }) : fail(409, "mock: no engine fixture for this pair (only the pairs of the mock crates' own running orders have plans)");
 }
 on("GET", "/api/crates/([^/]+)/mix/([^/]+)/([^/]+)", ([folder, from, to], _b, q) => {
   const p = mixPair(folder, from, to);
@@ -496,12 +499,12 @@ on("GET", "/api/crates/([^/]+)/mix/([^/]+)/([^/]+)", ([folder, from, to], _b, q)
   const bars = Number(q.get("bars")) || null;
   const saved = savedPlans.get(`${folder}|${from}|${to}`);
   if (saved && !technique && !bars) return ok(saved);
-  return ok(genPlan(folder, p.a, p.b, technique, bars));
+  return genPlan(folder, p.a, p.b, technique, bars);
 });
 on("PUT", "/api/crates/([^/]+)/mix/([^/]+)/([^/]+)", ([folder, from, to], body) => {
   const p = mixPair(folder, from, to);
   if ("status" in p) return p;
-  const plan = { ...validateMixPlan(body as unknown as MixPlan), edited: true };
+  const plan = { ...(body as unknown as MixPlan), folder, edited: true };
   savedPlans.set(`${folder}|${from}|${to}`, plan);
   return ok(plan);
 });
@@ -509,12 +512,17 @@ on("DELETE", "/api/crates/([^/]+)/mix/([^/]+)/([^/]+)", ([folder, from, to]) => 
   const p = mixPair(folder, from, to);
   if ("status" in p) return p;
   savedPlans.delete(`${folder}|${from}|${to}`);
-  return ok(genPlan(folder, p.a, p.b));
+  return genPlan(folder, p.a, p.b);
 });
 on("POST", "/api/crates/([^/]+)/mix/([^/]+)/([^/]+)/render", async ([folder, from, to], body) => {
   const p = mixPair(folder, from, to);
   if ("status" in p) return p;
-  const plan = body && "tempo" in body ? validateMixPlan(body as unknown as MixPlan) : (savedPlans.get(`${folder}|${from}|${to}`) ?? genPlan(folder, p.a, p.b));
+  let plan = body && "tempo" in body ? (body as unknown as MixPlan) : savedPlans.get(`${folder}|${from}|${to}`);
+  if (!plan) {
+    const gen = genPlan(folder, p.a, p.b);
+    if (gen.status !== 200) return gen;
+    plan = gen.data as MixPlan;
+  }
   const r = mockRender(plan);
   await emitRenderProgress(emit, r, folder, from, to, renderedIds.has(r.render_id));
   renderedIds.add(r.render_id);
@@ -527,7 +535,8 @@ on("GET", "/api/analysis/([^/]+)/([^/]+)", async ([folder, id]) => {
   if (st === "error") return fail(422, "analysis failed: could not decode audio (ffmpeg exit 1)");
   if (st !== "ready") return fail(404, `analysis ${st === "missing" ? "queued" : st}`);
   await sleep(120);
-  return ok(mockAnalysis(t));
+  const an = analysisFor(t);
+  return an ? ok(an) : fail(404, "mock: no analysis fixture for this track");
 });
 
 on("POST", "/api/reveal", (_m, body) => {

@@ -11,10 +11,10 @@ const args = new Set(Deno.args);
 const outArg = Deno.args.find((a) => a.startsWith("--out="));
 const OUT = outArg ? outArg.slice("--out=".length) : `${ROOT}screenshots`;
 
-// The mock's richest crate: the Favour seed (src/mock/data.ts initialCrates), its folder named like sanitize().
-const fixtures = JSON.parse(await Deno.readTextFile(`${ROOT}src/mock/fixtures/tunebat.json`));
-const seed = fixtures.seed as { id: string; display_name: string };
-const folder = encodeURIComponent(seed.display_name.replace(/[/\\:*?"<>|]/g, "_").replace(/\s+/g, " ").trim().slice(0, 180));
+// The mock's richest crate: the Favour seed's, the first crate of the engine fixtures (src/mock/engine.ts).
+const engine = JSON.parse(await Deno.readTextFile(`${ROOT}src/mock/fixtures/engine.json`));
+const seed = { id: engine.crates[0].seed_id as string };
+const folder = encodeURIComponent(engine.crates[0].folder as string);
 
 const ROUTES: [name: string, hash: string][] = [
   ["crates", "#/crates"],

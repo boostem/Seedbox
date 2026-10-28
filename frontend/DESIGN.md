@@ -16,6 +16,7 @@ React 19 + TypeScript (strict) + Vite 8 + Tailwind 4, built with **Deno 2.9** (n
 | `deno task test` / `test:watch` | vitest unit tests (`src/**/*.test.ts`, next to the module they test; node environment, `@/` alias from `vite.config.ts`) |
 | `deno task screenshot` | build mock mode and screenshot `#/crates`, a crate, the set builder and the mix view at 1440×900 and 1180×760 → `screenshots/` (git-ignored); `--no-build` reuses `dist-mock/`, `--out=DIR` writes elsewhere, `CHROME=…` picks the browser |
 | `deno task fixtures` | regenerate `src/mock/fixtures/tunebat.json` from `../tracks.txt` + `../search.txt` |
+| `deno task fixtures:engine` | regenerate `src/mock/fixtures/engine.json` by running the Python engine (needs numpy + scipy): after a change to scoring, ordering, transitions, the set plan or mix plans |
 
 Real backend for dev: `.venv/bin/python -m seedbox.server --port 8765 --dev` (from the project root).
 Deno enforces a 24 h minimum npm package age — use caret ranges, don't pin brand-new versions.
@@ -190,8 +191,10 @@ search page calls `takePendingFocus()` on mount and listens for `FOCUS_SEARCH_EV
 
 `src/mock/server.ts` implements every endpoint in memory (resets on reload) with 60–180 ms latency and SSE via
 `MockEventSource`. Data: the real tunebat captures (seed **FISHER, Tones And I – Favour** `44wR4NqR75eJMETxrz59Sr`,
-13 `r` recs, 50 search results) scored by a TS port of `mixing.score/passes_rule` (`mock/data.ts`), plus a few
-FISHER tracks as extra recs so there are rule-failing rows.
+13 `r` recs, 50 search results), plus a few FISHER tracks as extra recs so there are rule-failing rows. Everything
+the engine computes is replayed from `fixtures/engine.json` (`mock/engine.ts`), which `scripts/engine-fixtures.py`
+writes by running musicreco on synthetic analyses of those tracks: rec scores and rule reasons, the crates' running
+orders and energy ratings, transitions, the set plan and mix plans. The mock never scores or plans anything itself.
 - Search: `fisher`, `favour`, `fisher favour` → the captured page (page 2 = the recs); other terms match
   title/artist/album (`chris lake`, `prospa`); a 22-char ID/URL returns that track; nonsense → empty page.
 - Settings include `pretick_all: true` (all recs `ticked_default`; toggle it in Settings → only rule passes).
@@ -201,9 +204,14 @@ FISHER tracks as extra recs so there are rule-failing rows.
 - Jobs: 2 workers step through searching/downloading %/genre/loudness/tagging; `exists` for files already in the
   crate, `copied` for tracks in other crates, occasional `skipped`/`failed`; `job_state` finalizing/done (or cancelled), then `job_done`, analysis events
   and `set_changed`. A second job for the same crate waits; cancel/409/422 behave like the real server.
-- Sets/analysis: fake but plausible `TrackAnalysis` (beat grid from tunebat BPM, 16/32-bar intros/outros,
-  sections, cues, 3-band waveform at 50 pts/s) and `Transition`s (technique, overlap, notes, warnings); some
-  tracks start `queued`/`running` and turn ready a few seconds after you open the set; one `error`.
+- Sets/analysis: synthetic `TrackAnalysis` (beat grid from tunebat BPM, 8/16/32-bar intros/outros, sections, cues;
+  the 3-band waveform is drawn from the per-bar features at 50 pts/s) and the engine's `Transition`s; some tracks
+  start `queued`/`running` and turn ready a few seconds after you open the set; one `error`.
+- Fixture coverage: every pair of tracks within a crate has a transition; a crate in its own running order gets
+  the set plan's transitions, a re-ordered one each pair's own (no set-level picks). Mix plans exist for the pairs
+  of each crate's running order, for every technique at its own length, and in the first crate (Favour) at every
+  length; another length falls back to the technique's own, another pair answers 409. Auto-order restores the
+  engine's order. A pair a download adds shows the placeholder transition.
 - Audio: synthesised WAV (kick/hat/bass at the track's BPM and key), so play/seek/progress work.
 
 ## Contract notes (for the lead)

@@ -3,8 +3,9 @@
  * the player, seeking and progress all work without a backend. Silent-ish volume; cached as blob URLs.
  */
 import type { Track } from "@/api/types";
-import { POOL, sanitize } from "./data";
-import { mockRenders } from "./mixplan";
+import { POOL } from "./data";
+import { fileStem } from "./engine";
+import { mockRenders } from "./render";
 
 const urls = new Map<string, string>();
 const PCS: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -29,7 +30,7 @@ function trackFor(path: string): { track: Track | undefined; seconds: number; ra
   if (prev) return { track: POOL.get(decodeURIComponent(prev[1])), seconds: 20, rate: 16000 };
   const file = /\/api\/files\/[^/]+\/(.+)$/.exec(path);
   const name = file ? decodeURIComponent(file[1]).replace(/\.mp3$/, "") : "";
-  const track = [...POOL.values()].find((t) => sanitize(t.display_name) === name);
+  const track = [...POOL.values()].find((t) => fileStem(t) === name);
   return { track, seconds: track?.duration_s ?? 180, rate: 8000 };
 }
 

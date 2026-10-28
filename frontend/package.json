@@ -15,7 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "screenshot": "deno run --allow-run --allow-net=127.0.0.1 --allow-read --allow-write --allow-env scripts/screenshot.ts",
-    "fixtures": "deno run --allow-read=.. --allow-write=src/mock scripts/gen-fixtures.ts"
+    "fixtures": "deno run --allow-read=.. --allow-write=src/mock scripts/gen-fixtures.ts",
+    "fixtures:engine": "python3 scripts/engine-fixtures.py"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
