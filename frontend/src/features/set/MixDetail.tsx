@@ -122,7 +122,7 @@ export function MixDetail({ folder, t, a, b, index, count, onPrev, onNext, onSel
         )}
         {plan && !hasPlan && !mp.loading && (
           <>
-            <span className="text-2xs text-fg-subtle">Rough preview — two browser decks, not beat-locked</span>
+            <span className="text-xs text-fg-muted">Rough preview — two browser decks, not beat-locked</span>
             <Button variant="primary" icon={active ? Square : Headphones} loading={loading} kbd="Space" onClick={() => audition.toggle(plan)}>
               {active ? "Stop audition" : "Audition transition"}
             </Button>
@@ -160,7 +160,8 @@ export function MixDetail({ folder, t, a, b, index, count, onPrev, onNext, onSel
           hotkeys
           toolbar={
             <>
-              <span className="label-caps" title="B aligned under A at the mix point, scaled by its pitch · click to audition from there">Mix view</span>
+              <span className="label-caps">Mix view</span>
+              <span className="truncate text-xs text-fg-subtle">B under A at the mix point{plan ? " · click to audition from there" : ""}</span>
             </>
           }
           labelA={<DeckLabel side="A" st={a} />}
