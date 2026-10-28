@@ -60,6 +60,7 @@ export const LaneCanvas = memo(function LaneCanvas({ k, kfs, range, view, width,
     const i = hitKeyframe(lane, view, range, height, x, y);
     e.currentTarget.setPointerCapture(e.pointerId);
     ed.setLoopSel(null);
+    ed.setFxSel(null);
     let sel = ed.sel();
     if (i != null) {
       const isSel = !!sel.get(k)?.has(i);

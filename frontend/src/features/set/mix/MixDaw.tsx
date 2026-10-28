@@ -1,17 +1,18 @@
 /**
  * Mini-DAW on the MASTER beat timeline (beat 0 = B in): bar ruler with markers, master tempo lane, deck A/B
  * waveforms (positioned through each deck's beat grid, loops as repeated regions, fader shading), and per-deck
- * automation lanes + loop regions — all canvas, one canvas per row so a drag only repaints the rows it touches.
+ * automation lanes + loop regions + effect events (spinback, brake, stutter) — all canvas, one canvas per row so a drag only repaints the rows it touches.
  *
  * Editing: drag keyframes (snap to beats; ⌥ = ¼-beat grid; ⇧ = fine, no snapping), double-click to add, ⌫ to
  * delete, right-click for the curve (linear / ease / hold), box-select on empty space (⇧ adds), drag a selection
- * across lanes, loops: drag to move, drag an edge to resize, double-click the loop row to add one. Without a mouse:
- * the "Keys & loops" list under the rows (KeyList).
+ * across lanes, loops and effects: drag to move, drag an edge to resize, double-click the row to add one (an effect
+ * starts as a 1-beat spinback; right-click for its type and a stutter's repeat length). Without a mouse: the
+ * "Keys & loops" list under the rows (KeyList).
  */
 import { Info, Minus, Plus, Scan } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Curve, LaneId, MixPlan, TrackAnalysis } from "@/api/types";
+import type { Curve, DeckFxType, LaneId, MixPlan, TrackAnalysis } from "@/api/types";
 import { IconButton, Tooltip } from "@/components/ui";
 import { setupCanvas, type View } from "@/features/waveform/draw";
 import { useTimeView, useWidth } from "@/features/waveform/hooks";
@@ -19,12 +20,12 @@ import { alpha, wavePalette } from "@/features/waveform/palette";
 import { cn } from "@/lib/cn";
 import { useSessionState } from "../useSessionState";
 import { ContextMenu } from "./ContextMenu";
-import { type Editor, GUTTER, H_LANE, H_LOOPS, H_RULER, H_TEMPO, H_WAVE, type Menu, type Sel, useCursor } from "./daw";
+import { type Editor, GUTTER, H_FX, H_LANE, H_LOOPS, H_RULER, H_TEMPO, H_WAVE, type Menu, type RegionSel, type Sel, useCursor } from "./daw";
 import { KeyList } from "./KeyList";
 import { LaneCanvas, LaneLabel } from "./LaneRow";
-import { barLabel, type DeckId, getLane, laneRange, LANES, type LaneKey, laneUsed, setLane } from "./lanes";
+import { barLabel, type DeckId, getLane, laneRange, LANES, type LaneKey, laneUsed, setLane, STUTTER_DIV } from "./lanes";
 import { paintMarkerLines } from "./paint";
-import { DeckCanvas, LoopsCanvas, MoreRow, RulerCanvas } from "./rows";
+import { DeckCanvas, FxCanvas, LoopsCanvas, MoreRow, RulerCanvas } from "./rows";
 import { deleteKeyframes, pruneSelection } from "./selection";
 import { useDawHotkeys } from "./useDawHotkeys";
 import type { BeatClock } from "./useMixRender";
@@ -53,7 +54,7 @@ const SHOW_DEFAULT: ShowAll = { a: false, b: false, tempo: false };
 
 const DECK_TINT: Record<DeckId, string> = { a: "var(--color-fg-muted)", b: "var(--color-accent)" };
 
-const SHORTCUTS = "drag keys · dbl-click add · ⌫ delete · right-click curve · ⌥ ¼-beat · ⇧ fine · ⌘-scroll zoom · keyboard: the key list below";
+const SHORTCUTS = "drag keys · dbl-click add · ⌫ delete · right-click curve / effect type · ⌥ ¼-beat · ⇧ fine · ⌘-scroll zoom · keyboard: the key list below";
 
 export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo, anA, anB, nameA, nameB, clock, onPlayFrom, hotkeys = true }: MixDawProps) {
   const boxRef = useRef<HTMLDivElement>(null);
@@ -68,11 +69,12 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
   const view: View = useMemo(() => ({ start: tv.view.start, pxPerSec: width / tv.view.span || 1, width }), [tv.view, width]);
   const [showAll, setShowAll] = useSessionState<ShowAll>(SHOW_KEY, SHOW_DEFAULT);
   const [sel, setSel] = useState<Sel>(() => new Map());
-  const [loopSel, setLoopSel] = useState<{ deck: DeckId; index: number } | null>(null);
+  const [loopSel, setLoopSel] = useState<RegionSel>(null);
+  const [fxSel, setFxSel] = useState<RegionSel>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
 
-  const refs = useRef({ plan, sel, view, loopSel });
-  refs.current = { plan, sel, view, loopSel };
+  const refs = useRef({ plan, sel, view, loopSel, fxSel });
+  refs.current = { plan, sel, view, loopSel, fxSel };
   const ed = useMemo<Editor>(
     () => ({
       plan: () => refs.current.plan,
@@ -88,6 +90,11 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
       setLoopSel: (s) => {
         refs.current.loopSel = s;
         setLoopSel(s);
+      },
+      fxSel: () => refs.current.fxSel,
+      setFxSel: (s) => {
+        refs.current.fxSel = s;
+        setFxSel(s);
       },
       menu: setMenu,
       playFrom: onPlayFrom,
@@ -108,6 +115,12 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
     if (ls) {
       update({ ...p, [ls.deck]: { ...p[ls.deck], loops: p[ls.deck].loops.filter((_, i) => i !== ls.index) } });
       ed.setLoopSel(null);
+      return true;
+    }
+    const fs = refs.current.fxSel;
+    if (fs) {
+      update({ ...p, [fs.deck]: { ...p[fs.deck], fx: (p[fs.deck].fx ?? []).filter((_, i) => i !== fs.index) } });
+      ed.setFxSel(null);
       return true;
     }
     const s = refs.current.sel;
@@ -132,12 +145,27 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
     setMenu(null);
   };
 
+  const editFx = (patch: { type?: DeckFxType; div?: number }) => {
+    if (menu?.kind !== "fx") return;
+    const p = refs.current.plan;
+    const d = menu.deck;
+    const fx = (p[d].fx ?? []).map((f, i) => {
+      if (i !== menu.index) return f;
+      const type = patch.type ?? f.type;
+      const { div: _, ...rest } = f;
+      return type === "stutter" ? { ...rest, type, div: patch.div ?? f.div ?? STUTTER_DIV } : { ...rest, type };
+    });
+    update({ ...p, [d]: { ...p[d], fx } });
+    setMenu(null);
+  };
+
   const fit = () => tv.set({ start: plan.window.start_beat - 2, span: plan.window.end_beat - plan.window.start_beat + 4 });
   const clear = () => {
-    if (!menu && !refs.current.sel.size && !refs.current.loopSel) return false;
+    if (!menu && !refs.current.sel.size && !refs.current.loopSel && !refs.current.fxSel) return false;
     setMenu(null);
     ed.setSel(new Map());
     ed.setLoopSel(null);
+    ed.setFxSel(null);
     return true;
   };
   useDawHotkeys({
@@ -246,10 +274,12 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
     const unused = LANES.filter((m) => !isUsed(m.id));
     const open = !!showAll[d];
     const hasLoops = deck.loops.length > 0 || loopSel?.deck === d;
-    const hidden = unused.length + (hasLoops ? 0 : 1); // lanes behind the "+ N more" row (the empty loops row counts)
+    const fxCount = deck.fx?.length ?? 0;
+    const hasFx = fxCount > 0 || fxSel?.deck === d;
+    const hidden = unused.length + (hasLoops ? 0 : 1) + (hasFx ? 0 : 1); // lanes behind the "+ N more" row (empty loops / effects rows count)
     const lanes = open ? LANES : LANES.filter((m) => !unused.includes(m));
     const name = d === "a" ? nameA : nameB;
-    const details = `${name} · ${deck.native_bpm.toFixed(1)} BPM · plays bar ${barLabel(deck.play_from_beat)} → ${barLabel(deck.play_to_beat)} · echo ${deck.echo_beats} beat${deck.loops.length ? ` · ${deck.loops.length} loop${deck.loops.length === 1 ? "" : "s"}` : ""}`;
+    const details = `${name} · ${deck.native_bpm.toFixed(1)} BPM · plays bar ${barLabel(deck.play_from_beat)} → ${barLabel(deck.play_to_beat)} · echo ${deck.echo_beats} beat${deck.loops.length ? ` · ${deck.loops.length} loop${deck.loops.length === 1 ? "" : "s"}` : ""}${fxCount ? ` · ${fxCount} effect${fxCount === 1 ? "" : "s"}` : ""}`;
     return (
       <>
         <div className="flex h-6 items-center bg-panel pl-3" style={{ gridColumn: "1 / span 2" }}>
@@ -282,11 +312,21 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
             </div>
           </>
         )}
+        {(open || hasFx) && (
+          <>
+            <div style={{ height: H_FX }} className="flex items-center gap-1.5 border-b border-line/60 pr-2 pl-3 text-xs text-fg-muted" title="Spinback, brake, stutter: they replace what the deck plays there">
+              <span className="size-1.5 rounded-full bg-danger" /> Effects
+            </div>
+            <div className="border-b border-line/60">
+              <FxCanvas d={d} deck={deck} view={view} width={width} selected={fxSel?.deck === d ? fxSel.index : null} ed={ed} />
+            </div>
+          </>
+        )}
         {hidden > 0 && (
           <MoreRow
             open={open}
             onClick={() => toggleShow(d)}
-            title={[...unused.map((m) => m.label), ...(hasLoops ? [] : ["Loops"])].join(", ")}
+            title={[...unused.map((m) => m.label), ...(hasLoops ? [] : ["Loops"]), ...(hasFx ? [] : ["Effects"])].join(", ")}
             label={open ? `Hide ${hidden} unused lane${hidden === 1 ? "" : "s"}` : `+ ${hidden} more lane${hidden === 1 ? "" : "s"}`}
           />
         )}
@@ -343,7 +383,7 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
         </div>
         <canvas ref={overlayRef} className="pointer-events-none absolute top-0 bottom-0" style={{ left: GUTTER + 1, width: width || 0 }} />
       </div>
-      <KeyList plan={plan} sel={sel} setSel={ed.setSel} loopSel={loopSel} setLoopSel={ed.setLoopSel} update={update} menu={setMenu} />
+      <KeyList plan={plan} sel={sel} setSel={ed.setSel} loopSel={loopSel} setLoopSel={ed.setLoopSel} fxSel={fxSel} setFxSel={ed.setFxSel} update={update} menu={setMenu} />
       {tip &&
         createPortal(
           <div className="pointer-events-none fixed z-[1000] rounded-xs bg-overlay px-1.5 py-0.5 text-2xs whitespace-nowrap text-fg shadow-pop num" style={{ left: tip.x + 12, top: tip.y - 26 }}>
@@ -351,7 +391,7 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
           </div>,
           document.body,
         )}
-      {menu && <ContextMenu menu={menu} plan={plan} onClose={() => setMenu(null)} onCurve={setCurve} onLength={setLoopLength} onDelete={() => (deleteSelection(), setMenu(null))} />}
+      {menu && <ContextMenu menu={menu} plan={plan} onClose={() => setMenu(null)} onCurve={setCurve} onLength={setLoopLength} onFx={editFx} onDelete={() => (deleteSelection(), setMenu(null))} />}
     </div>
   );
 }

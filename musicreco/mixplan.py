@@ -10,6 +10,11 @@ A master bar is 4 master beats: A bar a0 + k and B bar b0 + k sound together in 
 is put on A's grid first, as in transitions, so its native_bpm is the analysis BPM x 2 or x 0.5). `bars` is the
 blend length; for the cuts (slam, quick cut, drop swap, reverb wash, an echo out without overlap) it is the length of
 A's lead-in effect (filter riser, reverb swell) before the cut on the 1.
+
+Deck effects (`fx`) are timed events in master beats that replace what the deck plays over [start_beat, end_beat):
+a spinback (the record pushed back: reverse playback that slows to a stop), a brake (turntable stop: the platter
+slows from full speed to a stop, pitch falling with it) and a stutter (a gated retrigger of the slice at start_beat,
+repeated every `div` beats). After a spinback or a brake the deck is silent: the record has stopped.
 """
 
 from __future__ import annotations
@@ -43,12 +48,13 @@ LANE_DEFAULTS: dict[str, float] = {
 SEND_TAPS = ("pre_eq", "post_fader")  # where a deck's echo / reverb send taps it: before its EQ/filter/fader, or after
 REVERB_SIZE = 0.75  # 0..1: room size and decay of a deck's reverb
 CURVES = ("linear", "hold", "ease")
-TECHNIQUES = (*transitions.TECHNIQUES, "filter sweep", "loop roll", "slam", "reverb wash")
+FX_TYPES = ("spinback", "brake", "stutter")  # deck effect events; each is also a cut technique ending A with it
+TECHNIQUES = (*transitions.TECHNIQUES, "filter sweep", "loop roll", "slam", "reverb wash", *FX_TYPES)
 BARS = (4, 8, 16, 32)
 TEMPO_RANGE = (40.0, 300.0)
 ECHO_BEATS_RANGE = (0.125, 4.0)
 
-CUTS = ("drop swap", "quick cut", "slam", "reverb wash")
+CUTS = ("drop swap", "quick cut", "slam", "reverb wash", *FX_TYPES)
 GOOD_KEYS = ("same", "+1", "-1", "relative")
 _SWEEP_KEYS = ("+2 boost", "+7 boost", "clash")  # blends in these keys hide under a filter sweep
 _PHRASE = transitions.PHRASE
@@ -66,6 +72,10 @@ _MAX_KEYFRAMES = 4096
 _MAX_LOOPS = 64
 _MAX_ABS_BEAT = 100_000.0
 _MIN_LOOP_BEATS = 1 / 16
+_MAX_FX = 64
+_MAX_FX_BEATS = 16.0  # longest effect event
+STUTTER_DIV_RANGE = (1 / 16, 1.0)  # beats per stutter repeat
+STUTTER_DIV = 0.25
 _VOCAL_CUT = -18.0  # dB on the ducked deck's mids while vocals overlap
 _SLAM_INTRO = 8  # B's intro up to this many bars is short enough to slam past
 _SLAM_LEAD = 8  # ... when its first drop comes at most this many bars after the intro
@@ -202,6 +212,31 @@ def _loops(raw: object, what: str) -> list[dict]:
     return out
 
 
+def _fx(raw: object, what: str) -> list[dict]:
+    """Effect events, sorted and non-overlapping: {type, start_beat, end_beat} (+ div, beats per repeat, for a
+    stutter)."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or len(raw) > _MAX_FX:
+        raise ValueError(f"{what}.fx must be a list of at most {_MAX_FX} effects")
+    out = []
+    for ev in raw:
+        if not isinstance(ev, dict) or ev.get("type") not in FX_TYPES:
+            raise ValueError(f"{what}.fx: effect must be an object with a type in {FX_TYPES}")
+        s, e = _req_num(ev, "start_beat", what), _req_num(ev, "end_beat", what)
+        if not 0 < e - s <= _MAX_FX_BEATS:
+            raise ValueError(f"{what}.fx: end_beat must be after start_beat, at most {_MAX_FX_BEATS:g} beats")
+        item = {"type": ev["type"], "start_beat": s, "end_beat": e}
+        if ev["type"] == "stutter":
+            item["div"] = min(STUTTER_DIV_RANGE[1], max(STUTTER_DIV_RANGE[0], num(ev.get("div"), STUTTER_DIV)))
+        out.append(item)
+    out.sort(key=lambda ev: ev["start_beat"])
+    for p, q in zip(out, out[1:]):
+        if q["start_beat"] < p["end_beat"] - 1e-9:
+            raise ValueError(f"{what}.fx overlap")
+    return out
+
+
 def _tap(raw: object) -> str:
     return raw if raw in SEND_TAPS else SEND_TAPS[0]
 
@@ -231,7 +266,7 @@ def _deck(raw: object, what: str) -> dict:
         "echo_beats": min(ECHO_BEATS_RANGE[1], max(ECHO_BEATS_RANGE[0], echo)),
         "echo_tap": _tap(raw.get("echo_tap")), "reverb_tap": _tap(raw.get("reverb_tap")),
         "reverb_size": min(1.0, max(0.0, num(raw.get("reverb_size"), REVERB_SIZE))),
-        "loops": _loops(raw.get("loops"), what), "lanes": lanes,
+        "loops": _loops(raw.get("loops"), what), "fx": _fx(raw.get("fx"), what), "lanes": lanes,
     }  # fmt: skip
 
 
@@ -907,15 +942,41 @@ def _loop_roll(m: Mix, place: _Place, A: dict, B: dict, a_deck: dict) -> dict:
     return info
 
 
+def fx_beats(tech: str, a_bpm: float) -> float:
+    """Beats A's ending effect takes before the cut: a spinback 1, a brake 2 (1 under 100 BPM, where a beat is
+    long enough to hear the platter stop), a stutter the last bar."""
+    return {"spinback": 1.0, "brake": 2.0 if a_bpm >= 100 else 1.0}.get(tech, 4.0)
+
+
+def _fx_ending(m: Mix, tech: str, A: dict, a_deck: dict) -> dict:
+    """A ends in a deck effect into the cut on the 1 at master beat 0: a spinback over its last beat or a brake over
+    its last 1-2 into a reverb tail, or a stutter over its last bar (half beats, quarters, then eighths on the last
+    beat) under a rising high-pass into an echo tail."""
+    n = fx_beats(tech, m.a_bpm)
+    if tech == "stutter":
+        a_deck["fx"] = [{"type": "stutter", "start_beat": s, "end_beat": e, "div": d}
+                        for s, e, d in ((-4.0, -2.0, 0.5), (-2.0, -1.0, 0.25), (-1.0, 0.0, 0.125))]
+        A["filter"] = [(-4.0, 0.0, "ease"), (0.0, 0.3, "hold")]
+        A["echo_send"] = [(-1.0, 0.0, "linear"), *_tail(0.0, 0.6)]
+        return {"fx": -n}
+    a_deck["fx"] = [{"type": tech, "start_beat": -n, "end_beat": 0.0}]
+    A["reverb_send"] = [(-n, 0.0, "linear"), *_tail(0.0, 0.7 if tech == "spinback" else 0.5)]
+    return {"fx": -n}
+
+
 def _cut_lanes(m: Mix, place: _Place, tech: str, bars: int, A: dict, a_deck: dict) -> dict:
     """Cuts on the 1 at master beat 0, B straight in at full. Into B's drop: a clean cut after a short filter riser
     and a 1-beat reverb swell on A, a drop swap rolling A's build into it (_cut_roll); otherwise an echo throw on A
-    (with a high-pass riser for echo outs). Slams have their own (_slam_lanes)."""
+    (with a high-pass riser for echo outs); a spinback, brake or stutter ends A in that effect (_fx_ending). Slams
+    have their own (_slam_lanes)."""
     into_drop = place.b0 in m.gb.drops
     info: dict = {"echo_beats": 0.75, "feedback": LANE_DEFAULTS["echo_feedback"], "throw": None, "roll": None}
     if tech == "drop swap":
         info.update(_cut_roll(m, place, A, a_deck))
     A["volume"] = [(-4.0, 1.0, "hold"), (0.0, 0.0, "hold")]
+    if tech in FX_TYPES:
+        info.update(_fx_ending(m, tech, A, a_deck))
+        return info
     if tech == "reverb wash":  # the reverb send swells over 4-8 bars under a rising high-pass, then the cut
         ramp = 4.0 * max(4, min(bars, 8))
         A["filter"], A["filter_res"] = _sweep(-ramp, 0.0, 0.55, release=False)
@@ -1033,6 +1094,16 @@ def _headline(m: Mix, tech: str, bars: int, place: _Place, info: dict) -> str:
         roll = ", rolling its last 2 bars 1 bar → 2 beats → 1 → ½" if info.get("roll") is not None else ""
         what = f"drop swap: let A's build run{roll} and on the 1 where A would drop (A {t0}, bar {a0 + 1}) cut " \
                f"into B's drop at {tb}, a short reverb wash on A's last beat"
+    elif tech == "spinback":
+        what = f"spinback: on A's last beat A is spun back to a stop into a reverb tail, and on the 1 at A {t0} " \
+               f"(bar {a0 + 1}) B comes in from {tb}"
+    elif tech == "brake":
+        n = fx_beats(tech, m.a_bpm)
+        what = f"brake: A's turntable stops over its last {plural(int(n), 'beat')} into a reverb tail, and on the 1 " \
+               f"at A {t0} (bar {a0 + 1}) B comes in from {tb}"
+    elif tech == "stutter":
+        what = f"stutter: A's last bar stutters (half beats, quarters, then eighths) under a rising high-pass into " \
+               f"an echo, and on the 1 at A {t0} (bar {a0 + 1}) B comes in from {tb}"
     else:
         what = f"quick cut on the 1 at A {t0} (bar {a0 + 1}) into B from {tb}"
     edges = ""
@@ -1142,7 +1213,7 @@ def generate(
 
     a_deck = {
         "track_id": a.id, "beat0_s": round(ga.fd + place.a0 * ga.bar_s, 4), "native_bpm": m.a_bpm,
-        "play_from_beat": 0.0, "play_to_beat": E, "echo_beats": 0.75, "loops": [], "lanes": {},
+        "play_from_beat": 0.0, "play_to_beat": E, "echo_beats": 0.75, "loops": [], "fx": [], "lanes": {},
     }  # fmt: skip
     if m.a_dur > 0:  # A plays on (fader down) into its sends after it is out, while it has audio
         a_end = (m.a_dur - a_deck["beat0_s"]) * m.a_bpm / 60.0
@@ -1154,7 +1225,7 @@ def generate(
     b_deck = {
         "track_id": b.id, "beat0_s": round(b_beat0, 4), "native_bpm": m.b_bpm,
         "play_from_beat": 0.0 if xb else max(0.0, round(-b_beat0 * m.b_bpm / 60.0, 4)), "play_to_beat": 0.0,
-        "echo_beats": 0.75, "loops": [], "lanes": {},
+        "echo_beats": 0.75, "loops": [], "fx": [], "lanes": {},
     }  # fmt: skip
     if a_loop is not None:  # slip loop from where A's music runs out until it leaves
         a_deck["loops"] = [{"start_beat": 4.0 * a_loop.at, "end_beat": E, "source_beat": 4.0 * (a_loop.src - place.a0),
@@ -1239,6 +1310,8 @@ def generate(
         markers.append({"beat": t, "label": "echo throw"})
     if tech == "reverb wash":
         markers.append({"beat": -4.0 * max(4, min(bars, 8)), "label": "reverb wash"})
+    if tech in FX_TYPES:
+        markers.append({"beat": info["fx"], "label": tech})
     if a_loop is not None:
         markers.append({"beat": 4.0 * a_loop.at, "label": "A loop"})
     if b_loop is not None:
@@ -1322,6 +1395,9 @@ def summary(plan: dict, a_an: dict | None = None, b_an: dict | None = None) -> s
         for lp in deck["loops"]:
             out.append(f"  {name} loop: beats {lp['start_beat']:g}..{lp['end_beat']:g} repeat "
                        f"{lp['length_beats']:g} from {lp['source_beat']:g}")
+        for ev in deck.get("fx") or []:
+            div = f" every {ev['div']:g}" if "div" in ev else ""
+            out.append(f"  {name} fx: {ev['type']} beats {ev['start_beat']:g}..{ev['end_beat']:g}{div}")
         return out or [f"  {name}: no effects"]
 
     tempo = [round(k["value"], 1) for k in plan["tempo"]]

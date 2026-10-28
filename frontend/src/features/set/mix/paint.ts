@@ -1,10 +1,10 @@
 /** Canvas painters for the mix editor. X axis = MASTER BEATS (beat 0 = B in); View.pxPerSec is px per beat here. */
-import type { DeckPlan, Keyframe, MixMarker, MixPlan } from "@/api/types";
+import type { DeckFxType, DeckPlan, Keyframe, MixMarker, MixPlan } from "@/api/types";
 import { drawWave, type Lane, type View, xOf } from "@/features/waveform/draw";
 import { alpha, wavePalette } from "@/features/waveform/palette";
 import type { WaveData } from "@/features/waveform/prepare";
 import { cssVar } from "@/lib/theme";
-import { laneValue } from "./lanes";
+import { fxLabel, laneValue, STUTTER_DIV } from "./lanes";
 
 const colorCache = new Map<string, string>();
 /** "var(--color-x)" → resolved colour (canvas can't use CSS vars). */
@@ -300,6 +300,53 @@ export function paintDeck(ctx: CanvasRenderingContext2D, dpr: number, view: View
     ctx.fillStyle = alpha(tint, 0.9);
     ctx.fillRect(x - 0.5, 0, 1.5, h);
   }
+}
+
+const FX_TINT: Record<DeckFxType, "warn" | "danger" | "accent"> = { spinback: "danger", brake: "warn", stutter: "accent" };
+
+/** Effect events row: a spinback as a falling reverse ramp, a brake as a ramp down to the stop, a stutter as its
+ * repeats with the gate's closed part shaded. */
+export function paintFx(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, deck: DeckPlan, selected: number | null): void {
+  const p = wavePalette();
+  ctx.fillStyle = p.surface;
+  ctx.fillRect(0, 0, w, h);
+  paintGrid(ctx, view, 0, h);
+  ctx.font = `600 9px ${p.font}`;
+  ctx.textBaseline = "middle";
+  (deck.fx ?? []).forEach((f, i) => {
+    const x0 = beatX(view, f.start_beat);
+    const x1 = beatX(view, f.end_beat);
+    if (x1 < 0 || x0 > w) return;
+    const tint = p[FX_TINT[f.type]];
+    const sel = selected === i;
+    ctx.fillStyle = alpha(tint, sel ? 0.32 : 0.16);
+    ctx.fillRect(x0 + 0.5, 2, x1 - x0 - 1, h - 4);
+    ctx.fillStyle = alpha(tint, 0.55);
+    if (f.type === "stutter") {
+      const div = f.div ?? STUTTER_DIV;
+      for (let b = f.start_beat; b < f.end_beat - 1e-6; b += div) {
+        const g0 = beatX(view, b + 0.7 * div);
+        const g1 = beatX(view, Math.min(f.end_beat, b + div));
+        ctx.fillRect(g0, 3, Math.max(0.5, g1 - g0), h - 6); // the gate closed
+      }
+    } else {
+      // the speed falling to the stop (a spinback runs backwards: drawn from the top edge down)
+      ctx.beginPath();
+      ctx.moveTo(x0 + 0.5, f.type === "spinback" ? 2 : h - 2);
+      ctx.lineTo(x0 + 0.5, f.type === "spinback" ? h - 2 : 2);
+      ctx.lineTo(x1 - 0.5, f.type === "spinback" ? 2 : h - 2);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.strokeStyle = sel ? p.fg : alpha(tint, 0.9);
+    ctx.lineWidth = sel ? 1.5 : 1;
+    ctx.strokeRect(x0 + 0.5, 2.5, x1 - x0 - 1, h - 5);
+    const text = fxLabel(f).toUpperCase();
+    if (x1 - x0 > ctx.measureText(text).width + 10) {
+      ctx.fillStyle = p.fg;
+      ctx.fillText(text, Math.max(x0, 0) + 5, h / 2 + 0.5);
+    }
+  });
 }
 
 /** Loop regions row. */

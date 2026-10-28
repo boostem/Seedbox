@@ -1,12 +1,13 @@
-/** Canvas rows of the mix DAW other than the automation lanes: deck waveform, loop regions, bar ruler, "+ N more". */
+/** Canvas rows of the mix DAW other than the automation lanes: deck waveform, loop regions, effect events, bar ruler,
+ * "+ N more". */
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
-import type { DeckLoop, DeckPlan, MixPlan, TrackAnalysis } from "@/api/types";
+import type { DeckFx, DeckLoop, DeckPlan, MixPlan, TrackAnalysis } from "@/api/types";
 import { setupCanvas, type View } from "@/features/waveform/draw";
 import { prepareWave } from "@/features/waveform/prepare";
-import { type Editor, H_LOOPS, H_RULER, H_WAVE, snapTo, useCursor } from "./daw";
-import { barLabel, type DeckId } from "./lanes";
-import { paintDeck, paintLoops, paintRuler, resolveColor } from "./paint";
+import { clamp, type Editor, H_FX, H_LOOPS, H_RULER, H_WAVE, snapTo, useCursor } from "./daw";
+import { barLabel, type DeckId, fxLabel, MAX_FX_BEATS } from "./lanes";
+import { paintDeck, paintFx, paintLoops, paintRuler, resolveColor } from "./paint";
 
 export function useRowCanvas(width: number, height: number, paint: (ctx: CanvasRenderingContext2D, dpr: number) => void, deps: unknown[]) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -49,6 +50,7 @@ export const LoopsCanvas = memo(function LoopsCanvas({ d, deck, view, width, sel
         if (e.button !== 0) return;
         const h = hit(lx(e));
         ed.setSel(new Map());
+        ed.setFxSel(null);
         if (!h) return ed.setLoopSel(null);
         e.currentTarget.setPointerCapture(e.pointerId);
         ed.setLoopSel({ deck: d, index: h.index });
@@ -98,6 +100,94 @@ export const LoopsCanvas = memo(function LoopsCanvas({ d, deck, view, width, sel
         if (!h) return;
         ed.setLoopSel({ deck: d, index: h.index });
         ed.menu({ x: e.clientX, y: e.clientY, kind: "loop", deck: d, index: h.index });
+      }}
+    />
+  );
+});
+
+/** Where an effect event may go without overlapping its neighbours: [previous end, next start]. */
+export function fxRoom(fx: DeckFx[], index: number): [number, number] {
+  return [fx[index - 1]?.end_beat ?? -Infinity, fx[index + 1]?.start_beat ?? Infinity];
+}
+
+export const FxCanvas = memo(function FxCanvas({ d, deck, view, width, selected, ed }: { d: DeckId; deck: DeckPlan; view: View; width: number; selected: number | null; ed: Editor }) {
+  const ref = useRowCanvas(width, H_FX, (ctx) => paintFx(ctx, view, width, H_FX, deck, selected), [deck, view, selected]);
+  const drag = useRef<{ mode: "move" | "start" | "end"; index: number; x: number; snap: MixPlan; orig: DeckFx; moved: boolean } | null>(null);
+  const fx = deck.fx ?? [];
+  const hit = (x: number): { index: number; mode: "move" | "start" | "end" } | null => {
+    for (let i = fx.length - 1; i >= 0; i--) {
+      const x0 = (fx[i].start_beat - view.start) * view.pxPerSec;
+      const x1 = (fx[i].end_beat - view.start) * view.pxPerSec;
+      if (x >= x0 - 4 && x <= x1 + 4) return { index: i, mode: Math.abs(x - x0) <= 5 ? "start" : Math.abs(x - x1) <= 5 ? "end" : "move" };
+    }
+    return null;
+  };
+  const lx = (e: { clientX: number }) => e.clientX - ref.current!.getBoundingClientRect().left;
+  const setFx = (plan: MixPlan, next: DeckFx[]): MixPlan => ({ ...plan, [d]: { ...plan[d], fx: next } });
+  return (
+    <canvas
+      ref={ref}
+      style={{ height: H_FX }}
+      className="block w-full touch-none"
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        const h = hit(lx(e));
+        ed.setSel(new Map());
+        ed.setLoopSel(null);
+        if (!h) return ed.setFxSel(null);
+        e.currentTarget.setPointerCapture(e.pointerId);
+        ed.setFxSel({ deck: d, index: h.index });
+        drag.current = { mode: h.mode, index: h.index, x: e.clientX, snap: ed.plan(), orig: fx[h.index], moved: false };
+      }}
+      onPointerMove={(e) => {
+        const x = lx(e);
+        useCursor.setState({ hover: view.start + x / view.pxPerSec });
+        const h = hit(x);
+        e.currentTarget.style.cursor = drag.current ? (drag.current.mode === "move" ? "grabbing" : "ew-resize") : h ? (h.mode === "move" ? "grab" : "ew-resize") : "default";
+        const dr = drag.current;
+        if (!dr) return;
+        const raw = (e.clientX - dr.x) / view.pxPerSec;
+        if (!dr.moved && Math.abs(e.clientX - dr.x) < 3) return;
+        dr.moved = true;
+        const grid = e.altKey ? 0.25 : 1;
+        const o = dr.orig;
+        const all = dr.snap[d].fx ?? [];
+        const [lo, hi] = fxRoom(all, dr.index);
+        let f: DeckFx;
+        if (dr.mode === "move") {
+          const db = clamp(snapTo(o.start_beat + raw, grid) - o.start_beat, lo - o.start_beat, hi - o.end_beat);
+          f = { ...o, start_beat: o.start_beat + db, end_beat: o.end_beat + db };
+        } else if (dr.mode === "end") f = { ...o, end_beat: clamp(snapTo(o.end_beat + raw, grid), o.start_beat + 0.25, Math.min(hi, o.start_beat + MAX_FX_BEATS)) };
+        else f = { ...o, start_beat: clamp(snapTo(o.start_beat + raw, grid), Math.max(lo, o.end_beat - MAX_FX_BEATS), o.end_beat - 0.25) };
+        ed.update(setFx(dr.snap, all.map((x, i) => (i === dr.index ? f : x))), { transient: true });
+        const beats = f.end_beat - f.start_beat;
+        useCursor.setState({ tip: { x: e.clientX, y: e.clientY, text: `${fxLabel(f)} ${barLabel(f.start_beat)} → ${barLabel(f.end_beat)} · ${beats} beat${beats === 1 ? "" : "s"}` } });
+      }}
+      onPointerUp={() => {
+        const dr = drag.current;
+        drag.current = null;
+        useCursor.setState({ tip: null });
+        if (dr?.moved) ed.checkpoint(dr.snap);
+      }}
+      onPointerLeave={() => !drag.current && useCursor.setState({ hover: null })}
+      onDoubleClick={(e) => {
+        if (hit(lx(e))) return;
+        const start = snapTo(view.start + lx(e) / view.pxPerSec, e.altKey ? 0.25 : 1);
+        const plan = ed.plan();
+        const all = plan[d].fx ?? [];
+        const next = all.find((f) => f.start_beat >= start)?.start_beat ?? Infinity;
+        if (next - start < 0.25 || all.some((f) => f.start_beat < start && f.end_beat > start)) return;
+        const f: DeckFx = { type: "spinback", start_beat: start, end_beat: Math.min(start + 1, next) };
+        const sorted = [...all, f].sort((a, b) => a.start_beat - b.start_beat);
+        ed.update(setFx(plan, sorted));
+        ed.setFxSel({ deck: d, index: sorted.indexOf(f) });
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        const h = hit(lx(e));
+        if (!h) return;
+        ed.setFxSel({ deck: d, index: h.index });
+        ed.menu({ x: e.clientX, y: e.clientY, kind: "fx", deck: d, index: h.index });
       }}
     />
   );
