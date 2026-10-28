@@ -82,9 +82,17 @@ export function generateMixPlan(folder: string, a: Track, aAn: TrackAnalysis | n
     default: {
       // long blend / phrase blend / bass swap
       const swap = tech === "bass swap" ? Math.min(n, (t.swap_bar ?? L / 2 + 1) * 4 - 4) : half;
-      A = deck(a, aAn, out, start, n, { volume: [kf(0, 1, "linear"), kf(half, 1, "ease"), kf(n, 0)], eq_low: [kf(swap, 0, "hold"), kf(swap, -30)], eq_high: [kf(half, 0, "linear"), kf(n, -12)] });
-      B = deck(b, bAn, inS, 0, end, { volume: [kf(0, tech === "bass swap" ? 0.75 : 0.0, "ease"), kf(Math.min(half, 16), 1)], eq_low: [kf(0, -30, "hold"), kf(swap, 0)], eq_high: [kf(0, -10, "linear"), kf(half, 0)] });
+      // loops stretching a short outro / intro (musicreco.mixplan): A from where its music ends until it leaves, B
+      // from its cue for whole phrases, its grid held back so it plays on from its cue after the release
+      const xa = L === t.overlap_bars ? 4 * (t.a_loop_bars ?? 0) : 0;
+      const xb = L === t.overlap_bars ? 4 * (t.b_loop_bars ?? 0) : 0;
+      const aLoops: DeckLoop[] = xa ? [{ start_beat: n - xa, end_beat: n, source_beat: n - 2 * xa, length_beats: xa }] : [];
+      const bLoops: DeckLoop[] = xb ? [{ start_beat: 0, end_beat: xb, source_beat: xb, length_beats: xb }] : [];
+      A = deck(a, aAn, out, start, n, { volume: [kf(0, 1, "linear"), kf(half, 1, "ease"), kf(n, 0)], eq_low: [kf(swap, 0, "hold"), kf(swap, -30)], eq_high: [kf(half, 0, "linear"), kf(n, -12)] }, aLoops);
+      B = deck(b, bAn, inS - (xb * 60) / bBpm, 0, end, { volume: [kf(0, tech === "bass swap" ? 0.75 : 0.0, "ease"), kf(Math.min(half, 16), 1)], eq_low: [kf(0, -30, "hold"), kf(swap, 0)], eq_high: [kf(0, -10, "linear"), kf(half, 0)] }, bLoops);
       markers.push({ beat: swap, label: "bass swap" }, { beat: n, label: "A out" });
+      if (xa) markers.push({ beat: n - xa, label: "A loop" });
+      if (xb) markers.push({ beat: xb, label: "B loop out" });
       notes.push(`${L}-bar ${tech}: bring B in on the phrase with its lows cut, swap the bass on bar ${swap / 4 + 1}, fade A out by bar ${L + 1}.`);
     }
   }

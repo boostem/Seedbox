@@ -11,7 +11,8 @@ from musicreco import mixplan, settings, structure, transitions
 
 from .fixtures import (
     BUILD_END, CLUB_PAIRS, COLD_END, DROP_HEAVY, DROP_HEAVY_B, FAST, HALF_TIME, HOUSE, HOUSE_B, INSERT, LONG_OUTRO,
-    OUTRO_24, PAIRS, PICKUP, SHORT_INTRO_DROP, SHORT_OUTRO, STANDARD, TECHNO, TECHNO_B, VOCAL_INTRO, VOCAL_OUTRO,
+    MUSIC_OUTRO, OUTRO_8, OUTRO_24, PAIRS, PICKUP, SHORT_INTRO, SHORT_INTRO_DROP, SHORT_OUTRO, STANDARD, TECHNO,
+    TECHNO_B, VOCAL_INTRO, VOCAL_OUTRO,
     Spec, analysis, track,
 )  # fmt: skip
 
@@ -33,14 +34,16 @@ EXPECTED = {
     "short outro -> clash key": ("phrase blend", 16, "filter sweep", 16),
     "insert -> standard": ("long blend", 16, "long blend", 16),
     "outro 24 -> standard": ("long blend", 16, "long blend", 16),
-    "standard -> short intro drop": ("phrase blend", 16, "slam", 4),
-    "build end -> short intro drop": ("phrase blend", 8, "slam", 4),
+    "standard -> short intro drop": ("long blend", 16, "slam", 4),  # B loops its 8-bar intro
+    "build end -> short intro drop": ("phrase blend", 16, "slam", 4),  # B loops its 8-bar intro
     "build end -> fast": ("phrase blend", 16, "slam", 4),
     "build end -> standard": ("phrase blend", 16, "long blend", 16),
     "house -> house": ("long blend", 16, "long blend", 16),
     "techno -> techno": ("long blend", 32, "long blend", 32),
     "music outro -> house": ("phrase blend", 16, "long blend", 16),
-    "short edges -> short edges": ("phrase blend", 8, "phrase blend", 8),  # 8 bars only when forced
+    "short edges -> short edges": ("long blend", 16, "long blend", 16),  # A loops its outro, B its intro
+    "outro 8 -> standard": ("long blend", 16, "long blend", 16),  # A loops its 8-bar outro
+    "music outro -> short intro": ("phrase blend", 16, "long blend", 16),  # B loops its 8-bar intro
 }
 IDS = [name for name, _, _ in PAIRS]
 
@@ -87,12 +90,15 @@ def test_suggest_points_are_on_phrases(name: str, a: Spec, b: Spec) -> None:
     else:
         assert a0 in ga.phrases, f"A comes out at bar {a0}, not a phrase start {ga.phrases}"
         assert b0 in gb.phrases, f"B is cued at bar {b0}, not a phrase start {gb.phrases}"
-    length = tr["overlap_bars"]
+    length, xa, xb = tr["overlap_bars"], tr["a_loop_bars"], tr["b_loop_bars"]
     assert length in (0, 8, 16, 32)
-    assert a0 + length <= ga.end, "the overlap runs past A's music"
-    if tr["swap_bar"] is not None:  # on a phrase start in both tracks, never halfway through a phrase
+    assert a0 + length - xa <= ga.end, "the overlap runs past A's music without a loop"
+    assert xa % 4 == 0 and xb % PHRASE == 0 and xa + xb <= length
+    if tr["swap_bar"] is not None:  # on a phrase start in both tracks (the master grid inside a loop)
         k = tr["swap_bar"] - 1
-        assert 0 < k < length and a0 + k in ga.phrases and b0 + k in gb.phrases
+        assert 0 < k < length
+        assert a0 + k in ga.phrases if k < length - xa else k % PHRASE == 0
+        assert b0 + k - xb in gb.phrases if k >= xb else k % PHRASE == 0
 
 
 def test_suggest_without_analysis_is_not_ready() -> None:
@@ -278,7 +284,9 @@ def test_generate_technique_and_bars(name: str, a: Spec, b: Spec) -> None:
 def test_generate_cues_and_swap_on_phrases(name: str, a: Spec, b: Spec) -> None:
     plan = _generate(a, b)
     ga, gb = _grids(a, b)
-    a0, b0 = _on_bar(_bar(ga, plan["a"]["beat0_s"])), _on_bar(_bar(gb, plan["b"]["beat0_s"]))
+    b_loops = [lp for lp in plan["b"]["loops"] if lp["start_beat"] == 0.0]  # B looping its intro from its cue
+    xb = round(b_loops[0]["end_beat"] / 4) if b_loops else 0
+    a0, b0 = _on_bar(_bar(ga, plan["a"]["beat0_s"])), _on_bar(_bar(gb, plan["b"]["beat0_s"])) + xb
     if plan["technique"] in ("drop swap", "quick cut", "slam", "echo out") and not any(
         m["label"] == "B in" for m in plan["markers"]
     ):
@@ -290,7 +298,9 @@ def test_generate_cues_and_swap_on_phrases(name: str, a: Spec, b: Spec) -> None:
         if m["label"] == "bass swap":
             k = m["beat"] / 4
             assert k == int(k) and 0 < k <= plan["bars"]
-            assert k == plan["bars"] or (a0 + int(k) in ga.phrases and b0 + int(k) in gb.phrases)
+            b_k = b0 + int(k) - xb if k >= xb else None  # B's bar there; inside its loop the master grid's
+            assert k == plan["bars"] or (a0 + int(k) in ga.phrases and (b_k in gb.phrases if b_k is not None
+                                                                        else k % PHRASE == 0))
     # the decks' beat grids: master beat 0 is a downbeat of both
     assert plan["a"]["native_bpm"] == pytest.approx(a.bpm)
     assert plan["b"]["native_bpm"] == pytest.approx(b.bpm * _factor(a, b))
@@ -524,6 +534,105 @@ def test_blend_lanes_are_phrased() -> None:
         "highs out first"
     assert at(a["eq_mid"], 30) == -10.0 and 0.0 < at(a["volume"], 30) < 1.0, "then mids, then the fader"
     assert at(a["volume"], 32) == 0.0
+
+
+# --- loop extension --------------------------------------------------------------------------------------------------
+
+
+def _bar_at(g: transitions._Grid, deck: dict, beat: float) -> float:
+    """Track bar a plan's deck plays at master beat `beat`, through its loops."""
+    return _bar(g, float(mixplan.deck_time(deck, beat)))
+
+
+def test_short_outro_blends_16_bars_with_an_a_loop() -> None:
+    """An 8-bar drum outro over a 16-bar drum intro: B comes in on A's outro and A loops it for the second half,
+    instead of an 8-bar blend or one starting 8 bars into A's body."""
+    tr = transitions.suggest(track(OUTRO_8), analysis(OUTRO_8), track(STANDARD), analysis(STANDARD))
+    ga, _ = _grids(OUTRO_8, STANDARD)
+    assert ga.outro == (120, 128)
+    assert (tr["technique"], tr["overlap_bars"], tr["a_loop_bars"], tr["b_loop_bars"]) == ("long blend", 16, 8, 0)
+    assert _on_bar(_bar(ga, tr["out_start_s"])) == 120
+    assert any("loop its bars 121–128" in n for n in tr["notes"])
+
+    plan = _generate(OUTRO_8, STANDARD)
+    assert (plan["technique"], plan["bars"]) == ("long blend", 16)
+    assert plan["a"]["loops"] == [{"start_beat": 32.0, "end_beat": 64.0, "source_beat": 0.0, "length_beats": 32.0}]
+    a = plan["a"]
+    for beat in np.arange(0.0, 64.0, 0.5):  # A plays its outro, then its outro again, never past its music
+        bar = _bar_at(ga, a, beat)
+        assert 120 - 1e-3 <= bar < 128, beat
+        assert bar == pytest.approx(120 + (beat / 4) % 8, abs=1e-3)
+    assert {"beat": 32.0, "label": "A loop"} in plan["markers"]
+    assert not any("A runs out" in n for n in plan["notes"])
+    mixplan.validate(plan)
+
+
+def test_short_intro_is_looped_from_b_cue() -> None:
+    """An 8-bar drum intro under A's music outro: B loops it for the first 8 bars, releases on the phrase and its
+    intro then runs as A leaves, so B's main section never plays over A."""
+    tr = transitions.suggest(track(MUSIC_OUTRO), analysis(MUSIC_OUTRO), track(SHORT_INTRO), analysis(SHORT_INTRO))
+    assert (tr["overlap_bars"], tr["a_loop_bars"], tr["b_loop_bars"]) == (16, 0, 8)
+    assert tr["in_start_s"] == 0.0
+
+    plan = _generate(MUSIC_OUTRO, SHORT_INTRO)
+    _, gb = _grids(MUSIC_OUTRO, SHORT_INTRO)
+    b = plan["b"]
+    assert b["loops"] == [{"start_beat": 0.0, "end_beat": 32.0, "source_beat": 32.0, "length_beats": 32.0}]
+    assert b["play_from_beat"] == 0.0
+    assert _bar_at(gb, b, 0.0) == pytest.approx(0.0, abs=1e-3), "B starts on its cue"
+    assert _bar_at(gb, b, 31.9) == pytest.approx(7.975, abs=1e-3)
+    assert _bar_at(gb, b, 32.0) == pytest.approx(0.0, abs=1e-3), "released on the 1, B plays on from its cue"
+    assert _bar_at(gb, b, 63.9) < gb.intro[1], "B's main section waits until A is out"
+    assert {"beat": 32.0, "label": "B loop out"} in plan["markers"]
+    assert "cue: A bar 112 (216.77 s) / B bar 0 (0.00 s)" in mixplan.summary(plan, analysis(MUSIC_OUTRO),
+                                                                                analysis(SHORT_INTRO))
+    mixplan.validate(plan)
+
+
+@pytest.mark.parametrize(("name", "a", "b"), PAIRS, ids=IDS)
+def test_loops_release_on_a_phrase(name: str, a: Spec, b: Spec) -> None:
+    """A blend's loops engage and release on the phrase grid: B's after whole 8-bar phrases from its cue, A's on a
+    4-bar line of its music and run until A leaves on the blend's last 1."""
+    plan = _generate(a, b)
+    if plan["technique"] in ("loop roll", "slam", "drop swap", "quick cut"):
+        return
+    E = 4.0 * plan["bars"]
+    for lp in plan["a"]["loops"]:
+        assert lp["start_beat"] % 16 == 0 and lp["end_beat"] == E and lp["length_beats"] in (16.0, 32.0)
+        assert (lp["end_beat"] - lp["start_beat"]) % lp["length_beats"] == 0
+    for lp in plan["b"]["loops"]:
+        assert lp["start_beat"] == 0.0 and lp["end_beat"] % 32 == 0 and lp["end_beat"] <= E / 2
+        assert lp["end_beat"] % lp["length_beats"] == 0
+
+
+def test_no_loop_of_a_sung_outro() -> None:
+    sung = Spec("sung_outro_8", outro_bars=8, vocals=[(120, 128)])
+    ga, _ = _grids(sung, STANDARD)
+    assert transitions._a_loop(ga, 120, 16) is None
+    tr = transitions.suggest(track(sung), analysis(sung), track(STANDARD), analysis(STANDARD))
+    assert tr["a_loop_bars"] == 0
+    assert _on_bar(_bar(ga, tr["out_start_s"])) + tr["overlap_bars"] <= ga.end
+
+
+def test_extend_with_loop_picks_the_cleanest_phrase() -> None:
+    # a 16-bar drum outro sung over its last 8 bars: A loops the first 8, on its 4-bar grid
+    g, _ = _grids(Spec("half_sung", outro_bars=16, vocals=[(120, 128)]), STANDARD)
+    lp = transitions._extend_with_loop(g, "outro", 128, 8, 8)
+    assert lp == transitions.Loop(src=112, size=8, at=8, bars=8)
+    assert transitions._extend_with_loop(g, "outro", 128, 4, 12).size == 4  # 4 bars to make up: a 4-bar loop
+    assert transitions._extend_with_loop(g, "outro", 128, 6) is None  # not on the 4-bar grid
+    # loops never run more than half the blend
+    ga, _ = _grids(OUTRO_8, STANDARD)
+    assert transitions._a_loop(ga, 120, 32) is None and transitions._a_loop(ga, 120, 16).bars == 8
+
+
+def test_looped_bars_cost_more_past_one_phrase() -> None:
+    """A 16-bar drum outro into a 32-bar drum intro stays a 16-bar blend at the normal length (32 needs A to loop 16
+    bars, twice its last phrase); at the long length the 32 runs from A's body, not over a loop."""
+    for pref, (bars, xa) in (("normal", (16, 0)), ("long", (32, 0))):
+        tr = transitions.suggest(track(STANDARD), analysis(STANDARD), track(LONG_OUTRO), analysis(LONG_OUTRO),
+                                 mix_length=pref)
+        assert (tr["overlap_bars"], tr["a_loop_bars"]) == (bars, xa), pref
 
 
 def test_settings_mix_length() -> None:

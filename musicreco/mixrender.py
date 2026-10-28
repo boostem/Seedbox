@@ -707,7 +707,7 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
     s0, s1 = p0 - 2.0, p1 + 1.0
     src, w = _source(audio, deck, s0, s1, sr)
     warn += w
-    ft = np.asarray(deck_time(deck, np.linspace(p0, p1, 64)), dtype=float)
+    ft = np.asarray(deck_time(deck, np.linspace(p0, p1, 64, endpoint=False)), dtype=float)  # play_to is exclusive
     if ft.min() < -0.05 or ft.max() > audio.shape[1] / sr + 0.05:
         warn.append("plays outside its audio file (silence there)")
     j = np.arange(src.shape[1])

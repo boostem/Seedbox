@@ -201,6 +201,8 @@ export interface Transition {
   overlap_bars: number | null;
   swap_bar: number | null; // 1-based bar within the overlap where B's low end replaces A's (any blend that swaps bass, incl. blend → echo out); null for cuts / no bass
   technique: Technique | null;
+  a_loop_bars?: number; // overlap bars A loops a phrase of its outro once its music runs out (0 = none)
+  b_loop_bars?: number; // overlap bars B loops a phrase of its short intro from its cue (0 = none)
   notes: string[]; // human explanations
   warnings: string[]; // e.g. "vocals overlap for 8 bars"
   ready: boolean; // false until both analyses exist (then only key/BPM fields are meaningful)
