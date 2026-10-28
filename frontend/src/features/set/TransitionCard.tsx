@@ -25,8 +25,10 @@ export interface TransitionCardProps {
 
 /** A → B suggestion between two set rows: score, key move, pitch, technique/overlap, headline; expands to notes. */
 export const TransitionCard = memo(function TransitionCard({ t, a, b, folder, selected, expanded, dimmed, worst, auditioning, onSelect, onToggle, onAudition }: TransitionCardProps) {
-  const sa = useApp((s) => s.analysis[folder]?.[a.track.id]) ?? a.analysis_state;
-  const sb = useApp((s) => s.analysis[folder]?.[b.track.id]) ?? b.analysis_state;
+  const liveA = useApp((s) => s.analysis[folder]?.[a.track.id]);
+  const liveB = useApp((s) => s.analysis[folder]?.[b.track.id]);
+  const sa = liveA ?? a.analysis_state;
+  const sb = liveB ?? b.analysis_state;
   const failed = sa === "error" || sb === "error";
   const color = moveColor(t.key_move);
   const head = t.ready ? headline(t) : null;

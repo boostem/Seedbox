@@ -12,12 +12,16 @@ React 19 + TypeScript (strict) + Vite 8 + Tailwind 4, built with **Deno 2.9** (n
 | `deno task build` | typecheck + production build → `dist/` (relative asset paths, servable from any origin) |
 | `deno task build:mock` / `preview:mock` | mock build → `dist-mock/`, served on :4174 (for screenshots) |
 | `deno task typecheck` | `tsc` 7 (strict, noUnused*) — must be clean |
+| `deno task lint` | `deno lint` (recommended + react/jsx rules; the Deno-runtime `no-window*` and `no-sloppy-imports` rules are off) — must be clean |
+| `deno task test` / `test:watch` | vitest unit tests (`src/**/*.test.ts`, next to the module they test; node environment, `@/` alias from `vite.config.ts`) |
+| `deno task screenshot` | build mock mode and screenshot `#/crates`, a crate, the set builder and the mix view at 1440×900 and 1180×760 → `screenshots/` (git-ignored); `--no-build` reuses `dist-mock/`, `--out=DIR` writes elsewhere, `CHROME=…` picks the browser |
 | `deno task fixtures` | regenerate `src/mock/fixtures/tunebat.json` from `../tracks.txt` + `../search.txt` |
 
 Real backend for dev: `.venv/bin/python -m seedbox.server --port 8765 --dev` (from the project root).
 Deno enforces a 24 h minimum npm package age — use caret ranges, don't pin brand-new versions.
 
-**Screenshots:** `deno task build:mock && deno task preview:mock`, then
+**Screenshots:** `deno task screenshot` covers the main screens (it serves `dist-mock/` itself and runs Chrome
+like below). For other routes: `deno task build:mock && deno task preview:mock`, then
 `chrome-headless-shell --headless --hide-scrollbars --screenshot=x.png --window-size=1440,900 --virtual-time-budget=5000 --autoplay-policy=no-user-gesture-required "http://localhost:4174/#/crates"`.
 Against the real backend the open SSE stream stalls `--virtual-time-budget`: use `--timeout=6000` and kill the
 process if it hangs. `#/ui` is the component gallery; `#/ui?demo=activity` (mock) opens a crate, starts a job and
@@ -180,7 +184,7 @@ search page calls `takePendingFocus()` on mount and listens for `FOCUS_SEARCH_EV
 - Body text isn't selectable (desktop feel) — add `select-text` to paths, notes, error messages.
 - No `localStorage` for server state; it's fine for view prefs (`seedbox.<page>.<pref>` keys, wrapped in try/catch).
 - Errors: let the client toast, or pass `quiet` and render an `EmptyState`/inline message.
-- Keep `deno task typecheck` clean; check your screens at 1440×900 and 1180×760.
+- Keep `deno task typecheck`, `lint` and `test` clean; check your screens at 1440×900 and 1180×760 (`deno task screenshot`).
 
 ## Mock mode (`VITE_MOCK=1`)
 
