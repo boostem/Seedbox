@@ -3,8 +3,8 @@ import { Activity, AlertTriangle, AudioWaveform, FolderOpen, Search, Sprout, Und
 import { useMemo, useState } from "react";
 import { api } from "@/api/client";
 import { usePageTitle } from "@/components/shell/pageTitle";
-import { Button, CoverArt, EmptyState, IconButton, Page, PageHeader, Spinner } from "@/components/ui";
-import { MixDetail, RunningOrder, SaveStatus, SetOverview, setStats, TrackDetail, useSetModel, useSetSelection } from "@/features/set";
+import { Button, CoverArt, EmptyState, IconButton, Page, PageHeader } from "@/components/ui";
+import { MixDetail, RunningOrder, SaveStatus, SetOverview, SetSkeleton, setStats, TrackDetail, useSetModel, useSetSelection } from "@/features/set";
 import { cn } from "@/lib/cn";
 import { fmtTime, plural } from "@/lib/format";
 import { navigate } from "@/lib/router";
@@ -61,9 +61,7 @@ export function SetBuilderPage({ folder }: { folder: string }) {
             }
           />
         ) : (
-          <div className="flex flex-1 items-center justify-center gap-2 text-sm text-fg-subtle">
-            <Spinner /> Loading set…
-          </div>
+          <SetSkeleton />
         )}
       </Page>
     );
