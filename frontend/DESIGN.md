@@ -210,4 +210,3 @@ FISHER tracks as extra recs so there are rule-failing rows.
 
 - Resolved in types.ts: `job_state` event, `/api/covers/...` cover URLs, `PickFolderResult`, `UpdateResult`,
   `OkResponse`, `Settings.pretick_all`. The client still exports `YtdlpUpdateResult`/`OkResult` as aliases.
-- `GET /api/jobs` (Job[]) is used by the client but isn't listed in APP_SPEC's endpoint table.

@@ -135,8 +135,8 @@ event loop never blocks. Crate `{folder}` path params are URL-encoded folder nam
 | GET | `/api/search?term=&page=` | SearchPage (term may be a Spotify/tunebat URL or 22-char ID → that track) |
 | GET | `/api/crates/new/{seed_id}` | Crate; starts preview preload (seed, then recs by score) |
 | GET | `/api/previews/{id}` · POST `/api/previews/{id}/prioritize` | PreviewStatus |
-| GET | `/api/previews?ids=a,b,c` | PreviewStatus[] in the order asked (≤500 ids; crate open also sends every track's status as `preview` events) |
 | GET | `/api/previews/{id}/audio` | audio/mp4 (Range) |
+| GET | `/api/jobs` | Job[] (in-memory history of this session) |
 | POST | `/api/jobs` `{seed_id, track_ids}` | Job (runs pipeline + complete_batch; queues analysis after) |
 | GET / DELETE | `/api/jobs/{job_id}` | Job / cancel |
 | GET | `/api/crates` | CrateSummary[] |
@@ -149,7 +149,6 @@ event loop never blocks. Crate `{folder}` path params are URL-encoded folder nam
 | POST | `/api/reveal` `{path}` | opens Finder (`open -R`), path must be under output_root |
 | GET | `/api/covers/{folder}/{track_id}` | embedded APIC art of that crate file (image/jpeg), 404 if none |
 | POST | `/api/system/pick-folder` | PickFolderResult — native folder dialog via a hook app.py registers (501 without a window) |
-| GET | `/api/jobs` | Job[] (in-memory history) |
 | GET | `/api/events` | SSE: `data: <ServerEvent JSON>\n\n`, heartbeat comment every 15 s |
 | GET | `/*` | frontend `dist/` SPA (index.html fallback) |
 

@@ -404,16 +404,6 @@ def create_app(
 
     # ---- previews
 
-    @app.get("/api/previews")
-    def preview_statuses(ids: str = Query("", max_length=20_000)) -> Response:
-        wanted = list(dict.fromkeys(i for i in (x.strip() for x in ids.split(",")) if i))
-        if len(wanted) > 500:
-            raise ApiError("at most 500 ids per request")
-        for tid in wanted:
-            _check_id(tid)
-        mgr = state.previews()
-        return JSON([mgr.status(tid) for tid in wanted])
-
     @app.get("/api/previews/{track_id}")
     def preview_status(track_id: str) -> Response:
         _check_id(track_id)

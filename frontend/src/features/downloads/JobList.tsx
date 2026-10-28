@@ -1,6 +1,6 @@
 // #/downloads — every job of this engine session (GET /api/jobs, kept live by SSE), newest first.
-import { Download, Search } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { Download, Search, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { Job } from "@/api/types";
 import { usePageTitle } from "@/components/shell/pageTitle";
@@ -47,6 +47,7 @@ export function JobList() {
                 <Th width={150} align="right">
                   Started
                 </Th>
+                <Th width={96} />
               </Tr>
             </THead>
             <TBody>
@@ -76,6 +77,19 @@ function JobRow({ job }: { job: Job }) {
   const { done, total, counts } = jobProgress(job);
   const live = isLive(job);
   const open = () => navigate({ name: "downloads", jobId: job.job_id });
+  const [cancelling, setCancelling] = useState(false);
+
+  const cancel = async () => {
+    setCancelling(true);
+    try {
+      useApp.getState().upsertJob(await api.cancelJob(job.job_id));
+    } catch {
+      // the client already toasted the error
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   return (
     <Tr rowHeight={44} onClick={open} className="cursor-pointer">
       <Td truncate className="font-medium">
@@ -107,6 +121,24 @@ function JobRow({ job }: { job: Job }) {
       </Td>
       <Td align="right" muted className="text-xs" title={fmtDateTime(job.started_at)}>
         {fmtRelative(job.started_at)}
+      </Td>
+      <Td align="right">
+        {live && (
+          <Button
+            variant="danger"
+            size="xs"
+            icon={X}
+            loading={cancelling}
+            disabled={job.state === "finalizing"}
+            aria-label={`Cancel the ${job.folder} job`}
+            onClick={(e) => {
+              e.stopPropagation();
+              void cancel();
+            }}
+          >
+            Cancel
+          </Button>
+        )}
       </Td>
     </Tr>
   );
