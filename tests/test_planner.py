@@ -439,7 +439,7 @@ def test_roll_constraints_only_where_it_overlaps_b() -> None:
     assert _generate(music, CLASH_KEY, mix_length="short")["technique"] != "loop roll"
     sung_outro = Spec("sung_outro", outro_bars=32, intro_bars=32, vocals=[(116, 120)])  # the bars A would roll
     assert _generate(sung_outro, STANDARD, mix_length="short")["technique"] != "loop roll"
-    m = mixplan._mix(track(COLD_END), analysis(COLD_END), track(STANDARD), analysis(STANDARD), None)
+    m = mixplan.make_mix(track(COLD_END), analysis(COLD_END), track(STANDARD), analysis(STANDARD), None)
     assert mixplan._roll_ok(m, mixplan._Place(112, 0, 16, None))
     assert not mixplan._roll_ok(m, mixplan._Place(112, 4, 16, None))  # B's bar 20 isn't a downbeat of a phrase
 
