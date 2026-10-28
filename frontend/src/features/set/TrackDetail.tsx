@@ -247,7 +247,7 @@ export function TrackDetail(props: TrackDetailProps) {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Button variant={playing ? "primary" : "secondary"} icon={playing ? Square : Play} onClick={() => play(st)} kbd="Space">
+          <Button variant="secondary" icon={playing ? Square : Play} onClick={() => play(st)} kbd="Space">
             {playing ? "Stop" : "Play"}
           </Button>
           <Button variant="ghost" icon={Info} aria-pressed={info} className={cn(info && "bg-raised text-fg")} onClick={() => setInfo((v) => !v)}>
@@ -266,7 +266,7 @@ export function TrackDetail(props: TrackDetailProps) {
               Tempo doesn't match tunebat: the audio runs at {view.analysis.bpm.toFixed(1)} BPM, tunebat says {fmtBpm(t.bpm)}. Check the file; if it's the wrong song, delete it and download another version.
             </div>
           </div>
-          <Button size="sm" variant="danger" icon={FolderOpen} onClick={() => void api.reveal(st.path)}>
+          <Button size="sm" variant="outline" icon={FolderOpen} onClick={() => void api.reveal(st.path)}>
             Reveal in Finder
           </Button>
         </div>

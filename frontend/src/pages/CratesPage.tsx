@@ -85,7 +85,7 @@ function CrateCard({ crate }: { crate: CrateSummary }) {
         <CoverArt src={s?.cover_url} fill rounded="xs" camelot={s?.camelot} alt={title(crate)} className="rounded-none" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-black/0 opacity-0 transition-opacity group-hover:opacity-100" />
         <div className="absolute inset-x-2 bottom-2 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
-          <Button size="xs" variant="primary" iconRight={ArrowRight} onClick={(e) => (e.stopPropagation(), open(crate))}>
+          <Button size="xs" variant="secondary" iconRight={ArrowRight} onClick={(e) => (e.stopPropagation(), open(crate))}>
             Open set
           </Button>
           <span className="flex-1" />
