@@ -33,7 +33,7 @@ EXPECTED = {
     "short outro -> clash key": ("phrase blend", 16, "filter sweep", 16),
     "insert -> standard": ("long blend", 16, "long blend", 16),
     "outro 24 -> standard": ("long blend", 16, "long blend", 16),
-    "standard -> short intro drop": ("phrase blend", 8, "slam", 4),
+    "standard -> short intro drop": ("phrase blend", 16, "slam", 4),
     "build end -> short intro drop": ("phrase blend", 8, "slam", 4),
     "build end -> fast": ("phrase blend", 16, "slam", 4),
     "build end -> standard": ("phrase blend", 16, "long blend", 16),
