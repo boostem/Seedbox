@@ -1113,7 +1113,7 @@ def generate(
     A, B = _lanes(), _lanes()
     if tech == "slam":
         info = _slam_lanes(m, place, bars, A, B, a_deck, b_deck)
-    elif tech in _CUTS or (tech == "echo out" and L == 0):
+    elif tech in CUTS or (tech == "echo out" and L == 0):
         info = _cut_lanes(m, place, tech, bars, A, a_deck)
     elif tech == "loop roll":
         info = _loop_roll(m, place, A, B, a_deck)
