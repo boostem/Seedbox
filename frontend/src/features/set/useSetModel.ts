@@ -10,7 +10,9 @@ import { useApp, useSetRefreshKey } from "@/store/app";
 import { toast } from "@/store/toasts";
 import { moveBy, orderOf, pairKey, placeNextTo, sameOrder, withOrder } from "./model";
 
-export type SaveState = "idle" | "saving" | "saved" | "error";
+/** "reverted": a re-order (drag, move, undo) failed to save and the list went back; "autoFailed": auto-order failed
+ * and the saved order is unchanged. Every state but "saving" falls back to "idle" after STATUS_CLEAR_MS. */
+export type SaveState = "idle" | "saving" | "saved" | "reverted" | "autoFailed";
 
 export interface SetModel {
   set: CrateSet | undefined;
@@ -32,9 +34,10 @@ export interface SetModel {
 }
 
 const OVERRIDE_GRACE_MS = 2500; // keep showing our order while slower refetches (started before the PUT) land
+const STATUS_CLEAR_MS = 4000;
 
-function conflictToast(): void {
-  toast.warning("A download is still running for this crate — re-order once it has finished.", { title: "Order not saved", key: "set-order-409" });
+function conflictToast(title: string): void {
+  toast.warning("A download is still running for this crate — re-order once it has finished.", { title, key: "set-order-409" });
 }
 
 export function useSetModel(folder: string): SetModel {
@@ -49,6 +52,12 @@ export function useSetModel(folder: string): SetModel {
   const seq = useRef(0);
   const [save, setSave] = useState<SaveState>("idle");
   const [autoOrdering, setAutoOrdering] = useState(false);
+
+  useEffect(() => {
+    if (save === "idle" || save === "saving") return;
+    const t = setTimeout(() => setSave("idle"), STATUS_CLEAR_MS);
+    return () => clearTimeout(t);
+  }, [save]);
 
   const rememberTransitions = useCallback((ts: Transition[]) => {
     for (const t of ts) cache.current.set(pairKey(t.from_id, t.to_id), t);
@@ -90,10 +99,11 @@ export function useSetModel(folder: string): SetModel {
       } catch (e) {
         if (my !== seq.current) return;
         setOverride(null);
-        setSave("error");
+        setSave("reverted");
         if (!opts.fromUndo) setUndoStack((s) => s.slice(0, -1));
-        if (e instanceof ApiError && e.isConflict) conflictToast();
-        else toast.error((e as Error).message, { title: "Couldn't save the order", key: "set-order" });
+        const title = opts.fromUndo ? "Couldn't undo, order unchanged" : "Couldn't save the order, move undone";
+        if (e instanceof ApiError && e.isConflict) conflictToast(title);
+        else toast.error((e as Error).message, { title, key: "set-order" });
       }
     },
     [folder, setData, rememberTransitions],
@@ -132,9 +142,10 @@ export function useSetModel(folder: string): SetModel {
       } else toast.info("The set is already in the suggested order.", { title: "Auto-order", key: "set-auto" });
     } catch (e) {
       if (my !== seq.current) return;
-      setSave("error");
-      if (e instanceof ApiError && e.isConflict) conflictToast();
-      else toast.error((e as Error).message, { title: "Auto-order failed", key: "set-auto" });
+      setSave("autoFailed");
+      const title = "Auto-order failed, order unchanged";
+      if (e instanceof ApiError && e.isConflict) conflictToast(title);
+      else toast.error((e as Error).message, { title, key: "set-auto" });
     } finally {
       setAutoOrdering(false);
     }
