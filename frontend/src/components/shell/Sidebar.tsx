@@ -38,7 +38,7 @@ export function Sidebar() {
     <aside className="flex w-[212px] shrink-0 flex-col border-r border-line bg-panel">
       <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-line px-3.5">
         <Logo />
-        <span className="text-[15px] font-semibold tracking-tight">Seedbox</span>
+        <span className="text-md font-semibold tracking-tight">Seedbox</span>
         {version && <span className="mt-0.5 text-2xs text-fg-faint num">v{version}</span>}
       </div>
       <nav className="flex flex-col gap-0.5 px-2 pt-3">

@@ -191,7 +191,7 @@ export function SearchPage() {
             autoComplete="off"
             placeholder="Search tunebat — artist and title, or paste a Spotify / tunebat link"
             aria-label="Search tunebat"
-            wrapperClassName="h-11 max-w-[820px] flex-1 text-[15px] shadow-card"
+            wrapperClassName="h-11 max-w-[820px] flex-1 text-md shadow-card"
             onChange={(e) => {
               const v = e.target.value;
               setDraft(v);
