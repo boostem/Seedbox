@@ -12,7 +12,7 @@ import { fmtBpm, fmtTime } from "@/lib/format";
 import { moveColor } from "@/lib/moves";
 import { useWidth } from "@/features/waveform/hooks";
 import { Stat } from "./bits";
-import { type SetStats, type SetTransition, techniqueShort } from "./model";
+import { type SetStats, type SetTransition, setTechnique, techniqueShort } from "./model";
 import type { SetSelection } from "./SetList";
 
 export interface SetOverviewProps {
@@ -125,7 +125,7 @@ export function SetOverview({ set, stats, selection, onSelect }: SetOverviewProp
                   <rect x={x0} y={yS - 4} width={Math.max(2, x1 - x0)} height={S_H + 8} fill="transparent" />
                   <rect x={x0} y={yS + 2} width={Math.max(2, x1 - x0)} height={S_H - 4} rx={2} fill={t.pending ? "var(--color-line-strong)" : moveColor(t.key_move)} fillOpacity={t.pending ? 1 : 0.25 + (t.score / 100) * 0.6} />
                   {(worst || sel) && <rect x={x0 - 1.5} y={yS + 0.5} width={Math.max(2, x1 - x0) + 3} height={S_H - 1} rx={3} fill="none" stroke={sel ? "var(--color-accent)" : "var(--color-danger)"} strokeWidth={1.5} />}
-                  <title>{`#${i + 1} → #${i + 2}: ${t.pending ? "scoring…" : `score ${t.score}`} · ${t.key_move}${t.technique ? ` · ${techniqueShort(t)}` : ""}`}</title>
+                  <title>{`#${i + 1} → #${i + 2}: ${t.pending ? "scoring…" : `score ${t.score}`} · ${t.key_move}${t.technique ? ` · ${techniqueShort(setTechnique(t))}` : ""}`}</title>
                 </g>
               );
             })}

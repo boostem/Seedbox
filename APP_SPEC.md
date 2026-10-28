@@ -121,6 +121,19 @@ Suggestions are concrete and DJ-usable: where to start B (cue), where in A to br
 (phrase-aligned), technique, notes ("A's 32-bar outro is drums-only; B's 16-bar intro too → 16-bar long blend
 starting at A 4:12"), warnings (vocal clash, key clash, big pitch change, short intro).
 
+### SET PLAN — `musicreco/setplan.py`
+```python
+def plan_set(tracks: list[Track], analyses: dict[str, dict | None], transitions: list[dict] | None = None,
+             mix_length: str = "normal") -> list[Pick]      # one planner technique per consecutive pair
+def annotate(tracks, analyses, transitions, mix_length="normal") -> list[dict]   # + plan_technique, plan_bars, note
+```
+Picks the set's transitions together, not one pair at a time: every pair's own pick costs nothing, alternatives that
+still work for it cost what they give up, and a dynamic program over the set adds set costs. It never plays the same
+cut or effect twice in a row and keeps long blends as the default. It breaks up a run of more than three blends with
+a slam, cut or echo out, and makes cuts cheaper at the set's energy peaks. The picks depend only on the order, the
+tracks and their analyses, never on saved edits. `CrateSet.transitions` carry them, and a generated MixPlan for a
+consecutive pair uses the set's pick, so regenerating or editing one transition never reshuffles the others.
+
 ### SERVER — `seedbox/` (FastAPI)
 `create_app(settings: Settings, static_dir: Path | None) -> FastAPI`; `python -m seedbox.server --port 8765 --dev`
 (dev: CORS for http://localhost:5173). All JSON per `frontend/src/api/types.ts`. Long work runs in threads; the
@@ -209,7 +222,7 @@ def plan_hash(plan: dict, a_path: Path, b_path: Path) -> str
 ## Endpoints (SERVER)
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/api/crates/{folder}/mix/{from_id}/{to_id}?technique=&bars=` | MixPlan (saved edits if any and no technique/bars given, else generated) |
+| GET | `/api/crates/{folder}/mix/{from_id}/{to_id}?technique=&bars=` | MixPlan (saved edits if any and no technique/bars given, else generated; without a technique a consecutive pair gets the set plan's) |
 | PUT | same | save edited MixPlan → `.seedbox/mixplans/<from>__<to>.json`, returns validated MixPlan (edited=true) |
 | DELETE | same | drop saved edits → generated MixPlan |
 | POST | `/api/crates/{folder}/mix/{from_id}/{to_id}/render` (optional body: MixPlan to render unsaved edits) | MixRender (cached by plan_hash; SSE `{type:"render", data:{render_id, state, progress}}` while it runs) |

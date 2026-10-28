@@ -105,6 +105,8 @@ class MixService:
         mix_length = self.crates.mix_length
         transition = transitions.suggest(a.track, a_an, b.track, b_an, bpm_tol=self.crates.bpm_tol,
                                          mix_length=mix_length)  # fmt: skip
+        if technique is None:  # the set plan's pick when B follows A in the set, so the set builder's card matches
+            technique = self.crates.set_technique(seed_dir, a.track.id, b.track.id)
         try:
             plan = mixplan.generate(a.track, a_an, b.track, b_an, seed_dir.name, technique=technique, bars=bars,
                                     transition=transition, mix_length=mix_length)  # fmt: skip

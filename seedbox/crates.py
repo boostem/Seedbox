@@ -350,6 +350,9 @@ class CrateService:
         self.backfill_energy(seed_dir, files)  # values served below; no-op after the first time
         analyses, states = self._analyses(seed_dir, files)
         tracks = [f.track for f in files]
+        trs = transitions.suggest_set(tracks, analyses, bpm_tol=self.bpm_tol, mix_length=self.mix_length)
+        if (setplan := engine.optional("setplan")) is not None:
+            trs = setplan.annotate(tracks, analyses, trs, mix_length=self.mix_length)
         return {
             "folder": seed_dir.name,
             "path": str(seed_dir),
@@ -366,8 +369,22 @@ class CrateService:
                 }
                 for n, f in enumerate(files, 1)
             ],
-            "transitions": transitions.suggest_set(tracks, analyses, bpm_tol=self.bpm_tol, mix_length=self.mix_length),
+            "transitions": trs,
         }
+
+    def set_technique(self, seed_dir: Path, from_id: str, to_id: str) -> str | None:
+        """The technique the set plan (musicreco.setplan) gives A → B when B follows A in the running order; None
+        when it doesn't, before both are analysed, or without the planner."""
+        setplan = engine.optional("setplan")
+        files = self.files(seed_dir)
+        ids = [f.track.id for f in files]
+        if setplan is None or not any(x == from_id and y == to_id for x, y in zip(ids, ids[1:])):
+            return None
+        analyses, _ = self._analyses(seed_dir, files)
+        tracks = [f.track for f in files]
+        trs = transitions.suggest_set(tracks, analyses, bpm_tol=self.bpm_tol, mix_length=self.mix_length)
+        picks = setplan.plan_set(tracks, analyses, trs, mix_length=self.mix_length)
+        return next((p.technique for p in picks if (p.from_id, p.to_id) == (from_id, to_id)), None)
 
     def _apply(self, seed_dir: Path, ordered_ids: list[str]) -> None:
         if self.busy(seed_dir.name):

@@ -7,7 +7,7 @@ import { fmtBpm } from "@/lib/format";
 import { type MixClock, MixWaveform, mixGeometry } from "@/features/waveform";
 import { type AuditionPlan, audition, useAudition } from "./audition";
 import { PitchChip } from "./bits";
-import { type SetTransition, techniqueLong } from "./model";
+import { type SetTransition, setTechnique, techniqueLong } from "./model";
 import { MixNotes } from "./MixNotes";
 import { MixStats } from "./MixStats";
 import { useTrackAnalysis } from "./useAnalysis";
@@ -107,7 +107,7 @@ export function MixDetail({ folder, t, a, b, index, count, onPrev, onNext, onSel
         {!t.pending && <ScoreChip value={t.score} move={t.key_move} passed={t.ready} size="md" />}
         <MoveChip move={t.key_move} />
         <PitchChip pct={t.pitch_pct} />
-        {t.ready && t.technique && <span className="text-sm font-semibold">{techniqueLong(t)}</span>}
+        {t.ready && t.technique && <span className="text-sm font-semibold">{techniqueLong(setTechnique(t))}</span>}
         <span className="flex-1" />
         {t.warnings.length > 0 && (
           <Tooltip content={t.warnings.join(" · ")}>
