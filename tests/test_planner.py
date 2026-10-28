@@ -10,7 +10,7 @@ import pytest
 from musicreco import mixplan, settings, structure, transitions
 
 from .fixtures import (
-    BUILD_END, CLUB_PAIRS, COLD_END, DROP_HEAVY, DROP_HEAVY_B, FAST, HALF_TIME, HOUSE, HOUSE_B, INSERT, LONG_OUTRO,
+    BUILD_END, CLASH_KEY, CLUB_PAIRS, COLD_END, DROP_HEAVY, DROP_HEAVY_B, FAST, HALF_TIME, HOUSE, HOUSE_B, INSERT, LONG_OUTRO,
     MUSIC_OUTRO, OUTRO_8, OUTRO_24, PAIRS, PICKUP, SHORT_INTRO, SHORT_INTRO_DROP, SHORT_OUTRO, STANDARD, TECHNO,
     TECHNO_B, VOCAL_INTRO, VOCAL_OUTRO,
     Spec, analysis, track,
@@ -23,7 +23,7 @@ EXPECTED = {
     "long outro -> standard": ("long blend", 16, "long blend", 16),
     "standard -> long outro": ("long blend", 16, "long blend", 16),
     "short outro -> standard": ("phrase blend", 16, "long blend", 16),
-    "cold end -> standard": ("echo out", 16, "echo out", 16),
+    "cold end -> standard": ("echo out", 16, "loop roll", 16),  # A rolls its last 4 bars into B's phrase
     "vocal outro -> standard": ("phrase blend", 16, "filter sweep", 16),
     "vocal outro -> vocal intro": ("bass swap", 16, "long blend", 16),
     "drop heavy -> drop heavy": ("drop swap", 0, "drop swap", 4),
@@ -391,6 +391,70 @@ def test_slam_throws_a_and_rolls_its_last_two_bars() -> None:
     assert all(lp["source_beat"] == -8 for lp in a["loops"])
     assert mixplan.lane_value(a["lanes"]["eq_low"], -2.0) == mixplan._KILL  # A's lows out on the roll's last bar
     assert [m["label"] for m in plan["markers"]] == ["loop roll", "B pre-roll", "echo throw", "cut"]
+
+
+def test_roll_halves_down_to_half_a_beat() -> None:
+    steps = [(lp["start_beat"], lp["end_beat"], lp["length_beats"]) for lp in mixplan._roll(64.0, 48.0, 4)]
+    assert steps == [(48, 56, 8), (56, 60, 4), (60, 62, 2), (62, 63, 1), (63, 66, 0.5)]
+    assert [lp["length_beats"] for lp in mixplan._roll(0.0, -8.0)] == [4, 2, 1, 0.5]
+
+
+def test_cold_end_rolls_its_last_bars_into_b_phrase() -> None:
+    """A cold end (full power to its last bar) over B's 16-bar intro: instead of an echo out, A rolls its last 4
+    bars into the 1 of B's phrase under a high-pass and an echo build, its lows out for the second half."""
+    plan = _generate(COLD_END, STANDARD)
+    assert (plan["technique"], plan["bars"]) == ("loop roll", 16)
+    a = plan["a"]
+    assert [(lp["start_beat"], lp["length_beats"]) for lp in a["loops"]] == [(48, 8), (56, 4), (60, 2), (62, 1),
+                                                                            (63, 0.5)]
+    assert all(lp["source_beat"] == 48 for lp in a["loops"])
+    low = mixplan.lane_value(a["lanes"]["eq_low"], [47.0, 55.0, 57.0])
+    assert low.tolist() == [0.0, 0.0, mixplan._KILL]
+    filt = mixplan.lane_value(a["lanes"]["filter"], [48.0, 56.0, 64.0])
+    assert filt[0] == 0.0 < filt[1] < filt[2] == pytest.approx(0.6)
+    echo = mixplan.lane_value(a["lanes"]["echo_send"], [55.0, 60.0, 64.0])
+    assert echo[0] == 0.0 < echo[1] < echo[2]
+    assert mixplan.lane_value(plan["b"]["lanes"]["eq_low"], [63.9, 64.0]).tolist() == [mixplan._KILL, 0.0]
+    assert {"beat": 48.0, "label": "loop roll"} in plan["markers"]
+    assert "rolls 2 bars → 1 bar → 2 beats → 1 → ½" in plan["notes"][0]
+
+
+def test_short_blends_end_in_a_two_bar_roll() -> None:
+    plan = _generate(LONG_OUTRO, STANDARD, mix_length="short")
+    assert (plan["technique"], plan["bars"]) == ("loop roll", 8)
+    assert [lp["length_beats"] for lp in plan["a"]["loops"]] == [4, 2, 1, 0.5]
+    assert plan["a"]["loops"][0]["start_beat"] == 24.0
+
+
+def test_roll_constraints_only_where_it_overlaps_b() -> None:
+    """The roll needs unsung A bars to loop and B's downbeat to land on; key and B's vocals only count over the
+    roll's own bars (B's sung intro start doesn't stop it, a clash key under A's music does)."""
+    sung_start = Spec("sung_start", vocals=[(0, 4)])
+    assert _generate(LONG_OUTRO, sung_start, mix_length="short")["technique"] == "loop roll"
+    sung_end = Spec("sung_end", vocals=[(4, 8)])
+    assert _generate(LONG_OUTRO, sung_end, mix_length="short")["technique"] != "loop roll"
+    assert _generate(LONG_OUTRO, CLASH_KEY, mix_length="short")["technique"] == "loop roll"  # A rolls drums only
+    music = Spec("music_long_outro", outro_bars=32, intro_bars=32, outro_drums=False)
+    assert _generate(music, STANDARD, mix_length="short")["technique"] == "loop roll"
+    assert _generate(music, CLASH_KEY, mix_length="short")["technique"] != "loop roll"
+    sung_outro = Spec("sung_outro", outro_bars=32, intro_bars=32, vocals=[(116, 120)])  # the bars A would roll
+    assert _generate(sung_outro, STANDARD, mix_length="short")["technique"] != "loop roll"
+    m = mixplan._mix(track(COLD_END), analysis(COLD_END), track(STANDARD), analysis(STANDARD), None)
+    assert mixplan._roll_ok(m, mixplan._Place(112, 0, 16, None))
+    assert not mixplan._roll_ok(m, mixplan._Place(112, 4, 16, None))  # B's bar 20 isn't a downbeat of a phrase
+
+
+def test_drop_swap_rolls_an_unsung_build_into_the_cut() -> None:
+    unsung = Spec("drop_heavy_unsung", bars=160, outro_bars=8, outro_drums=False, drops=[40, 96, 136],
+                  vocals=[(16, 32)])
+    plan = _generate(unsung, DROP_HEAVY_B, technique="drop swap")
+    a = plan["a"]
+    assert [(lp["start_beat"], lp["length_beats"]) for lp in a["loops"]] == [(-8, 4), (-4, 2), (-2, 1), (-1, 0.5)]
+    assert mixplan.lane_value(a["lanes"]["eq_low"], -2.0) == mixplan._KILL
+    assert {"beat": -8.0, "label": "loop roll"} in plan["markers"]
+    assert "rolling its last 2 bars" in plan["notes"][0]
+    sung = _generate(DROP_HEAVY, DROP_HEAVY_B, technique="drop swap")
+    assert sung["a"]["loops"] == [] and "loop roll" not in [m["label"] for m in sung["markers"]]
 
 
 def test_slam_does_not_roll_a_sung_build() -> None:

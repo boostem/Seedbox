@@ -55,7 +55,6 @@ _CUT_JUMP_GAP = 0.02  # above this a cut lets B start at its own tempo (the cut 
 _MAX_BLEND_GAP = 0.06  # wider tempo gaps are not blended unless asked: echo out and jump to B's tempo
 _RAMP_PER_8 = 0.005  # target tempo drift per 8 bars (imperceptible)
 _RAMP_MIN, _RAMP_MAX = 16, 32  # bars
-_LOOP_ROLL_GAP = 0.04
 _LOOP_VOCAL_MAX = 0.4
 _MAX_PREVIEW_S = 92.0
 _MAX_WINDOW_BEATS = 512
@@ -447,11 +446,17 @@ def _cut_place(m: _Mix, technique: str, eng: tuple[str, _Place]) -> _Place:
     return _Place(a0, transitions._first_cue(gb) if m.real_b else 0, 0, None)
 
 
-def _loop_block(m: _Mix, a0: int, length: int) -> tuple[int, int] | None:
-    """(q, size): when A runs out of music before the roll, loop A's bars [q - size, q) (q on A's 4-bar grid from
-    a0, size 8 or 4, least vocal); None when A has enough music for the whole blend."""
+def _roll_bars(length: int) -> int:
+    """Length of the roll that ends a blend of `length` bars: 4 bars (8 → 4 → 2 → 1 → ½ beat) on 16/32-bar blends,
+    else 2 (4 → 2 → 1 → ½)."""
+    return 4 if length >= 16 else 2
+
+
+def _loop_block(m: _Mix, a0: int, length: int, roll: int = 2) -> tuple[int, int] | None:
+    """(q, size): when A runs out of music before its `roll`-bar roll, loop A's bars [q - size, q) (q on A's 4-bar
+    grid from a0, size 8 or 4, least vocal); None when A has enough music for the whole blend."""
     ga = m.ga
-    if a0 + length - 2 < ga.end:  # the roll's bar is still A's music
+    if a0 + length - roll // 2 <= ga.end:  # the bars the roll loops are still A's music
         return None
     q = a0 + max(0, (ga.end - a0) // 4 * 4)
     if q < 8:
@@ -523,11 +528,30 @@ def _a_build_end(m: _Mix) -> int | None:
     return next((d for d in reversed(ga.drops) if ga.end - _BUILD_BARS <= d <= ga.end - 4 and _hits(ga, d)), None)
 
 
+def _roll_ok(m: _Mix, place: _Place) -> bool:
+    """A blend can end in a loop roll: the bars A rolls (or the block it loops when it runs out) are unsung, B's bar
+    on the blend's last 1 is a downbeat of its phrase grid (a phrase or a drop) for the lows to land on, and over the
+    bars the roll overlaps B the keys agree (or A's rolled bars are drums only) and B isn't sung."""
+    ga, gb, a0, L = m.ga, m.gb, place.a0, place.overlap
+    if not (m.real_a and m.real_b and L >= 4):
+        return False
+    rb = _roll_bars(L)
+    blk = _loop_block(m, a0, L, rb)
+    lo, hi = (blk[0] - blk[1], blk[0]) if blk else (a0 + L - rb, a0 + L - rb // 2)
+    if hi > ga.end or _mean(ga.vocal, lo, hi) >= _LOOP_VOCAL_MAX:
+        return False
+    if place.b0 + L not in (*gb.phrases, *gb.drops):
+        return False
+    tonal = not all(ga.perc[lo:hi])
+    return (m.move in _GOOD_KEYS or not tonal) and _mean(gb.vocal, place.b0 + L - rb, place.b0 + L) < _LOOP_VOCAL_MAX
+
+
 def _auto_technique(m: _Mix, e_tech: str, e: _Place) -> str:
     """Planner technique for the engine's pick: a slam when B's first drop hits right after a short intro, or when
     A has a build to cut out of and the engine would cut anyway (or the tempo gap is too wide to blend); loop roll
-    when A runs out under a long clean intro of B, a filter sweep over awkward keys or a vocal outro, long blend for
-    long in-key blends, else the engine's own."""
+    for a short blend, an echo out over an overlap or a blend without a bass swap when A's end can roll into B's
+    downbeat (_roll_ok), a filter sweep over awkward keys or a vocal outro, long blend for long in-key blends, else
+    the engine's own."""
     gap = abs(m.b_bpm / m.a_bpm - 1)
     would_cut = gap > _MAX_BLEND_GAP or (e_tech in ("quick cut", "echo out") and not e.overlap)
     if m.real_a and m.real_b and (_b_slam_drop(m) is not None or (would_cut and _a_build_end(m) is not None)):
@@ -538,11 +562,9 @@ def _auto_technique(m: _Mix, e_tech: str, e: _Place) -> str:
         return e_tech
     ga, gb = m.ga, m.gb
     good_key = m.move in _GOOD_KEYS
-    if e.overlap <= 8 and ga.end - (e.a0 + e.overlap) <= 1 and gb.intro[1] - e.b0 >= 16 and good_key \
-            and gap <= _LOOP_ROLL_GAP and _mean(gb.vocal, e.b0, e.b0 + 16) < _LOOP_VOCAL_MAX:
-        blk = _loop_block(m, e.a0, 16)
-        if blk is not None and _mean(ga.vocal, blk[0] - blk[1], blk[0]) < _LOOP_VOCAL_MAX:
-            return "loop roll"
+    if (e.overlap <= 8 or e_tech == "echo out" or e.swap is None) and e.overlap in BARS \
+            and _roll_ok(m, _Place(e.a0, e.b0, e.overlap, None)):
+        return "loop roll"
     if e_tech == "echo out":
         return e_tech
     a_vocal = _mean(ga.vocal, e.a0, e.a0 + e.overlap)
@@ -557,6 +579,8 @@ def _auto_technique(m: _Mix, e_tech: str, e: _Place) -> str:
 
 def _default_bars(m: _Mix, technique: str, e: _Place) -> int:
     if technique == "loop roll":
+        if e.overlap in BARS:
+            return e.overlap
         return 16 if m.gb.intro[1] - e.b0 >= 16 or not m.real_b else 8
     if technique == "long blend":
         return e.overlap if e.overlap in (16, 32) else max(16, m.length)
@@ -778,50 +802,78 @@ def _duck_mids(A: dict, B: dict, clash: list[int], swap: int | None, length: int
     return on_b, on_a
 
 
-def _roll(at: float, src: float) -> list[dict]:
-    """Loops of a roll into the 1 at master beat `at`: the bar from `at - 8` (deck beat `src`) rolls 1 bar -> 2
-    beats -> 1 -> ½ over the last 2 bars, the ½ beat held 2 beats past the 1 for the echo to catch."""
-    R = at - 8.0
-    return [{"start_beat": s, "end_beat": e, "source_beat": src, "length_beats": ln}
-            for s, e, ln in ((R, R + 4, 4.0), (R + 4, R + 6, 2.0), (R + 6, R + 7, 1.0), (R + 7, at + 2, 0.5))]
+def _roll(at: float, src: float, bars: int = 2) -> list[dict]:
+    """Loops of a `bars`-bar roll (2 or 4) into the 1 at master beat `at`, from deck beat `src`: a loop of half the
+    roll, halved again and again down to ½ beat (4 → 2 → 1 → ½ beat over 2 bars, 8 → 4 → 2 → 1 → ½ over 4), each
+    playing once through, the ½ beat twice and on 2 beats past the 1 for the echo to catch."""
+    out, s, ln = [], at - 4.0 * bars, 2.0 * bars
+    while ln > 0.5:
+        out.append({"start_beat": s, "end_beat": s + ln, "source_beat": src, "length_beats": ln})
+        s, ln = s + ln, ln / 2
+    return [*out, {"start_beat": s, "end_beat": at + 2, "source_beat": src, "length_beats": 0.5}]
+
+
+def _roll_build(A: dict, a_deck: dict, at: float, src: float, bars: int, build: bool) -> dict:
+    """The roll as a building block, into the 1 at master beat `at` (the end of a blend, a slam's or a drop swap's
+    cut): A's loops (appended to a_deck's), its lows out over the roll's second half and, with `build`, a high-pass
+    riser over the whole roll and an echo send that opens over its second half into a throw on the 1. Returns the
+    roll's start beat and, with `build`, the throw's info."""
+    R = at - 4.0 * bars
+    a_deck["loops"] = [*a_deck["loops"], *_roll(at, src, bars)]
+    A["eq_low"] = [(R, 0.0, "hold"), (at - 2.0 * bars, _KILL, "hold")]
+    info: dict = {"roll": R, "roll_bars": bars}
+    if build:
+        A["filter"] = [(R, 0.0, "ease"), (at, 0.6, "hold")]
+        info.update(_throw(A, at))
+        A["echo_send"] = [(at - 2.0 * bars, 0.0, "linear"), (at - 1.0, 0.5, "linear"), *_tail(at, 0.9)]
+    return info
+
+
+def _cut_roll(m: _Mix, place: _Place, A: dict, a_deck: dict) -> dict:
+    """A 2-bar roll of A's last 2 bars into a cut on the 1 at master beat 0 (a slam, a drop swap) when they aren't
+    sung; its lows out on the last bar. The cut brings its own riser and throw."""
+    if m.real_a and place.a0 >= 2 and _mean(m.ga.vocal, place.a0 - 2, place.a0) < _LOOP_VOCAL_MAX:
+        return _roll_build(A, a_deck, 0.0, -8.0, 2, build=False)
+    return {"roll": None}
 
 
 def _loop_roll(m: _Mix, place: _Place, A: dict, B: dict, a_deck: dict) -> dict:
-    """A loops its last bars if it runs out, rolls 1 bar -> 2 -> 1 -> 1/2 beat over the last 2 bars, echo on the
-    last half beat, cut on the 1 as B's bass drops in."""
+    """A blend that ends in a roll (_roll_build, 4 bars on 16/32-bar blends, else 2): A loops its last bars if it
+    runs out, then rolls them down to ½ beat under a high-pass and an echo build, cut on the 1 as B's bass drops in."""
     length = place.overlap
     E = 4.0 * length
-    R = E - 8.0  # roll start
-    loops = []
-    blk = _loop_block(m, place.a0, length)
+    rb = _roll_bars(length)
+    R = E - 4.0 * rb  # roll start
+    blk = _loop_block(m, place.a0, length, rb)
     src_roll = R
     if blk is not None:
         q, size = blk
         start, src, ln = 4.0 * (q - place.a0), 4.0 * (q - size - place.a0), 4.0 * size
         if R > start:
-            loops.append({"start_beat": start, "end_beat": R, "source_beat": src, "length_beats": ln})
+            a_deck["loops"] = [{"start_beat": start, "end_beat": R, "source_beat": src, "length_beats": ln}]
+        if R >= start:
             src_roll = src + math.fmod(R - start, ln)
-    loops += _roll(E, src_roll)
-    a_deck["loops"] = loops
+    info = _roll_build(A, a_deck, E, src_roll, rb, build=True)
+    loops = a_deck["loops"]
     fi = 4.0 * _FADE_IN[length]
     B["volume"] = [(0.0, 0.0, "ease"), (fi, 1.0, "hold")]
     B["eq_low"] = [(0.0, _KILL, "hold"), (E, 0.0, "hold")]
     B["eq_high"] = [(0.0, -12.0, "ease"), (E / 2, 0.0, "hold")]
     B["eq_mid"] = [(0.0, -15.0, "ease"), (E / 2, 0.0, "hold")]
     B["filter"] = [(0.0, 0.3, "ease"), (E / 2, 0.0, "hold")]
-    A["eq_low"] = [(0.0, 0.0, "hold"), (R, _KILL, "hold")]
-    A["filter"] = [(R, 0.0, "ease"), (E, 0.6, "hold")]
     A["volume"] = [(R, 1.0, "hold"), (E, 0.0, "hold")]
-    info = _throw(A, E)
-    info["loop"] = loops[0] if blk and len(loops) > 4 else None
+    info["loop"] = loops[0] if blk and R > start else None
     return info
 
 
-def _cut_lanes(tech: str, bars: int, A: dict, into_drop: bool) -> dict:
+def _cut_lanes(m: _Mix, place: _Place, tech: str, bars: int, A: dict, a_deck: dict) -> dict:
     """Cuts on the 1 at master beat 0, B straight in at full. Into B's drop: a clean cut after a short filter riser
-    and a 1-beat reverb swell on A; otherwise an echo throw on A (with a high-pass riser for echo outs). Slams have
-    their own (_slam_lanes)."""
-    info: dict = {"echo_beats": 0.75, "feedback": LANE_DEFAULTS["echo_feedback"], "throw": None}
+    and a 1-beat reverb swell on A, a drop swap rolling A's build into it (_cut_roll); otherwise an echo throw on A
+    (with a high-pass riser for echo outs). Slams have their own (_slam_lanes)."""
+    into_drop = place.b0 in m.gb.drops
+    info: dict = {"echo_beats": 0.75, "feedback": LANE_DEFAULTS["echo_feedback"], "throw": None, "roll": None}
+    if tech == "drop swap":
+        info.update(_cut_roll(m, place, A, a_deck))
     A["volume"] = [(-4.0, 1.0, "hold"), (0.0, 0.0, "hold")]
     if tech == "reverb wash":  # the reverb send swells over 4-8 bars under a rising high-pass, then the cut
         ramp = 4.0 * max(4, min(bars, 8))
@@ -844,17 +896,13 @@ def _slam_lanes(m: _Mix, place: _Place, bars: int, A: dict, B: dict, a_deck: dic
     """Slam on the 1 at master beat 0, B straight in at full. A rides a high-pass riser (a short one into B's drop)
     and an echo/reverb throw on the cut; when its last 2 bars aren't sung it rolls them with its lows out on the last
     bar. Into B's drop at about A's tempo, B's last build bar plays under A's last bar, lows killed and high-passed."""
-    ga, gb = m.ga, m.gb
+    gb = m.gb
     into_drop = place.b0 in gb.drops
     A["volume"] = [(-4.0, 1.0, "hold"), (0.0, 0.0, "hold")]
     riser = 8.0 if into_drop else 4.0 * max(2, min(bars, 8))
     A["filter"] = [(-riser, 0.0, "ease"), (0.0, 0.35 if into_drop else 0.4, "hold")]
     info = _throw(A, 0.0, send=0.7 if into_drop else 0.9)
-    info.update(roll=False, pre_roll=False)
-    if m.real_a and place.a0 >= 2 and _mean(ga.vocal, place.a0 - 2, place.a0) < _LOOP_VOCAL_MAX:
-        a_deck["loops"] = _roll(0.0, -8.0)
-        A["eq_low"] = [(-8.0, 0.0, "hold"), (-4.0, _KILL, "hold")]
-        info["roll"] = True
+    info.update(pre_roll=False, **_cut_roll(m, place, A, a_deck))
     # over a wider tempo gap B would be stretched to A's tempo for that bar and jump to its own on the 1: no pre-roll
     if into_drop and gb.fd + (place.b0 - 1) * gb.bar_s >= 0 and abs(m.b_bpm / m.a_bpm - 1) <= _CUT_JUMP_GAP:
         b_deck["play_from_beat"] = -4.0
@@ -926,15 +974,16 @@ def _headline(m: _Mix, tech: str, bars: int, place: _Place, info: dict) -> str:
             s0 = a0 + int(lp["source_beat"] // 4)
             looped = f"A's last {size} bars ({_mmss(ga, s0)}–{_mmss(ga, s0 + size)}) loop so B's intro can play " \
                      f"out under it, "
-        what = f"{L}-bar loop roll: B in at A {t0} (bar {a0 + 1}) from B {tb}; {looped}then A rolls 1 bar → " \
-               f"2 beats → 1 → ½ and is cut on the 1 as B's bass drops in"
+        steps = "2 bars → 1 bar → 2 beats → 1 → ½" if info.get("roll_bars") == 4 else "1 bar → 2 beats → 1 → ½"
+        what = f"{L}-bar loop roll: B in at A {t0} (bar {a0 + 1}) from B {tb}; {looped}then A rolls {steps} under " \
+               f"a rising high-pass and is cut on the 1 as B's bass drops in"
     elif tech == "slam":
         into = "its drop" if b0 in gb.drops else "its main section" if b0 == gb.intro[1] else "its cue"
         at = f"A {t0} (bar {a0 + 1})"
         frm = f"the end of A's build, {at}," if a0 == _a_build_end(m) else at
         riser = "a short high-pass riser" if b0 in gb.drops else \
             f"a high-pass riser over its last {max(2, min(bars, 8))} bars"
-        roll = ", rolling its last 2 bars 1 bar → 2 beats → 1 → ½" if info.get("roll") else ""
+        roll = ", rolling its last 2 bars 1 bar → 2 beats → 1 → ½" if info.get("roll") is not None else ""
         pre = "; B's last build bar creeps in under A's last bar" if info.get("pre_roll") else ""
         what = f"slam: A rides {riser}{roll}{pre}; on the 1 at {frm} A is cut into an " \
                f"echo/reverb throw and B slams in at {into} (B {tb}, bar {b0 + 1})"
@@ -942,8 +991,9 @@ def _headline(m: _Mix, tech: str, bars: int, place: _Place, info: dict) -> str:
         what = f"reverb wash: A's reverb swells over its last {max(4, min(bars, 8))} bars under a rising high-pass, " \
                f"then on the 1 at A {t0} (bar {a0 + 1}) A cuts into B (from B {tb}) and the wash rings over it"
     elif tech == "drop swap":
-        what = f"drop swap: let A's build run and on the 1 where A would drop (A {t0}, bar {a0 + 1}) cut into " \
-               f"B's drop at {tb}, a short reverb wash on A's last beat"
+        roll = ", rolling its last 2 bars 1 bar → 2 beats → 1 → ½" if info.get("roll") is not None else ""
+        what = f"drop swap: let A's build run{roll} and on the 1 where A would drop (A {t0}, bar {a0 + 1}) cut " \
+               f"into B's drop at {tb}, a short reverb wash on A's last beat"
     else:
         what = f"quick cut on the 1 at A {t0} (bar {a0 + 1}) into B from {tb}"
     edges = ""
@@ -980,8 +1030,8 @@ def _eq_note(tech: str, place: _Place) -> str | None:
         return "A keeps its fader up under a slowly rising high-pass; a dotted-8th echo (feedback 0.7) catches " \
                "its last 2 beats and rings over B for a few bars after the cut."
     if tech == "loop roll":
-        return "B stays bass-free until the roll ends; during the roll A's lows go and a high-pass rises, and a " \
-               "dotted-8th echo catches its last half beat."
+        return "B stays bass-free until the roll ends; during the roll a high-pass rises on A, its lows go for the " \
+               "second half while a dotted-8th echo opens up, and the echo catches its last half beat."
     return None
 
 
@@ -1077,7 +1127,7 @@ def generate(
     if tech == "slam":
         info = _slam_lanes(m, place, bars, A, B, a_deck, b_deck)
     elif tech in _CUTS or (tech == "echo out" and L == 0):
-        info = _cut_lanes(tech, bars, A, place.b0 in gb.drops)
+        info = _cut_lanes(m, place, tech, bars, A, a_deck)
     elif tech == "loop roll":
         info = _loop_roll(m, place, A, B, a_deck)
     else:
@@ -1137,10 +1187,9 @@ def generate(
     if tech == "loop roll":
         if info.get("loop"):
             markers.append({"beat": info["loop"]["start_beat"], "label": "loop"})
-        markers.append({"beat": E - 8.0, "label": "loop roll"})
         markers.append({"beat": E, "label": "bass swap"})
-    if info.get("roll"):
-        markers.append({"beat": -8.0, "label": "loop roll"})
+    if info.get("roll") is not None:
+        markers.append({"beat": info["roll"], "label": "loop roll"})
     if info.get("pre_roll"):
         markers.append({"beat": -4.0, "label": "B pre-roll"})
     for t in [*info.get("throws", []), *([info["throw"]] if info["throw"] is not None else [])]:
