@@ -16,5 +16,4 @@
       across crates' last/first tracks; build and order a multi-crate setlist (pairs with the full set mix render).
 
 ## Later / ideas
-- [ ] "Order not saved" copy after a failed auto-order is misleading.
 - [ ] Vocal detection is heuristic — consider a better vocal-activity model.
