@@ -41,8 +41,17 @@ export const TransitionCard = memo(function TransitionCard({ t, a, b, folder, se
       <span className="absolute top-0 bottom-0 left-[21px] w-[2px] rounded-full" style={{ background: `color-mix(in srgb, ${color} 55%, transparent)` }} />
       <div
         role="button"
-        tabIndex={-1}
+        tabIndex={dimmed ? -1 : 0}
+        aria-pressed={!!selected}
+        aria-label={`Transition ${a.track.display_name} → ${b.track.display_name}${t.pending ? "" : `, score ${Math.round(t.score)}`}${warn ? `, ${warn} warning${warn === 1 ? "" : "s"}` : ""} — open the mix view`}
         onClick={onSelect}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+          // the card's own Enter/Space, not the page's Space = play (or a set-row drag)
+          e.preventDefault();
+          e.stopPropagation();
+          onSelect?.();
+        }}
         className={cn(
           "my-0.5 rounded-sm border px-2 py-1 transition-colors",
           selected ? "border-accent/60 bg-accent/10" : worst ? "border-danger/30 bg-danger/[0.04] hover:bg-hover" : "border-transparent hover:border-line hover:bg-hover",

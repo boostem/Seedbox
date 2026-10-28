@@ -5,10 +5,11 @@
  *
  * Editing: drag keyframes (snap to beats; ⌥ = ¼-beat grid; ⇧ = fine, no snapping), double-click to add, ⌫ to
  * delete, right-click for the curve (linear / ease / hold), box-select on empty space (⇧ adds), drag a selection
- * across lanes, loops: drag to move, drag an edge to resize, double-click the loop row to add one.
+ * across lanes, loops: drag to move, drag an edge to resize, double-click the loop row to add one. Without a mouse:
+ * the "Keys & loops" list under the rows (KeyList).
  */
 import { ChevronDown, ChevronRight, Info, Minus, Plus, Scan } from "lucide-react";
-import { memo, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, memo, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { create } from "zustand";
 import type { Curve, DeckLoop, DeckPlan, Keyframe, LaneId, MixPlan, TrackAnalysis } from "@/api/types";
@@ -22,6 +23,7 @@ import { useHotkey } from "@/lib/hotkeys";
 import { useSessionState } from "../useSessionState";
 import { barLabel, CURVES, type DeckId, getLane, laneRange, LANES, type LaneKey, laneUsed, laneValue, metaOf, setLane } from "./lanes";
 import { LANE_PAD, paintDeck, paintLane, paintLoops, paintMarkerLines, paintRuler, resolveColor, valueY, yValue } from "./paint";
+import { type KeyMenu, KeyList } from "./KeyList";
 import type { BeatClock } from "./useMixRender";
 
 // ---- shared cursor state (hover beat, playhead beat, drag tooltip) — labels + overlay subscribe, rows don't
@@ -76,7 +78,7 @@ interface Editor {
   playFrom: (beat: number) => void;
 }
 
-type Menu = { x: number; y: number; kind: "kf"; key: LaneKey; index: number } | { x: number; y: number; kind: "loop"; deck: DeckId; index: number };
+type Menu = KeyMenu;
 
 const snapTo = (v: number, step: number) => Math.round(v / step) * step;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -411,6 +413,8 @@ function MoreRow({ open, onClick, label, title }: { open: boolean; onClick: () =
 
 // ------------------------------------------------------------------------------------------------ DAW
 
+const SHORTCUTS = "drag keys · dbl-click add · ⌫ delete · right-click curve · ⌥ ¼-beat · ⇧ fine · ⌘-scroll zoom · keyboard: the key list below";
+
 const DECK_TINT: Record<DeckId, string> = { a: "var(--color-fg-muted)", b: "var(--color-accent)" };
 
 export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo, anA, anB, nameA, nameB, clock, onPlayFrom, hotkeys = true }: MixDawProps) {
@@ -669,8 +673,10 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
     <div className="flex flex-col">
       <div className="mb-1.5 flex h-6 items-center gap-2">
         <span className="label-caps">Automation</span>
-        <Tooltip content="drag keys · dbl-click add · ⌫ delete · right-click curve · ⌥ ¼-beat · ⇧ fine · ⌘-scroll zoom" side="bottom">
-          <Info size={12} className="text-fg-faint" aria-label="Editing shortcuts" />
+        <Tooltip content={SHORTCUTS} side="bottom">
+          <button type="button" aria-label={`Editing shortcuts: ${SHORTCUTS}`} className="grid size-4 place-items-center rounded-xs text-fg-faint hover:text-fg-muted">
+            <Info size={12} />
+          </button>
         </Tooltip>
         <span className="flex-1" />
         <span className="shrink-0 text-2xs whitespace-nowrap text-fg-subtle num">{Math.round(tv.view.span / 4)} bars visible</span>
@@ -709,6 +715,7 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
         </div>
         <canvas ref={overlayRef} className="pointer-events-none absolute top-0 bottom-0" style={{ left: GUTTER + 1, width: width || 0 }} />
       </div>
+      <KeyList plan={plan} sel={sel} setSel={ed.setSel} loopSel={loopSel} setLoopSel={ed.setLoopSel} update={update} menu={setMenu} />
       {tip &&
         createPortal(
           <div className="pointer-events-none fixed z-[1000] rounded-xs bg-overlay px-1.5 py-0.5 text-2xs whitespace-nowrap text-fg shadow-pop num" style={{ left: tip.x + 12, top: tip.y - 26 }}>
@@ -722,6 +729,16 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
 }
 
 function ContextMenu({ menu, plan, onClose, onCurve, onLength, onDelete }: { menu: Menu; plan: MixPlan; onClose: () => void; onCurve: (c: Curve) => void; onLength: (n: number) => void; onDelete: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // keyboard: focus the checked (or first) item, give focus back to the opener when the menu goes away
+  useLayoutEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const items = [...(ref.current?.querySelectorAll<HTMLElement>("[role^=menuitem]") ?? [])];
+    (items.find((el) => el.getAttribute("aria-checked") === "true") ?? items[0])?.focus();
+    return () => {
+      if (opener?.isConnected && (!document.activeElement || document.activeElement === document.body || ref.current?.contains(document.activeElement))) opener.focus();
+    };
+  }, []);
   useEffect(() => {
     const close = () => onClose();
     window.addEventListener("pointerdown", close);
@@ -731,35 +748,56 @@ function ContextMenu({ menu, plan, onClose, onCurve, onLength, onDelete }: { men
       window.removeEventListener("blur", close);
     };
   }, [onClose]);
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = [...e.currentTarget.querySelectorAll<HTMLElement>("[role^=menuitem]")];
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const go = (i: number) => items[(i + items.length) % items.length]?.focus();
+    if (e.key === "ArrowDown") go(at + 1);
+    else if (e.key === "ArrowUp") go(at < 0 ? -1 : at - 1);
+    else if (e.key === "Home") go(0);
+    else if (e.key === "End") go(-1);
+    else if (e.key === "Escape" || e.key === "Tab") onClose();
+    else {
+      // Enter/Space click the focused item; keep them (and everything else) from the page shortcuts (Space = play)
+      e.stopPropagation();
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+  };
   const current = menu.kind === "kf" ? getLane(plan, menu.key)[menu.index]?.curve : null;
   const loopLen = menu.kind === "loop" ? plan[menu.deck].loops[menu.index]?.length_beats : null;
-  const item = "flex h-7 w-full items-center gap-2 rounded-xs px-2 text-left text-sm hover:bg-raised";
+  const item = "flex h-7 w-full items-center gap-2 rounded-xs px-2 text-left text-sm hover:bg-raised focus-visible:bg-raised";
+  const label = menu.kind === "kf" ? "Curve to next key" : "Loop length";
   return createPortal(
-    <div className="fixed z-[1000] w-44 rounded-sm bg-overlay p-1 shadow-pop" style={{ left: Math.min(menu.x, window.innerWidth - 190), top: Math.min(menu.y, window.innerHeight - 220) }} onPointerDown={(e) => e.stopPropagation()}>
-      {menu.kind === "kf" ? (
-        <>
-          <div className="px-2 pt-1 pb-0.5 label-caps">Curve to next key</div>
-          {CURVES.map((c) => (
-            <button key={c} type="button" className={item} onClick={() => onCurve(c)}>
+    <div
+      ref={ref}
+      role="menu"
+      aria-label={label}
+      className="fixed z-[1000] w-44 rounded-sm bg-overlay p-1 shadow-pop"
+      style={{ left: Math.min(menu.x, window.innerWidth - 190), top: Math.min(menu.y, window.innerHeight - 220) }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={onKeyDown}
+    >
+      <div className="px-2 pt-1 pb-0.5 label-caps" aria-hidden>
+        {label}
+      </div>
+      {menu.kind === "kf"
+        ? CURVES.map((c) => (
+            <button key={c} type="button" role="menuitemradio" aria-checked={current === c} tabIndex={-1} className={item} onClick={() => onCurve(c)}>
               <span className="w-3 text-accent-hover">{current === c ? "✓" : ""}</span>
               <span className="capitalize">{c}</span>
               <span className="ml-auto text-2xs text-fg-subtle">{c === "hold" ? "step" : c === "ease" ? "S-curve" : "ramp"}</span>
             </button>
-          ))}
-        </>
-      ) : (
-        <>
-          <div className="px-2 pt-1 pb-0.5 label-caps">Loop length</div>
-          {[1, 2, 4, 8, 16].map((n) => (
-            <button key={n} type="button" className={item} onClick={() => onLength(n)}>
+          ))
+        : [1, 2, 4, 8, 16].map((n) => (
+            <button key={n} type="button" role="menuitemradio" aria-checked={loopLen === n} tabIndex={-1} className={item} onClick={() => onLength(n)}>
               <span className="w-3 text-accent-hover">{loopLen === n ? "✓" : ""}</span>
               {n} beat{n === 1 ? "" : "s"}
             </button>
           ))}
-        </>
-      )}
-      <div className="my-1 h-px bg-line" />
-      <button type="button" className={cn(item, "text-danger")} onClick={onDelete}>
+      <div role="separator" className="my-1 h-px bg-line" />
+      <button type="button" role="menuitem" tabIndex={-1} className={cn(item, "text-danger")} onClick={onDelete}>
         <span className="w-3" />
         Delete <span className="ml-auto text-2xs text-fg-subtle">⌫</span>
       </button>

@@ -112,10 +112,10 @@ export function MixDetail({ folder, t, a, b, index, count, onPrev, onNext, onSel
         <span className="flex-1" />
         {t.warnings.length > 0 && (
           <Tooltip content={t.warnings.join(" · ")}>
-            <span className="inline-flex items-center gap-1 text-xs font-semibold text-warn num">
+            <button type="button" aria-label={`${t.warnings.length} warning${t.warnings.length === 1 ? "" : "s"}: ${t.warnings.join(" · ")}`} className="inline-flex items-center gap-1 rounded-xs px-0.5 text-xs font-semibold text-warn num">
               <AlertTriangle size={13} />
               {t.warnings.length}
-            </span>
+            </button>
           </Tooltip>
         )}
         {!hasPlan && mp.loading && t.ready && (

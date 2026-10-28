@@ -2,6 +2,7 @@
  * Keyboard shortcuts. `useHotkey("Space", fn)`; combos: "Mod+F" (⌘ on mac), "Shift+ArrowDown", "Escape", "Enter",
  * "Delete", "1". Handlers are skipped while typing in inputs unless `allowInInputs`. Later-mounted handlers for the
  * same combo run first and may call `e.stopImmediatePropagation()` (return true from the handler does it for you).
+ * A bare "Enter" shortcut never fires on a focused button, link or menu item: there Enter activates the control.
  */
 import { useEffect, useRef } from "react";
 
@@ -24,6 +25,11 @@ export function isTypingTarget(t: EventTarget | null): boolean {
     return !["checkbox", "radio", "range", "button", "submit"].includes(type);
   }
   return false;
+}
+
+/** Enter on a focused button / link / menu item activates it — page-level Enter shortcuts leave it alone. */
+export function isActivationTarget(t: EventTarget | null): boolean {
+  return t instanceof Element && t.closest("button, a[href], summary, [role=button], [role^=menuitem], [role=tab], [role=option], [role=checkbox], [role=switch]") !== null;
 }
 
 export function matchesCombo(e: KeyboardEvent, combo: string): boolean {
@@ -50,6 +56,7 @@ function onKeyDown(e: KeyboardEvent) {
     if (h.opts.enabled === false) continue;
     if (modalOpen && !h.opts.allowInModal) continue;
     if (!h.opts.allowInInputs && isTypingTarget(e.target)) continue;
+    if (h.combo === "Enter" && isActivationTarget(e.target)) continue;
     if (!matchesCombo(e, h.combo)) continue;
     if (h.opts.preventDefault !== false) e.preventDefault();
     const handled = h.fn(e);
