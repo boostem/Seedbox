@@ -302,11 +302,6 @@ def integrated_lufs(x: np.ndarray, sr: int) -> float:
     return float(-0.691 + 10 * np.log10(z.mean())) if z.size else -70.0
 
 
-def short_term_lufs(x: np.ndarray, sr: int, hop_s: float = 0.1) -> np.ndarray:
-    """EBU short-term loudness (3 s windows) every hop_s; window k starts at k * hop_s."""
-    return -0.691 + 10 * np.log10(_block_power(x, sr, 3.0, hop_s) + 1e-12)
-
-
 def true_peak_db(x: np.ndarray) -> float:
     """4x-oversampled peak (dBTP) of (channels, n) audio."""
     up = signal.resample_poly(np.asarray(x, dtype=np.float64), 4, 1, axis=-1)
@@ -380,7 +375,7 @@ def _segments(deck: dict, b0: float, b1: float) -> list[tuple[float, float, floa
     return out
 
 
-def _source(audio: np.ndarray, deck: dict, b0: float, b1: float, sr: int) -> tuple[np.ndarray, list[str]]:
+def _source(audio: np.ndarray, deck: dict, b0: float, b1: float, sr: int) -> np.ndarray:
     """(2, n) audio for master beats [b0, b1) at the deck's native tempo (sample j <-> beat b0 + j / (sr * spb))."""
     spb = 60.0 / float(deck["native_bpm"])
     per_beat = sr * spb
@@ -388,7 +383,6 @@ def _source(audio: np.ndarray, deck: dict, b0: float, b1: float, sr: int) -> tup
     out = np.zeros((2, n), np.float32)
     nfile = audio.shape[1]
     seam = max(8, int(round(SEAM_S * sr)))
-    warn: list[str] = []
 
     def take(start: int, length: int) -> np.ndarray:
         seg = np.zeros((2, length), np.float32)
@@ -410,7 +404,7 @@ def _source(audio: np.ndarray, deck: dict, b0: float, b1: float, sr: int) -> tup
             # equal-power splice ending exactly on the seam: the incoming beat's attack stays intact
             out[:, i0 - seam:i0] = out[:, i0 - seam:i0] * f_out + take(f0 - seam, seam) * f_in
         prev_end_file = f0 + (i1 - i0)
-    return out, warn
+    return out
 
 
 # ---------------------------------------------------------------------------------------------------------------

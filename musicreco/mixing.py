@@ -50,11 +50,6 @@ def _bpm_factor(seed_bpm: float, other_bpm: float, tol: float) -> float | None:
     return None
 
 
-def bpm_compatible(seed_bpm: float, other_bpm: float, tol: float = 0.10) -> bool:
-    """Other BPM within +/-tol of the seed's, also counting half/double time (other*2, other/2)."""
-    return _bpm_factor(seed_bpm, other_bpm, tol) is not None
-
-
 def passes_rule(seed: Track, other: Track, tol: float = 0.10) -> tuple[bool, str]:
     """(ok, reason): ok = key adjacent AND BPM within +/-tol (half/double ok); reason is a compact checklist string."""
     key_ok = camelot_adjacent(seed.camelot, other.camelot)

@@ -48,11 +48,6 @@ class EventBus:
         self._lock = threading.Lock()
         self._closed = False
 
-    @property
-    def subscriber_count(self) -> int:
-        with self._lock:
-            return len(self._subs)
-
     def publish(self, type_: str, data: object) -> None:
         """Send one event to every client. Safe from any thread; never blocks, never raises."""
         try:

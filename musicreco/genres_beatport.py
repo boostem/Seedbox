@@ -385,12 +385,3 @@ def beatport_lookup(track: Track) -> BeatportInfo | None:
     Raises ProviderUnavailable if Beatport could not be queried (timeout, 429/5xx, blocked, paused).
     """
     return _lookup(track)
-
-
-def beatport_genre(track: Track) -> str | None:
-    """Beatport sub-genre (else genre) of the best-matching track; None if no confident match.
-
-    Raises ProviderUnavailable like ``beatport_lookup``.
-    """
-    info = beatport_lookup(track)
-    return (info.sub_genre or info.genre) if info else None
