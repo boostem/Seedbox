@@ -23,6 +23,9 @@ B_FASTER = Spec("click_b_faster", bpm=126.5, bars=40, intro_bars=16, outro_bars=
 B_FAST = Spec("click_b_fast", bpm=140.0, bars=40, intro_bars=16, outro_bars=8)
 A_BUILD = Spec("click_a_build", bpm=124.0, bars=40, intro_bars=8, outro_bars=8, outro_drums=False, drops=[24])
 B_DROP = Spec("click_b_drop", bpm=124.0, bars=40, intro_bars=8, drops=[16])
+A_OUTRO_8 = Spec("click_a_outro_8", bpm=124.0, bars=40, intro_bars=8, outro_bars=8)  # A loops its outro
+A_MUSIC_OUTRO = Spec("click_a_music", bpm=124.0, bars=40, intro_bars=8, outro_bars=16, outro_drums=False)
+B_INTRO_8 = Spec("click_b_intro_8", bpm=124.0, bars=40, intro_bars=8, outro_bars=8, first_downbeat_s=0.25)  # B loops
 CASES = {
     "same tempo blend": (A, B_SAME, None),
     "small gap blend": (A, B_FASTER, None),
@@ -30,6 +33,8 @@ CASES = {
     "filter sweep": (A, B_SAME, "filter sweep"),
     "slam into drop": (A_BUILD, B_DROP, None),
     "big gap slam": (A_BUILD, B_FAST, None),
+    "a loop blend": (A_OUTRO_8, B_SAME, None),
+    "b loop blend": (A_MUSIC_OUTRO, B_INTRO_8, None),
 }
 
 
@@ -209,3 +214,24 @@ def test_pre_eq_sends_keep_what_the_eq_cuts(send_renders: dict) -> None:
     E = _exit(plan)
     for stem in ("A echo", "A reverb"):
         assert _level_db(pre, stem, E, E + 4) > _level_db(post, stem, E, E + 4) + 6, stem
+
+
+def test_loops_play_on_the_beat(renders: dict) -> None:
+    """A loops its outro past the end of its file and B loops its intro from its cue: both still click on every
+    master beat (test_beats_line_up_on_both_decks), A keeps playing after its file ends and B is silent before 0."""
+    plan, r = renders["a loop blend"]
+    assert plan["bars"] == 16 and plan["a"]["loops"] and not plan["b"]["loops"]
+    lp = plan["a"]["loops"][0]
+    t = np.asarray(r["beat_times_s"])
+    first = np.ceil(r["start_beat"])
+    looped = np.arange(lp["start_beat"] + 1, 4 * plan["bars"] - 16)  # A at full volume inside its loop
+    assert float(mixplan.deck_time(plan["a"], looped[-1])) < A_OUTRO_8.duration_s
+    assert lp["start_beat"] + plan["a"]["beat0_s"] * 124.0 / 60.0 >= A_OUTRO_8.bars * 4, "the loop starts at A's end"
+    err = [click_offset(r["stems"]["A"], SR, t[int(b - first)]) for b in looped]
+    assert max(err) < 0.003
+
+    plan, r = renders["b loop blend"]
+    assert plan["bars"] == 16 and plan["b"]["loops"] and not plan["a"]["loops"]
+    assert plan["b"]["loops"][0]["end_beat"] == 32.0 and plan["b"]["play_from_beat"] == 0.0
+    assert float(mixplan.deck_time(plan["b"], 0.0)) == pytest.approx(B_INTRO_8.first_downbeat_s, abs=1e-3)
+    assert float(mixplan.deck_time(plan["b"], 32.0)) == pytest.approx(B_INTRO_8.first_downbeat_s, abs=1e-3)

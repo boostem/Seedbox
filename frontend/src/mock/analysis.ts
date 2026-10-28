@@ -18,7 +18,8 @@ export function mockAnalysis(track: Track): TrackAnalysis {
   const bar_s = 240 / bpm;
   const fdb = between(R, 0.04, 0.35);
   const bar_count = Math.max(16, Math.floor((duration - fdb) / bar_s));
-  const introBars = R() < 0.5 ? 32 : 16;
+  const ri = R();
+  const introBars = ri < 0.5 ? 32 : ri < 0.62 ? 8 : 16; // some short 8-bar intros (the planner loops them)
   const outroBars = R() < 0.55 ? 32 : 16;
   const vocalTrack = R() < 0.7;
 
@@ -142,8 +143,12 @@ export function mockTransition(a: Track, aAn: TrackAnalysis | null, b: Track, bA
     notes.unshift("Waiting for audio analysis — key and tempo only");
     return { from_id: a.id, to_id: b.id, score: Math.round(Math.min(100, s * 1.18)), key_move, pitch_pct, out_start_s: null, in_start_s: null, overlap_bars: null, swap_bar: null, technique: null, notes, warnings, ready: false };
   }
-  const overlap = snapBars(Math.min(aAn.outro.bars, bAn.intro.bars));
-  const out_start_s = round2(aAn.outro.start_s + (aAn.outro.bars - overlap) * aAn.bar_s);
+  let overlap = snapBars(Math.min(aAn.outro.bars, bAn.intro.bars));
+  // an 8-bar edge is stretched to a 16-bar blend by looping it (musicreco.transitions._a_loop / _b_loop)
+  const a_loop_bars = overlap === 8 && aAn.outro.bars === 8 ? 8 : 0;
+  const b_loop_bars = overlap === 8 && bAn.intro.bars === 8 ? 8 : 0;
+  if (a_loop_bars || b_loop_bars) overlap = 16;
+  const out_start_s = round2(aAn.outro.start_s + Math.max(0, aAn.outro.bars - overlap + a_loop_bars) * aAn.bar_s);
   const in_start_s = bAn.intro.start_s;
   const vocalClash = aAn.outro.has_vocals && bAn.intro.has_vocals;
   let technique: Technique;
@@ -172,6 +177,8 @@ export function mockTransition(a: Track, aAn: TrackAnalysis | null, b: Track, bA
     overlap_bars: overlap,
     swap_bar: technique === "bass swap" ? overlap / 2 + 1 : null,
     technique,
+    a_loop_bars,
+    b_loop_bars,
     notes,
     warnings,
     ready: true,

@@ -51,6 +51,9 @@ _P_A_HALF_PHRASE = 4.0  # B comes in on the second 8 bars of one of A's 16-bar p
 _P_B_HALF_PHRASE = 2.0  # B cued past its first downbeat/phrase start and not on one of its 16-bar phrases
 _P_VOCAL = 2.0  # per bar of (soft) vocal clash: the mixer ducks one deck's mids, so a clash rarely shortens a blend
 _P_TONAL_KEY_CLASH = 2.0  # per bar with music on both decks when the keys clash
+_P_LOOP = 0.42  # per bar a deck loops a phrase of its outro / intro to stretch a blend, twice that past 8 bars
+# (8 looped bars beat starting the blend 8 bars into A's body; a 16-bar outro isn't looped into a 32-bar blend)
+_LOOP_VOCAL_MAX = 0.4  # a looped phrase is (nearly) unsung: mean vocal_per_bar below this
 # Mix length preference (settings.mix_length) -> {length: (both edges drums-only, one, neither)}. Normal: 16 bars
 # whenever an edge has room, 32 when both edges are long and drums-only, 8 only when both edges are short or a
 # clash forces it. Short keeps the old 8-bar habit, Long reaches for 32 whenever one side is clean.
@@ -234,6 +237,74 @@ def _pitch_on_b(a_bpm: float, b_bpm: float) -> tuple[float, float] | None:
 # --- planning ------------------------------------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class Loop:
+    """A deck looping one 4/8-bar phrase of its outro (A) or intro (B) to stretch a blend, as on a CDJ: over overlap
+    bars [at, at + bars) it repeats its bars [src, src + size), then plays on from where it was when the loop
+    started. A loops from where its music runs out until it leaves; B loops from its cue, `bars` a whole number of
+    8-bar phrases, so releasing it lands on a phrase of A and B's intro then runs as usual."""
+
+    src: int
+    size: int  # 4 or 8 bars
+    at: int  # overlap bar where the loop engages
+    bars: int  # overlap bars it runs
+
+
+def deck_bar(bar0: int, loop: Loop | None, k: int) -> int:
+    """Track bar a deck cued at bar0 plays in overlap bar k, through its loop."""
+    if loop is None or k < loop.at:
+        return bar0 + k
+    if k < loop.at + loop.bars:
+        return loop.src + (k - loop.at) % loop.size
+    return bar0 + k - loop.bars
+
+
+def _extend_with_loop(g: _Grid, edge: str, bar: int, need: int, at: int = 0) -> Loop | None:
+    """Loop that makes up `need` bars (a multiple of 4) of a deck reaching track bar `bar` at overlap bar `at`: the
+    cleanest 4- or 8-bar phrase of its outro (before `bar`) or intro (from `bar`) on the deck's 4-bar grid there,
+    drums-led and least vocal, an 8-bar phrase when `need` holds whole ones. None when no phrase is clean enough."""
+    if need <= 0 or need % 4:
+        return None
+    lo, hi = (g.outro[0], min(bar, g.outro[1])) if edge == "outro" else (max(bar, g.intro[0]), g.intro[1])
+    best = None
+    for size in (8, 4):
+        if need % size:
+            continue
+        for src in range(lo, hi - size + 1):
+            if (src - bar) % 4:
+                continue
+            vocal = g.mean(g.vocal, src, src + size)
+            if vocal >= _LOOP_VOCAL_MAX:
+                continue
+            # drums-only first, then least vocal, 8 bars over 4; ties: A's phrase nearest its end, B's from its cue
+            key = (not all(g.perc[src : src + size]), round(vocal, 2), size != 8, src if edge == "intro" else -src)
+            if best is None or key < best[0]:
+                best = (key, Loop(src, size, at, need))
+    return None if best is None else best[1]
+
+
+def _a_loop(a: _Grid, a0: int, length: int) -> Loop | None:
+    """A's loop when its music runs out before a blend of `length` bars from a0 ends: from the last 4-bar line of
+    A's music to the end of the blend, at most half of it. None when A doesn't run out or can't loop."""
+    if a0 + length <= a.end:
+        return None
+    q = a0 + (a.end - a0) // 4 * 4
+    need = a0 + length - q
+    if q <= a0 or need > length // 2:
+        return None
+    return _extend_with_loop(a, "outro", q, need, q - a0)
+
+
+def _b_loop(b: _Grid, b0: int, length: int) -> Loop | None:
+    """B's loop when its intro from b0 is shorter than a blend of `length` bars: whole phrases from its cue so the
+    intro then runs to the end of the blend, at most half of it. None when the intro is long enough or can't loop."""
+    short = length - (b.intro[1] - b0)
+    if short <= 0:
+        return None
+    need = -(-short // PHRASE) * PHRASE
+    return _extend_with_loop(b, "intro", b0, need) if need <= length // 2 else None
+
+
 @dataclass
 class _Plan:
     technique: str
@@ -243,52 +314,80 @@ class _Plan:
     fit: float  # structural fit, 0-100 after clamping
     clash: list[int]  # overlap offsets with vocals on both decks
     tonal: int = 0  # overlap bars with music (not just drums) on both decks
+    a_loop: Loop | None = None  # A loops a phrase of its outro once its music runs out
+    b_loop: Loop | None = None  # B loops a phrase of its intro from its cue
+
+    @property
+    def loop_bars(self) -> tuple[int, int]:
+        return (self.a_loop.bars if self.a_loop else 0, self.b_loop.bars if self.b_loop else 0)
 
 
-def _window(a: _Grid, b: _Grid, a0: int, b0: int, length: int, key_clash: bool, pref: str = "normal") -> _Plan:
-    """Score one phrase-aligned overlap: A bars [a0, a0+L) under B bars [b0, b0+L), under a mix length preference."""
-    e = a0 + length
+def _window(
+    a: _Grid, b: _Grid, a0: int, b0: int, length: int, key_clash: bool, pref: str = "normal",
+    b_loop: Loop | None = None,
+) -> _Plan:
+    """Score one phrase-aligned overlap: A bars [a0, a0+L) under B bars [b0, b0+L), under a mix length preference.
+    Past A's music A loops a phrase of its outro (_a_loop), and B may loop one of its intro (b_loop); every bar is
+    read through the loops, each looped bar costs a little."""
+    a_loop = _a_loop(a, a0, length)
+    xa, xb = (a_loop.bars if a_loop else 0), (b_loop.bars if b_loop else 0)
+    e = a0 + length - xa  # A bar where A's own play ends
     o0, end = a.outro
     i0, i1 = b.intro
+    ab = [deck_bar(a0, a_loop, k) for k in range(length)]
+    bb = [deck_bar(b0, b_loop, k) for k in range(length)]
     pen = _P_BODY_CUT * max(0, o0 - e)
-    pen += _P_OUTRO_SKIP * (end - max(e, o0))
+    pen += _P_OUTRO_SKIP * max(0, end - max(e, o0))
     pen += _P_INTRO_SKIP * (b0 - i0)
     pen += _P_A_BODY_UNDER * max(0, min(o0, e) - a0)
-    pen += sum(_P_B_BODY_UNDER / (2 if a.perc[a0 + k] else 1) for k in range(max(i1, b0) - b0, length))
-    pen += _P_B_SOLO * max(0, i1 - (b0 + length))
+    pen += sum(_P_B_BODY_UNDER / (2 if a.perc[ab[k]] else 1) for k in range(max(i1 - b0, 0) + xb, length))
+    pen += _P_B_SOLO * max(0, i1 - (b0 + length - xb))
     pen += _P_A_HALF_PHRASE * (a.level(a0) < 16)
     pen += _P_B_HALF_PHRASE * (b0 not in (0, _first_cue(b)) and b.level(b0) < 16)
+    pen += sum(_P_LOOP * (x + max(0, x - PHRASE)) for x in (xa, xb))
 
     clash, soft, tonal = [], 0.0, 0
     for k in range(length):
-        va, vb = a.vocal[a0 + k], b.vocal[b0 + k]
+        va, vb = a.vocal[ab[k]], b.vocal[bb[k]]
         soft += max(0.0, min(va, vb) - _VOCAL_FLOOR) / (1 - _VOCAL_FLOOR)
         if va >= _VOCAL_ON and vb >= _VOCAL_ON:
             clash.append(k)
-        tonal += not (a.perc[a0 + k] or b.perc[b0 + k])
+        tonal += not (a.perc[ab[k]] or b.perc[bb[k]])
     pen += _P_VOCAL * soft + (_P_TONAL_KEY_CLASH * tonal if key_clash else 0.0)
 
     clean_a = a.outro_drums and a0 >= o0
-    clean_b = b.intro_drums and b0 + length <= i1
+    clean_b = b.intro_drums and b0 + length - xb <= i1
     both, one, neither = _LENGTH_BONUS.get(pref, _LENGTH_BONUS["normal"])[length]
     bonus = both if clean_a and clean_b else one if clean_a or clean_b else neither
-    return _Plan("phrase blend", a0, b0, length, 100.0 - pen + bonus, clash, tonal)
+    return _Plan("phrase blend", a0, b0, length, 100.0 - pen + bonus, clash, tonal, a_loop, b_loop)
+
+
+def _windows(a: _Grid, b: _Grid, length: int, key_clash: bool, pref: str = "normal") -> Iterator[_Plan]:
+    """Every phrase-aligned overlap of `length` bars of A's ending with B's beginning, scored: B cued on a phrase up
+    to 8 bars before its intro ends, the blend running past A's music when A can loop the difference, and each one
+    also with B looping a phrase of a too-short intro."""
+    i0, i1 = b.intro
+    b_cues = [p for p in b.phrases if p <= max(b.phrases[0], i1 - PHRASE)] if b.phrases else [i0]
+    for a0 in a.phrases:
+        if a0 < a.end // 2 or a0 + length < a.end - _MAX_CUT_BARS:
+            continue
+        if a0 + length > a.end and _a_loop(a, a0, length) is None:
+            continue
+        for b0 in b_cues:
+            if b0 + length <= b.n:
+                yield _window(a, b, a0, b0, length, key_clash, pref)
+                if (lp := _b_loop(b, b0, length)) is not None:
+                    yield _window(a, b, a0, b0, length, key_clash, pref, lp)
 
 
 def _best_blend(a: _Grid, b: _Grid, key_clash: bool, pref: str = "normal") -> _Plan | None:
-    """Best phrase-aligned overlap of A's ending with B's beginning (ties keep the earlier, longer candidate)."""
-    i0, i1 = b.intro
-    b_cues = [p for p in b.phrases if p <= max(b.phrases[0], i1 - PHRASE)] if b.phrases else [i0]
+    """Best phrase-aligned overlap of A's ending with B's beginning (ties keep the earlier, longer, unlooped
+    candidate)."""
     best: _Plan | None = None
     for length in _LENGTHS:
-        for a0 in a.phrases:
-            if a0 < a.end // 2 or a0 + length > a.end or a0 + length < a.end - _MAX_CUT_BARS:
-                continue
-            for b0 in b_cues:
-                if b0 + length <= b.n:
-                    plan = _window(a, b, a0, b0, length, key_clash, pref)
-                    if best is None or plan.fit > best.fit + 1e-9:
-                        best = plan
+        for plan in _windows(a, b, length, key_clash, pref):
+            if best is None or plan.fit > best.fit + 1e-9:
+                best = plan
     return best
 
 
@@ -339,9 +438,10 @@ def _plan(a: _Grid, b: _Grid, key_clash: bool, pref: str = "normal") -> _Plan:
             return blend
     if blend is not None:
         a0, b0, length = blend.a0, blend.b0, blend.length
-        if length >= 16 and a.outro_drums and a0 >= a.outro[0] and b.intro_drums and b0 + length <= b.intro[1]:
+        b_end = b0 + length - blend.loop_bars[1]
+        if length >= 16 and a.outro_drums and a0 >= a.outro[0] and b.intro_drums and b_end <= b.intro[1]:
             blend.technique = "long blend"
-        elif a.mean(a.low, a0, a0 + length) >= _BASS_ON and b.mean(b.low, b0, b0 + length) >= _BASS_ON:
+        elif a.mean(a.low, a0, a0 + length) >= _BASS_ON and b.mean(b.low, b0, b_end) >= _BASS_ON:
             blend.technique = "bass swap"
         return blend
 
@@ -358,16 +458,25 @@ def _swap_offset(a: _Grid, b: _Grid, plan: _Plan) -> int | None:
     middle. None for cuts, when B brings no bass during the overlap and when no phrase starts inside it (an 8-bar
     blend): the lows then change hands on the 1 as A leaves, never mid-phrase."""
     a0, b0, length = plan.a0, plan.b0, plan.length
-    if not length or b.mean(b.low, b0, b0 + length) < _NO_BASS:
+    xb = plan.loop_bars[1]
+    if not length or b.mean(b.low, b0, b0 + length - xb) < _NO_BASS:
         return None
     on_a, on_b = dict(zip(a.phrases, a.levels)), dict(zip(b.phrases, b.levels))
-    ks = [k for k in range(1, length) if a0 + k in on_a and b0 + k in on_b]
+
+    def level(on: dict[int, int], bar0: int, loop: Loop | None, k: int) -> int:
+        """Phrase level at overlap bar k; inside a loop the master grid's (the blend starts on a phrase)."""
+        if loop is not None and loop.at <= k < loop.at + loop.bars:
+            return 16 if k % 16 == 0 else 8 if k % PHRASE == 0 else 0
+        return on.get(deck_bar(bar0, loop, k), 0)
+
+    lv = {k: min(level(on_a, a0, plan.a_loop, k), level(on_b, b0, plan.b_loop, k)) for k in range(1, length)}
+    ks = [k for k, v in lv.items() if v]
     if not ks:
         return None
-    main = b.intro[1] - b0
+    main = b.intro[1] - b0 + xb
     if main in ks:
         return main
-    return max(ks, key=lambda k: (min(on_a[a0 + k], on_b[b0 + k]), -abs(2 * k - length), -k))
+    return max(ks, key=lambda k: (lv[k], -abs(2 * k - length), -k))
 
 
 # --- wording -------------------------------------------------------------------------------------------------------
@@ -439,7 +548,20 @@ def _plan_notes(a: _Grid, b: _Grid, plan: _Plan) -> list[str]:
         return notes
 
     e, i1 = a0 + length, b.intro[1]
+    xa, xb = plan.loop_bars
     notes.append(f"Cue B at {t_b} ({_cue_words(b, b0)}) and start it at A {t_in} (A bar {a0 + 1}, on the phrase).")
+    if (lp := plan.b_loop) is not None:
+        notes.append(
+            f"B's intro is short for a {length}-bar blend: loop its bars {lp.src + 1}–{lp.src + lp.size} "
+            f"({lp.size} bars) as it comes in and release the loop on the 1 at A {_mmss(a.t(a0 + xb))} "
+            f"(bar {xb + 1} of the blend, a phrase) — its intro then runs from B {t_b}."
+        )
+    if (lp := plan.a_loop) is not None:
+        notes.append(
+            f"A's music runs out {_plural(xa, 'bar')} before the blend ends: from A {_mmss(a.t(a0 + lp.at))} "
+            f"(bar {lp.at + 1} of the blend) loop its bars {lp.src + 1}–{lp.src + lp.size} ({lp.size} bars) "
+            "until it leaves on the phrase."
+        )
     if b0 == b.off > 0 and a0 >= b.off:
         notes.append(
             f"B has a {b.off}-bar pickup before its first phrase — you can also play it from its first downbeat, "
@@ -456,9 +578,13 @@ def _plan_notes(a: _Grid, b: _Grid, plan: _Plan) -> list[str]:
     if plan.technique == "echo out":
         notes.append(f"Hit an echo/delay on A's last beat at {_mmss(a.t(e))} so its cold stop isn't heard.")
     else:
-        when = f"its end ({_mmss(a.t(e))})" if e >= a.end else f"A {_mmss(a.t(e))} (bar {e + 1})"
+        if xa:
+            when = f"the end of the blend, {_plural(xa, 'bar')} into its loop"
+        else:
+            when = f"its end ({_mmss(a.t(e))})" if e >= a.end else f"A {_mmss(a.t(e))} (bar {e + 1})"
         notes.append(f"Have A faded out by {when}.")
-    b_end = b0 + length
+    e -= xa
+    b_end = b0 + length - xb
     if b_end == i1:
         notes.append(f"B's intro ends exactly as A leaves → B's main section takes over at B {_mmss(b.t(i1))}.")
     elif b_end < i1:
@@ -489,7 +615,7 @@ def _plan_warnings(a: _Grid, b: _Grid, plan: _Plan) -> list[str]:
         warnings.append("B has no intro — it starts full-on.")
     elif plan.technique != "drop swap" and b.intro_bars < PHRASE:
         warnings.append(f"B's intro is only {_plural(b.intro_bars, 'bar')} — its main section hits almost at once.")
-    elif plan.length > b.intro_bars and not (a.outro_drums and plan.a0 >= a.outro[0]):
+    elif plan.length - plan.loop_bars[1] > b.intro_bars and not (a.outro_drums and plan.a0 >= a.outro[0]):
         warnings.append(
             f"B's intro ({b.intro_bars} bars) is shorter than the {plan.length}-bar blend — "
             "its main section comes in over A's music."
@@ -560,6 +686,7 @@ def _suggest(
         "from_id": a.id, "to_id": b.id, "score": 0, "key_move": move,
         "pitch_pct": round(pitch[0], 2) if pitch else 0.0,
         "out_start_s": None, "in_start_s": None, "overlap_bars": None, "swap_bar": None, "technique": None,
+        "a_loop_bars": 0, "b_loop_bars": 0,
         "notes": [], "warnings": [], "ready": False,
     }  # fmt: skip
     if ga is None or gb is None:
@@ -580,6 +707,7 @@ def _suggest(
         out.update(
             out_start_s=out_s, in_start_s=in_s, overlap_bars=plan.length,
             swap_bar=None if swap is None else swap + 1, technique=plan.technique, ready=True,
+            a_loop_bars=plan.loop_bars[0], b_loop_bars=plan.loop_bars[1],
         )  # fmt: skip
         out["notes"] = [*_plan_notes(ga, gb, plan), *tempo_notes, *key_notes]
         out["warnings"] = [*wrong, *_plan_warnings(ga, gb, plan), *key_warnings, *tempo_warnings]

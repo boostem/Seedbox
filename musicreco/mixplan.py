@@ -288,6 +288,7 @@ class _Place:
     b0: int  # B bar sounding at master bar 0
     overlap: int  # bars both decks play (0 = cut on the 1 at master beat 0)
     swap: int | None  # 0-based overlap bar where B's low end replaces A's; None = B's lows come in as A leaves
+    b_loop: transitions.Loop | None = None  # B loops a phrase of its short intro from its cue (transitions._b_loop)
 
 
 @dataclass
@@ -357,10 +358,11 @@ def _mean(arr: tuple[float, ...], lo: int, hi: int) -> float:
     return sum(vals) / len(vals) if vals else 0.0
 
 
-def _swap(ga: _Grid, gb: _Grid, a0: int, b0: int, length: int) -> int | None:
+def _swap(ga: _Grid, gb: _Grid, a0: int, b0: int, length: int, b_loop: transitions.Loop | None = None) -> int | None:
     if length <= 0:
         return None
-    return transitions._swap_offset(ga, gb, transitions._Plan("", a0, b0, length, 0.0, []))
+    a_loop = transitions._a_loop(ga, a0, length)
+    return transitions._swap_offset(ga, gb, transitions._Plan("", a0, b0, length, 0.0, [], 0, a_loop, b_loop))
 
 
 # --- planning: placement -------------------------------------------------------------------------------------------
@@ -376,7 +378,8 @@ def _engine(m: _Mix) -> tuple[str, _Place]:
         length = int(_num(tr.get("overlap_bars")))
         sw = tr.get("swap_bar")
         swap = sw - 1 if isinstance(sw, int) and 0 < sw <= length else None
-        return tr["technique"], _Place(a0, b0, length, swap)
+        b_loop = transitions._b_loop(gb, b0, length) if m.real_b and _num(tr.get("b_loop_bars")) > 0 else None
+        return tr["technique"], _Place(a0, b0, length, swap, b_loop)
     return "bass swap", _fallback_place(m, min(m.length, 16))
 
 
@@ -394,18 +397,13 @@ def _fallback_place(m: _Mix, length: int) -> _Place:
 def _best_of_length(m: _Mix, length: int) -> _Place | None:
     """Best phrase-aligned overlap of exactly `length` (8/16/32) bars, scored by transitions' own window scorer."""
     ga, gb = m.ga, m.gb
-    i0, i1 = gb.intro
-    cues = [p for p in gb.phrases if p <= max(gb.phrases[0], i1 - _PHRASE)] if gb.phrases else [i0]
     best = None
-    for a0 in ga.phrases:
-        if a0 < ga.end // 2 or a0 + length > ga.end or a0 + length < ga.end - transitions._MAX_CUT_BARS:
-            continue
-        for b0 in cues:
-            if b0 + length <= gb.n:
-                w = transitions._window(ga, gb, a0, b0, length, m.move == "clash", m.pref)
-                if best is None or w.fit > best.fit + 1e-9:
-                    best = w
-    return None if best is None else _Place(best.a0, best.b0, length, _swap(ga, gb, best.a0, best.b0, length))
+    for w in transitions._windows(ga, gb, length, m.move == "clash", m.pref):
+        if best is None or w.fit > best.fit + 1e-9:
+            best = w
+    if best is None:
+        return None
+    return _Place(best.a0, best.b0, length, _swap(ga, gb, best.a0, best.b0, length, best.b_loop), best.b_loop)
 
 
 def _blend_place(m: _Mix, length: int, eng: tuple[str, _Place]) -> _Place:
@@ -470,7 +468,7 @@ def _clear_a_drop(m: _Mix, place: _Place) -> tuple[_Place, str | None]:
     cands = [p for p in m.ga.phrases if p >= inside[-1] + _PHRASE and p + place.overlap <= m.ga.end]
     if not cands:
         return place, None
-    return _Place(cands[0], place.b0, place.overlap, place.swap), \
+    return _Place(cands[0], place.b0, place.overlap, place.swap, place.b_loop), \
         f"B comes in a phrase into A's last drop (A bar {cands[0] + 1}) rather than over the breakdown before it."
 
 
@@ -478,7 +476,7 @@ def _land_on_drop(m: _Mix, place: _Place, fixed_len: bool) -> tuple[_Place, str 
     """When B goes <intro> <chill> <drop> and the blend would end in the chill, end it on B's drop: lengthen it to
     16/32 bars over A's outro when A has the room (and the length isn't fixed), else cue B later so the overlap runs
     through the chill; either way A rides to the drop and the lows change hands on its 1."""
-    if not (m.real_a and m.real_b) or not place.overlap:
+    if not (m.real_a and m.real_b) or not place.overlap or place.b_loop is not None:
         return place, None
     gb = m.gb
     end_b = place.b0 + place.overlap
@@ -618,16 +616,17 @@ def _lanes() -> dict[str, list[tuple[float, float, str]]]:
     return {lane: [] for lane in LANES}
 
 
-def _clash_bars(m: _Mix, a_deck: dict, place: _Place) -> list[int]:
-    """Overlap bars (0-based) with vocals on both decks (A's bar read through its loops)."""
+def _clash_bars(m: _Mix, a_deck: dict, b_deck: dict, place: _Place) -> list[int]:
+    """Overlap bars (0-based) with vocals on both decks (each deck's bar read through its loops)."""
     if not place.overlap:
         return []
     k = np.arange(place.overlap)
     a_bars = place.a0 + np.floor(_deck_beat(a_deck, 4.0 * k + 0.5) / 4).astype(int)
+    b_cue = place.b0 - (place.b_loop.bars if place.b_loop else 0)  # B's bar at master bar 0 without its loop
+    b_bars = b_cue + np.floor(_deck_beat(b_deck, 4.0 * k + 0.5) / 4).astype(int)
     out = []
-    for i, ab in zip(k, a_bars):
+    for i, ab, bb in zip(k, a_bars, b_bars):
         va = m.ga.vocal[ab] if 0 <= ab < m.ga.n else 0.0
-        bb = place.b0 + int(i)
         vb = m.gb.vocal[bb] if 0 <= bb < m.gb.n else 0.0
         if va >= transitions._VOCAL_ON and vb >= transitions._VOCAL_ON:
             out.append(int(i))
@@ -900,6 +899,8 @@ def _headline(m: _Mix, tech: str, bars: int, place: _Place, info: dict) -> str:
     ga, gb = m.ga, m.gb
     a0, b0, L = place.a0, place.b0, place.overlap
     t0, tb, te = _mmss(ga, a0), _mmss(gb, b0), _mmss(ga, a0 + L)
+    if m.real_a and tech not in (*_CUTS, "loop roll") and (lp := transitions._a_loop(ga, a0, L)) is not None:
+        te = f"the end of its {lp.bars}-bar loop"
     swap = f"swap the bass on the 1 of bar {place.swap + 1} (A {_mmss(ga, a0 + place.swap)})" \
         if place.swap is not None else None
     if tech == "long blend":
@@ -1034,12 +1035,17 @@ def generate(
                 if tech == "bass swap":
                     tech = "long blend" if place.overlap >= 16 else "phrase blend"
                 bars = place.overlap
-            if place.a0 + place.overlap > m.ga.end and m.real_a:
+            if place.a0 + place.overlap > m.ga.end and m.real_a and \
+                    transitions._a_loop(m.ga, place.a0, place.overlap) is None:
                 notes_extra.append(f"A runs out {place.a0 + place.overlap - m.ga.end} bars before the blend ends — "
                                    "try a loop roll or a shorter blend.")
     L = place.overlap
     E = 4.0 * L
     ga, gb = m.ga, m.gb
+    blend = bool(L) and tech not in (*_CUTS, "loop roll")
+    a_loop = transitions._a_loop(ga, place.a0, L) if blend and m.real_a else None
+    b_loop = place.b_loop if blend else None
+    xb = b_loop.bars if b_loop else 0
 
     a_deck = {
         "track_id": a.id, "beat0_s": round(ga.fd + place.a0 * ga.bar_s, 4), "native_bpm": m.a_bpm,
@@ -1050,12 +1056,19 @@ def generate(
         a_deck["play_to_beat"] = round(max(E, min(E + _SEND_TAIL, a_end)), 4)
     else:
         a_deck["play_to_beat"] = E + _SEND_TAIL
-    b_beat0 = gb.fd + place.b0 * gb.bar_s
+    # a B loop holds B's grid back by its length: B's cue bar sounds on the master bar where the loop releases
+    b_beat0 = gb.fd + (place.b0 - xb) * gb.bar_s
     b_deck = {
         "track_id": b.id, "beat0_s": round(b_beat0, 4), "native_bpm": m.b_bpm,
-        "play_from_beat": max(0.0, round(-b_beat0 * m.b_bpm / 60.0, 4)), "play_to_beat": 0.0,
+        "play_from_beat": 0.0 if xb else max(0.0, round(-b_beat0 * m.b_bpm / 60.0, 4)), "play_to_beat": 0.0,
         "echo_beats": 0.75, "loops": [], "lanes": {},
     }  # fmt: skip
+    if a_loop is not None:  # slip loop from where A's music runs out until it leaves
+        a_deck["loops"] = [{"start_beat": 4.0 * a_loop.at, "end_beat": E, "source_beat": 4.0 * (a_loop.src - place.a0),
+                            "length_beats": 4.0 * a_loop.size}]
+    if b_loop is not None:  # B's intro phrase from its cue, released on the phrase where its grid catches up
+        b_deck["loops"] = [{"start_beat": 0.0, "end_beat": 4.0 * xb, "source_beat": 4.0 * (b_loop.src - place.b0 + xb),
+                            "length_beats": 4.0 * b_loop.size}]
     a_deck["play_from_beat"] = round(min(-1.0, -a_deck["beat0_s"] * m.a_bpm / 60.0), 4)
     b_end_s = m.b_dur if m.b_dur > 0 else gb.fd + gb.n * gb.bar_s
     b_deck["play_to_beat"] = round(max(E + 8.0, (b_end_s - b_beat0) * m.b_bpm / 60.0), 4)
@@ -1069,7 +1082,7 @@ def generate(
         info = _loop_roll(m, place, A, B, a_deck)
     else:
         info = _blend_lanes(tech, L, place.swap, A, B, _mid_throws(m, place))
-    clash = _clash_bars(m, a_deck, place) if tech not in ("filter sweep",) else []
+    clash = _clash_bars(m, a_deck, b_deck, place) if tech not in ("filter sweep",) else []
     ducked = _duck_mids(A, B, clash, place.swap if tech != "loop roll" else None, L) if clash and L else ([], [])
     a_deck["echo_beats"] = info["echo_beats"]
     if "reverb_size" in info:
@@ -1134,6 +1147,10 @@ def generate(
         markers.append({"beat": t, "label": "echo throw"})
     if tech == "reverb wash":
         markers.append({"beat": -4.0 * max(4, min(bars, 8)), "label": "reverb wash"})
+    if a_loop is not None:
+        markers.append({"beat": 4.0 * a_loop.at, "label": "A loop"})
+    if b_loop is not None:
+        markers.append({"beat": 4.0 * xb, "label": "B loop out"})
     if L:
         markers.append({"beat": E, "label": "A out"})
     if tempo.pre_start is not None:
@@ -1160,6 +1177,14 @@ def generate(
         bars_at = " and ".join(f"bar {int(t + 1) // 4 + 1}" for t in info["throws"])
         notes.append(f"Short echo throws on A into {bars_at} of the blend (the end of a vocal phrase or a breakdown "
                      "exit): the send opens on the last beat and the repeats ring over B.")
+    if b_loop is not None:
+        notes.append(f"B's intro is stretched: B loops its bars {b_loop.src + 1}–{b_loop.src + b_loop.size} "
+                     f"({b_loop.size} bars) from B {_mmss(gb, place.b0)} as it comes in and releases the loop on the 1 "
+                     f"of bar {xb + 1} (a phrase), so its intro then runs as A leaves.")
+    if a_loop is not None:
+        notes.append(f"A's outro is stretched: A's music runs out {_plural(a_loop.bars, 'bar')} before the blend "
+                     f"ends, so from bar {a_loop.at + 1} A loops its bars {a_loop.src + 1}–{a_loop.src + a_loop.size} "
+                     f"({a_loop.size} bars, {_mmss(ga, a_loop.src)}) until it leaves on the phrase.")
     notes.append(tempo.note)
     notes.extend(notes_extra)
     if not (m.real_a and m.real_b):
@@ -1183,10 +1208,12 @@ def summary(plan: dict, a_an: dict | None = None, b_an: dict | None = None) -> s
     pair-render script and the snapshot test. Cue bars count from each deck's first downbeat (0 s without analysis)."""
 
     def cue(deck: dict, an: dict | None) -> str:
+        """The deck's bar at master beat 0, through a loop engaged on that 1 (B looping its intro from its cue)."""
         fd = _num((an or {}).get("first_downbeat_s"))
-        bar = (deck["beat0_s"] - fd) * deck["native_bpm"] / 240.0
-        return f"bar {bar:g} ({deck['beat0_s']:.2f} s)" if abs(bar - round(bar)) > 1e-3 else \
-            f"bar {round(bar)} ({deck['beat0_s']:.2f} s)"
+        t0 = round(float(deck_time({**deck, "loops": [lp for lp in deck["loops"] if lp["start_beat"] == 0.0]}, 0.0)), 3)
+        t0 += 0.0  # no "-0.00 s"
+        bar = (t0 - fd) * deck["native_bpm"] / 240.0
+        return f"bar {bar:g} ({t0:.2f} s)" if abs(bar - round(bar)) > 1e-3 else f"bar {round(bar)} ({t0:.2f} s)"
 
     def effects(name: str, deck: dict) -> list[str]:
         """One line per lane that leaves its default: keyframes as value@beat + curve initial (l/h/e)."""

@@ -131,6 +131,9 @@ TECHNO = Spec("techno", bpm=130.0, bars=192, intro_bars=32, outro_bars=32)
 TECHNO_B = Spec("techno_b", bpm=131.0, bars=192, intro_bars=32, outro_bars=32, camelot="8B")
 MUSIC_OUTRO = Spec("music_outro", outro_drums=False)
 SHORT_EDGES = Spec("short_edges", intro_bars=8, outro_bars=8)
+# short edges a loop stretches: an 8-bar drum outro (A loops it), an 8-bar drum intro (B loops it under A's music)
+OUTRO_8 = Spec("outro_8", outro_bars=8)
+SHORT_INTRO = Spec("short_intro", intro_bars=8)
 
 # (name, A, B): every pair has an expected planner outcome in test_planner.py and a line in the snapshot
 PAIRS = [
@@ -156,6 +159,8 @@ PAIRS = [
     ("techno -> techno", TECHNO, TECHNO_B),
     ("music outro -> house", MUSIC_OUTRO, HOUSE_B),
     ("short edges -> short edges", SHORT_EDGES, SHORT_EDGES),
+    ("outro 8 -> standard", OUTRO_8, STANDARD),
+    ("music outro -> short intro", MUSIC_OUTRO, SHORT_INTRO),
 ]
 # the club pairs whose blends should run 16 bars or more at the default mix length
 CLUB_PAIRS = [p for p in PAIRS if p[0] in ("house -> house", "techno -> techno", "music outro -> house")]

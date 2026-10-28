@@ -20,10 +20,12 @@ def _render() -> str:
         ta, tb, aa, ab = track(a), track(b), analysis(a), analysis(b)
         tr = transitions.suggest(ta, aa, tb, ab)
         plan = mixplan.generate(ta, aa, tb, ab, "folder")
+        xa, xb = tr["a_loop_bars"], tr["b_loop_bars"]
+        loops = f", loops A {xa} / B {xb} bars" if xa or xb else ""
         out += [
             f"## {name}",
             f"suggest: {tr['technique']}, {tr['overlap_bars']} bars, swap {tr['swap_bar']}, "
-            f"A out {tr['out_start_s']} s, B in {tr['in_start_s']} s, score {tr['score']}",
+            f"A out {tr['out_start_s']} s, B in {tr['in_start_s']} s, score {tr['score']}{loops}",
             f"plan: {mixplan.summary(plan, aa, ab)}",
             *(f"  note: {n}" for n in plan["notes"]),
             "",
