@@ -1,17 +1,13 @@
 // OWNER: FRONTEND-SET agent. Set builder: running order + transitions (left), track / mix detail (right), overview.
-import { Activity, AlertTriangle, AudioWaveform, Check, FolderOpen, Keyboard, Search, Sprout, Undo2, Wand2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Activity, AlertTriangle, AudioWaveform, FolderOpen, Search, Sprout, Undo2, Wand2 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { api } from "@/api/client";
 import { usePageTitle } from "@/components/shell/pageTitle";
-import { Button, CoverArt, EmptyState, IconButton, Kbd, Page, PageHeader, Spinner, Tooltip } from "@/components/ui";
-import { audition, MixDetail, requestPlay, type SetSelection, SetList, SetOverview, setStats, TrackDetail, useAudition, useSetModel } from "@/features/set";
+import { Button, CoverArt, EmptyState, IconButton, Page, PageHeader, Spinner } from "@/components/ui";
+import { MixDetail, RunningOrder, SaveStatus, SetOverview, setStats, TrackDetail, useSetModel, useSetSelection } from "@/features/set";
 import { cn } from "@/lib/cn";
 import { fmtTime, plural } from "@/lib/format";
-import { useHotkey } from "@/lib/hotkeys";
-import { navigate, useHashQuery } from "@/lib/router";
-import { useListNav } from "@/lib/useListNav";
-import { useApp } from "@/store/app";
-import { player, usePlayer } from "@/audio/player";
+import { navigate } from "@/lib/router";
 
 const OVERVIEW_KEY = "seedbox.set.overview";
 
@@ -24,104 +20,15 @@ function loadPref(): boolean {
   }
 }
 
-const selKey = (s: SetSelection) => (!s ? null : s.kind === "track" ? `t:${s.id}` : `x:${s.from}>${s.to}`);
-
 export function SetBuilderPage({ folder }: { folder: string }) {
   usePageTitle("Crates", folder);
   const m = useSetModel(folder);
   const set = m.set;
-  const [selection, setSelection] = useState<SetSelection>(null);
-  const query = useHashQuery();
-  const [initial] = useState(() => ({ t: Number(query.get("t")), x: Number(query.get("x")) })); // deep link: ?t=<n> track, ?x=<n> transition (1-based)
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const { selection, select, selTrack, selTransition, tIndex, expanded, toggleExpanded, auditionKey, doAudition } = useSetSelection(m);
   const [showOverview, setShowOverview] = useState(loadPref);
-  const roughKey = useAudition((s) => (s.status !== "idle" ? s.key : null));
-  // the rendered transition plays through the global player as "mix:<from>><to>"
-  const renderKey = usePlayer((s) => (s.currentId?.startsWith("mix:") && (s.status === "playing" || s.status === "loading") ? s.currentId.slice(4) : null));
-  const auditionKey = roughKey ?? renderKey;
   const stats = useMemo(() => (set ? setStats(set) : null), [set]);
   const seed = set?.tracks.find((t) => t.track.id === set.seed_id)?.track ?? null;
   const worstKey = stats?.worst && set && set.transitions.length > 1 ? `${stats.worst.t.from_id}>${stats.worst.t.to_id}` : null;
-
-  // stop an audition when leaving the page
-  useEffect(() => () => audition.stop(), []);
-
-  // default / repair selection when the set changes
-  useEffect(() => {
-    if (!set?.tracks.length) return;
-    setSelection((s) => {
-      if (s?.kind === "track" && set.tracks.some((t) => t.track.id === s.id)) return s;
-      if (s?.kind === "transition") {
-        if (set.transitions.some((t) => t.from_id === s.from && t.to_id === s.to)) return s;
-        const t = set.transitions.find((x) => x.from_id === s.from);
-        return t ? { kind: "transition", from: t.from_id, to: t.to_id } : { kind: "track", id: s.from };
-      }
-      const x = set.transitions[initial.x - 1];
-      if (x) return { kind: "transition", from: x.from_id, to: x.to_id };
-      return { kind: "track", id: (set.tracks[initial.t - 1] ?? set.tracks[0]).track.id };
-    });
-  }, [set, initial]);
-
-  // Space plays the selected track (global hotkey) — keep the store selection in sync
-  const selTrack = selection?.kind === "track" ? set?.tracks.find((t) => t.track.id === selection.id) : undefined;
-  useEffect(() => {
-    if (selTrack) useApp.getState().select({ kind: "file", track: selTrack.track, url: selTrack.audio_url });
-  }, [selTrack]);
-
-  const select = useCallback((s: SetSelection) => setSelection(s), []);
-  const navIds = useMemo(() => {
-    if (!set) return [];
-    const out: string[] = [];
-    set.tracks.forEach((t, i) => {
-      out.push(`t:${t.track.id}`);
-      const x = set.transitions[i];
-      if (x && i + 1 < set.tracks.length) out.push(`x:${x.from_id}>${x.to_id}`);
-    });
-    return out;
-  }, [set]);
-  useListNav(navIds, selKey(selection), (id) => {
-    if (id.startsWith("t:")) setSelection({ kind: "track", id: id.slice(2) });
-    else {
-      const [from, to] = id.slice(2).split(">");
-      setSelection({ kind: "transition", from, to });
-    }
-  });
-
-  const tIndex = selection?.kind === "transition" && set ? set.transitions.findIndex((t) => t.from_id === selection.from && t.to_id === selection.to) : -1;
-  const selTransition = tIndex >= 0 && set ? set.transitions[tIndex] : null;
-
-  // play a transition: open its mix view, which renders + plays it (or falls back to the rough audition)
-  const doAudition = useCallback(
-    (key: string) => {
-      if (!set) return;
-      const t = set.transitions.find((x) => `${x.from_id}>${x.to_id}` === key);
-      if (!t) return;
-      if (audition.isActive(key)) return audition.stop();
-      if (usePlayer.getState().currentId === `mix:${key}`) return player.stop();
-      setSelection({ kind: "transition", from: t.from_id, to: t.to_id });
-      requestPlay(key);
-    },
-    [set],
-  );
-
-  useHotkey("Alt+ArrowUp", () => selection?.kind === "track" && m.moveBy(selection.id, -1), { enabled: selection?.kind === "track" });
-  useHotkey("Alt+ArrowDown", () => selection?.kind === "track" && m.moveBy(selection.id, 1), { enabled: selection?.kind === "track" });
-  useHotkey("Mod+z", () => m.undo(), { enabled: m.canUndo });
-  useHotkey("Space", () => {
-    if (selection?.kind !== "transition" || !selTransition?.ready) return false;
-    doAudition(`${selTransition.from_id}>${selTransition.to_id}`);
-  });
-  useHotkey("Enter", () => {
-    if (selection?.kind !== "transition") return false;
-    const k = `${selection.from}>${selection.to}`;
-    setExpanded((s) => {
-      const n = new Set(s);
-      if (n.has(k)) n.delete(k);
-      else n.add(k);
-      return n;
-    });
-  });
-  useHotkey("Escape", () => (roughKey ? audition.stop() : renderKey ? player.stop() : false), { enabled: !!auditionKey });
 
   const toggleOverview = () => {
     setShowOverview((v) => {
@@ -163,24 +70,6 @@ export function SetBuilderPage({ folder }: { folder: string }) {
   }
 
   const n = set.tracks.length;
-  const saveLabel =
-    m.save === "saving" ? (
-      <span className="inline-flex items-center gap-1 text-fg-subtle">
-        <Spinner size={11} /> Saving order…
-      </span>
-    ) : m.save === "saved" ? (
-      <span className="inline-flex items-center gap-1 text-ok">
-        <Check size={12} /> Order saved · TRCK, .m3u8, .xml updated
-      </span>
-    ) : m.save === "reverted" ? (
-      <span className="inline-flex items-center gap-1 text-warn">
-        <AlertTriangle size={12} /> Couldn't save · move undone
-      </span>
-    ) : m.save === "autoFailed" ? (
-      <span className="inline-flex items-center gap-1 text-warn">
-        <AlertTriangle size={12} /> Auto-order failed, order unchanged
-      </span>
-    ) : null;
 
   return (
     <Page>
@@ -197,7 +86,9 @@ export function SetBuilderPage({ folder }: { folder: string }) {
         }
         actions={
           <>
-            <span className="mr-1 text-xs">{saveLabel}</span>
+            <span className="mr-1 text-xs">
+              <SaveStatus save={m.save} />
+            </span>
             <Button variant="ghost" icon={Undo2} kbd="Mod+Z" disabled={!m.canUndo} onClick={m.undo}>
               Undo
             </Button>
@@ -225,52 +116,18 @@ export function SetBuilderPage({ folder }: { folder: string }) {
         <>
           {showOverview && stats && n > 1 && <SetOverview set={set} stats={stats} selection={selection} onSelect={select} />}
           <div className="flex min-h-0 flex-1">
-            <div className="flex w-[clamp(400px,40%,600px)] shrink-0 flex-col border-r border-line">
-              <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line px-3">
-                <span className="label-caps">Running order</span>
-                <span className="text-2xs text-fg-subtle num">{n > 1 ? `${set.transitions.length} transitions` : ""}</span>
-                <span className="flex-1" />
-                {m.loading && <Spinner size={11} className="text-fg-subtle" />}
-              </div>
-              <div className="@container min-h-0 flex-1 overflow-auto scroll-thin px-2 py-2">
-                <SetList
-                  set={set}
-                  selection={selection}
-                  onSelect={select}
-                  onReorder={(ids) => void m.reorder(ids)}
-                  expanded={expanded}
-                  onToggleExpanded={(k) =>
-                    setExpanded((s) => {
-                      const nx = new Set(s);
-                      if (nx.has(k)) nx.delete(k);
-                      else nx.add(k);
-                      return nx;
-                    })
-                  }
-                  worstKey={worstKey}
-                  auditionKey={auditionKey}
-                  onAudition={(t) => doAudition(`${t.from_id}>${t.to_id}`)}
-                />
-              </div>
-              <div className="flex h-7 shrink-0 items-center justify-end border-t border-line px-3 text-2xs text-fg-faint">
-                <Tooltip
-                  side="top"
-                  content={
-                    <span className="flex flex-col gap-1 py-0.5 text-left">
-                      <span><Kbd combo="ArrowUp" subtle /> <Kbd combo="ArrowDown" subtle /> select</span>
-                      <span><Kbd combo="Alt+ArrowUp" subtle /> <Kbd combo="Alt+ArrowDown" subtle /> move</span>
-                      <span>drag to re-order</span>
-                      <span><Kbd combo="Space" subtle /> play / audition</span>
-                      <span><Kbd combo="Enter" subtle /> notes</span>
-                    </span>
-                  }
-                >
-                  <span className="inline-flex items-center gap-1 hover:text-fg-muted">
-                    <Keyboard size={12} /> shortcuts
-                  </span>
-                </Tooltip>
-              </div>
-            </div>
+            <RunningOrder
+              set={set}
+              loading={m.loading}
+              selection={selection}
+              onSelect={select}
+              onReorder={(ids) => void m.reorder(ids)}
+              expanded={expanded}
+              onToggleExpanded={toggleExpanded}
+              worstKey={worstKey}
+              auditionKey={auditionKey}
+              onAudition={(t) => doAudition(`${t.from_id}>${t.to_id}`)}
+            />
             <div className={cn("min-w-0 flex-1 overflow-auto scroll-thin")}>
               {selection?.kind === "transition" && selTransition && tIndex >= 0 ? (
                 <MixDetail

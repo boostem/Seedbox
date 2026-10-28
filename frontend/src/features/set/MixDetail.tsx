@@ -3,17 +3,19 @@ import { useCallback, useMemo } from "react";
 import type { SetTrack } from "@/api/types";
 import { Button, CoverArt, IconButton, MoveChip, ScoreChip, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { fmtBpm, fmtPitch, pitchTone } from "@/lib/format";
-import { fmtPrecise, type MixClock, MixWaveform, mixGeometry } from "@/features/waveform";
+import { fmtBpm } from "@/lib/format";
+import { type MixClock, MixWaveform, mixGeometry } from "@/features/waveform";
 import { type AuditionPlan, audition, useAudition } from "./audition";
-import { PitchChip, Stat } from "./bits";
+import { PitchChip } from "./bits";
 import { type SetTransition, techniqueLong } from "./model";
+import { MixNotes } from "./MixNotes";
+import { MixStats } from "./MixStats";
 import { useTrackAnalysis } from "./useAnalysis";
 import { useSessionState } from "./useSessionState";
 import { MixEditor } from "./mix/MixEditor";
 import { useMixPlan } from "./mix/useMixPlan";
 import { usePlayRequests } from "./mix/pending";
-import { WavePlaceholder } from "./TrackDetail";
+import { mixPlaceholderView, WavePlaceholder } from "./WavePlaceholder";
 
 export interface MixDetailProps {
   folder: string;
@@ -78,15 +80,12 @@ export function MixDetail({ folder, t, a, b, index, count, onPrev, onNext, onSel
   const loading = useAudition((s) => s.key === key && s.status === "loading");
   const g = useMemo(() => (t.ready ? mixGeometry(t, anA, anB, a.track.bpm) : null), [t, anA, anB, a.track.bpm]);
   const mixClock = useMemo(() => clock(key), [key]);
-  const bpmB = b.track.bpm;
-  const pitched = bpmB * (1 + t.pitch_pct / 100);
   const mp = useMixPlan(folder, t.from_id, t.to_id, t.ready && !t.pending);
   const hasPlan = !!mp.plan;
   const [details, setDetails] = useSessionState("seedbox.mix.details", false);
   // "Audition" from a transition card on an engine without mix plans → the rough two-deck preview
   const legacyPlay = useCallback(() => plan && audition.toggle(plan), [plan]);
   usePlayRequests(key, mp.unavailable && !!plan, legacyPlay);
-  const barOf = (an: typeof anA, s: number | null) => (an && s != null && an.bar_s > 0 ? Math.round((s - an.first_downbeat_s) / an.bar_s) + 1 : null);
 
   return (
     <div className="flex flex-col gap-4 px-5 py-4">
@@ -143,26 +142,7 @@ export function MixDetail({ folder, t, a, b, index, count, onPrev, onNext, onSel
       )}
 
       {details && !hasPlan && t.ready && t.out_start_s != null && t.in_start_s != null ? (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-md border border-line bg-surface px-4 py-3 lg:grid-cols-5">
-          <Stat label="Bring B in at" sub={barOf(anA, t.out_start_s) ? `A bar ${barOf(anA, t.out_start_s)} · on the phrase` : "A's timeline"}>
-            <span className="num">{fmtPrecise(t.out_start_s)}</span>
-          </Stat>
-          <Stat label="Cue B at" sub={barOf(anB, t.in_start_s) ? `B bar ${barOf(anB, t.in_start_s)}` : "B's timeline"}>
-            <span className="num">{fmtPrecise(t.in_start_s)}</span>
-          </Stat>
-          <Stat label="Overlap" sub={g && g.overlapS > 0 ? `${g.overlapS.toFixed(1)} s at A's tempo` : "cut on the 1"}>
-            <span className="num">{t.overlap_bars ? `${t.overlap_bars} bars` : "Cut"}</span>
-          </Stat>
-          <Stat
-            label="A out by"
-            sub={t.technique === "echo out" ? (g?.swapBar != null ? `bass swapped at bar ${g.swapBar + 1} · echo A out` : "echo A out here") : g?.swapBar != null ? `swap bass at bar ${g.swapBar + 1}` : t.technique ?? undefined}
-          >
-            <span className="num">{g ? fmtPrecise(g.outEnd) : "—"}</span>
-          </Stat>
-          <Stat label="Pitch B" sub={`${fmtBpm(bpmB)} → ${fmtBpm(Math.round(pitched * 10) / 10)} BPM`}>
-            <span className={cn("num", pitchTone(t.pitch_pct))}>{fmtPitch(t.pitch_pct)}</span>
-          </Stat>
-        </div>
+        <MixStats t={t} out={t.out_start_s} cue={t.in_start_s} anA={anA} anB={anB} g={g} bpmB={b.track.bpm} />
       ) : null}
 
       {hasPlan ? null : t.ready && anA && anB ? (
@@ -191,57 +171,11 @@ export function MixDetail({ folder, t, a, b, index, count, onPrev, onNext, onSel
           <div className="flex h-6 items-center">
             <span className="label-caps">Mix view</span>
           </div>
-          {t.ready ? (
-            <WavePlaceholder view={va.status !== "ready" ? va : vb} height={240} />
-          ) : (
-            <WavePlaceholder
-              view={
-                va.status === "error" || vb.status === "error"
-                  ? { status: "error", message: "No mix points: an analysis failed for one of these tracks." }
-                  : va.status === "pending" && va.state === "running"
-                    ? va
-                    : vb.status === "pending" && vb.state === "running"
-                      ? vb
-                      : { status: "pending", state: "queued" }
-              }
-              height={240}
-            />
-          )}
+          <WavePlaceholder view={mixPlaceholderView(t.ready, va, vb)} height={240} />
         </div>
       )}
 
-      {details && (
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <section className="rounded-md border border-line bg-surface px-3 py-2.5">
-          <h3 className="label-caps mb-1.5 !text-fg-muted">{hasPlan ? "Transition analysis" : "How to mix it"}</h3>
-          <ol className="flex flex-col gap-1.5 text-sm select-text">
-            {t.notes.map((n, i) => (
-              <li key={i} className={cn("flex gap-2", i === 0 && t.ready ? "font-medium text-fg" : "text-fg-muted")}>
-                <span className="mt-[7px] size-1 shrink-0 rounded-full bg-fg-faint" />
-                {n}
-              </li>
-            ))}
-            {t.pending && <li className="text-fg-subtle">Scoring this pair…</li>}
-          </ol>
-        </section>
-        <section className="rounded-md border border-line bg-surface px-3 py-2.5">
-          <h3 className="label-caps mb-1.5 !text-fg-muted">Warnings</h3>
-          {t.warnings.length ? (
-            <ul className="flex flex-col gap-1.5 text-sm select-text">
-              {t.warnings.map((w, i) => (
-                <li key={i} className="flex gap-2 text-warn">
-                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                  {w}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-fg-subtle">{t.ready ? "None — this one should be clean." : "—"}</p>
-          )}
-          {g && g.clash.length > 0 && <p className="mt-2 text-xs text-fg-subtle">Red bars in the ruler = both decks carry vocals on that bar.</p>}
-        </section>
-      </div>
-      )}
+      {details && <MixNotes t={t} hasPlan={hasPlan} g={g} />}
     </div>
   );
 }

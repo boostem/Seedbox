@@ -8,33 +8,26 @@
  * across lanes, loops: drag to move, drag an edge to resize, double-click the loop row to add one. Without a mouse:
  * the "Keys & loops" list under the rows (KeyList).
  */
-import { ChevronDown, ChevronRight, Info, Minus, Plus, Scan } from "lucide-react";
-import { type KeyboardEvent as ReactKeyboardEvent, memo, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Info, Minus, Plus, Scan } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { create } from "zustand";
-import type { Curve, DeckLoop, DeckPlan, Keyframe, LaneId, MixPlan, TrackAnalysis } from "@/api/types";
+import type { Curve, LaneId, MixPlan, TrackAnalysis } from "@/api/types";
 import { IconButton, Tooltip } from "@/components/ui";
 import { setupCanvas, type View } from "@/features/waveform/draw";
 import { useTimeView, useWidth } from "@/features/waveform/hooks";
 import { alpha, wavePalette } from "@/features/waveform/palette";
-import { prepareWave } from "@/features/waveform/prepare";
 import { cn } from "@/lib/cn";
-import { useHotkey } from "@/lib/hotkeys";
 import { useSessionState } from "../useSessionState";
-import { barLabel, CURVES, type DeckId, getLane, laneRange, LANES, type LaneKey, laneUsed, laneValue, metaOf, setLane } from "./lanes";
-import { LANE_PAD, paintDeck, paintLane, paintLoops, paintMarkerLines, paintRuler, resolveColor, valueY, yValue } from "./paint";
-import { type KeyMenu, KeyList } from "./KeyList";
+import { ContextMenu } from "./ContextMenu";
+import { type Editor, GUTTER, H_LANE, H_LOOPS, H_RULER, H_TEMPO, H_WAVE, type Menu, type Sel, useCursor } from "./daw";
+import { KeyList } from "./KeyList";
+import { LaneCanvas, LaneLabel } from "./LaneRow";
+import { barLabel, type DeckId, getLane, laneRange, LANES, type LaneKey, laneUsed, setLane } from "./lanes";
+import { paintMarkerLines } from "./paint";
+import { DeckCanvas, LoopsCanvas, MoreRow, RulerCanvas } from "./rows";
+import { deleteKeyframes, pruneSelection } from "./selection";
+import { useDawHotkeys } from "./useDawHotkeys";
 import type { BeatClock } from "./useMixRender";
-
-// ---- shared cursor state (hover beat, playhead beat, drag tooltip) — labels + overlay subscribe, rows don't
-interface Cursor {
-  hover: number | null;
-  play: number | null;
-  tip: { x: number; y: number; text: string } | null;
-}
-const useCursor = create<Cursor>()(() => ({ hover: null, play: null, tip: null }));
-
-type Sel = Map<LaneKey, Set<number>>;
 
 export interface MixDawProps {
   plan: MixPlan;
@@ -53,369 +46,14 @@ export interface MixDawProps {
   hotkeys?: boolean;
 }
 
-const GUTTER = 132;
-const H_RULER = 30;
-const H_TEMPO = 44;
-const H_WAVE = 60;
-const H_LANE = 30;
-const H_LOOPS = 20;
 /** Per-session "show unused lanes" state: deck A, deck B, master tempo lane. */
 const SHOW_KEY = "seedbox.mix.showUnused";
 type ShowAll = Record<DeckId | "tempo", boolean>;
 const SHOW_DEFAULT: ShowAll = { a: false, b: false, tempo: false };
 
-/** Everything the rows need to edit, behind stable refs (rows stay memoised during drags). */
-interface Editor {
-  plan: () => MixPlan;
-  sel: () => Sel;
-  setSel: (s: Sel) => void;
-  update: (p: MixPlan, opts?: { transient?: boolean }) => void;
-  checkpoint: (p: MixPlan) => void;
-  view: () => View;
-  loopSel: () => { deck: DeckId; index: number } | null;
-  setLoopSel: (s: { deck: DeckId; index: number } | null) => void;
-  menu: (m: Menu | null) => void;
-  playFrom: (beat: number) => void;
-}
-
-type Menu = KeyMenu;
-
-const snapTo = (v: number, step: number) => Math.round(v / step) * step;
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-
-function hitKeyframe(kfs: Keyframe[], view: View, range: [number, number], h: number, x: number, y: number): number | null {
-  let best: number | null = null;
-  let bestD = 8;
-  kfs.forEach((k, i) => {
-    const d = Math.hypot((k.beat - view.start) * view.pxPerSec - x, valueY(k.value, range, h) - y);
-    if (d < bestD) [best, bestD] = [i, d];
-  });
-  return best;
-}
-
-/** Move the selected keyframes (from a drag-start snapshot) — re-sorts lanes and remaps the selection. */
-function moveSelection(snap: MixPlan, sel: Sel, dBeat: number, dNorm: number, grid: number, free: boolean): { plan: MixPlan; sel: Sel } {
-  let plan = snap;
-  const next: Sel = new Map();
-  const lo = snap.window.start_beat - 32;
-  const hi = snap.window.end_beat + 32;
-  for (const [key, idx] of sel) {
-    const kfs = getLane(snap, key);
-    const range = laneRange(key, snap);
-    const meta = metaOf(key);
-    const entries = kfs.map((k, i) => {
-      if (!idx.has(i)) return { k, s: false };
-      const beat = clamp(free ? k.beat + dBeat : snapTo(k.beat + dBeat, grid), lo, hi);
-      const raw = k.value + dNorm * (range[1] - range[0]);
-      const value = clamp(free ? raw : snapTo(raw, meta.step), range[0], range[1]);
-      return { k: { ...k, beat: Math.round(beat * 1000) / 1000, value: Math.round(value * 1000) / 1000 }, s: true };
-    });
-    entries.sort((a, b) => a.k.beat - b.k.beat);
-    plan = setLane(plan, key, entries.map((e) => e.k));
-    next.set(key, new Set(entries.flatMap((e, i) => (e.s ? [i] : []))));
-  }
-  return { plan, sel: next };
-}
-
-// ------------------------------------------------------------------------------------------------ rows
-
-function useRowCanvas(width: number, height: number, paint: (ctx: CanvasRenderingContext2D, dpr: number) => void, deps: unknown[]) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useLayoutEffect(() => {
-    const c = ref.current;
-    if (!c || !width) return;
-    const s = setupCanvas(c, width, height);
-    if (s) paint(s.ctx, s.dpr);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [width, height, ...deps]);
-  return ref;
-}
-
-const LaneLabel = memo(function LaneLabel({ k, kfs, height, deck, dim }: { k: LaneKey; kfs: Keyframe[]; height: number; deck?: DeckId; dim?: boolean }) {
-  const meta = metaOf(k);
-  const beat = useCursor((s) => s.hover ?? s.play);
-  const v = laneValue(kfs, beat ?? kfs[0]?.beat ?? 0);
-  return (
-    <div style={{ height }} className={cn("flex items-center gap-1.5 border-b border-line/60 pr-2 pl-3", dim && "opacity-55")}>
-      {deck && <span className="w-2 text-2xs font-bold text-fg-faint">{deck.toUpperCase()}</span>}
-      <span className="size-1.5 shrink-0 rounded-full" style={{ background: meta.color }} />
-      <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">{meta.label}</span>
-      <span className={cn("text-2xs num", beat != null ? "text-fg" : "text-fg-subtle")}>{meta.fmt(v)}</span>
-    </div>
-  );
-});
-
-interface LaneRowProps {
-  k: LaneKey;
-  kfs: Keyframe[];
-  range: [number, number];
-  view: View;
-  width: number;
-  height: number;
-  selected: Set<number> | undefined;
-  play?: [number, number];
-  ed: Editor;
-}
-
-const LaneCanvas = memo(function LaneCanvas({ k, kfs, range, view, width, height, selected, play, ed }: LaneRowProps) {
-  const meta = metaOf(k);
-  const [box, setBox] = useState<{ x0: number; x1: number; y0: number; y1: number } | null>(null);
-  const ref = useRowCanvas(width, height, (ctx) => paintLane(ctx, view, width, height, { kfs, range, color: meta.color, bipolar: meta.bipolar, neutral: k === "tempo" ? undefined : meta.neutral, selected, play, box }), [kfs, range, view, selected, play, box, meta]);
-  const drag = useRef<
-    | { kind: "move"; x: number; y: number; snap: MixPlan; sel: Sel; moved: boolean; toggle: number | null }
-    | { kind: "box"; x0: number; y0: number; base: Sel }
-    | null
-  >(null);
-
-  const local = (e: { clientX: number; clientY: number }) => {
-    const r = ref.current!.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
-  };
-  const tipFor = (key: LaneKey, kf: Keyframe, e: { clientX: number; clientY: number }) =>
-    useCursor.setState({ tip: { x: e.clientX, y: e.clientY, text: `${metaOf(key).fmt(kf.value)} · bar ${barLabel(kf.beat)}${kf.beat % 1 ? ` +${(kf.beat % 1).toFixed(2)}` : ""}` } });
-
-  const onDown = (e: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (e.button !== 0) return;
-    const { x, y } = local(e);
-    const plan = ed.plan();
-    const lane = getLane(plan, k);
-    const i = hitKeyframe(lane, view, range, height, x, y);
-    e.currentTarget.setPointerCapture(e.pointerId);
-    ed.setLoopSel(null);
-    let sel = ed.sel();
-    if (i != null) {
-      const isSel = !!sel.get(k)?.has(i);
-      if (e.shiftKey) {
-        if (!isSel) {
-          sel = new Map(sel);
-          sel.set(k, new Set([...(sel.get(k) ?? []), i]));
-        }
-      } else if (!isSel) sel = new Map([[k, new Set([i])]]);
-      ed.setSel(sel);
-      drag.current = { kind: "move", x: e.clientX, y: e.clientY, snap: plan, sel, moved: false, toggle: e.shiftKey && isSel ? i : null };
-      tipFor(k, lane[i], e);
-    } else {
-      const base = e.shiftKey ? sel : new Map<LaneKey, Set<number>>();
-      if (!e.shiftKey) ed.setSel(base);
-      drag.current = { kind: "box", x0: x, y0: y, base };
-    }
-  };
-
-  const onMove = (e: ReactPointerEvent<HTMLCanvasElement>) => {
-    const { x, y } = local(e);
-    useCursor.setState({ hover: view.start + x / view.pxPerSec });
-    const d = drag.current;
-    if (!d) return;
-    if (d.kind === "move") {
-      const dx = e.clientX - d.x;
-      const dy = e.clientY - d.y;
-      if (!d.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
-      d.moved = true;
-      const fine = e.shiftKey;
-      const f = fine ? 0.25 : 1;
-      const res = moveSelection(d.snap, d.sel, (dx / view.pxPerSec) * f, (-dy / Math.max(1, height - 2 * LANE_PAD)) * f, e.altKey ? 0.25 : 1, fine);
-      ed.update(res.plan, { transient: true });
-      ed.setSel(res.sel);
-      const idx = [...(res.sel.get(k) ?? [])][0];
-      const lane = getLane(res.plan, k);
-      if (idx != null && lane[idx]) tipFor(k, lane[idx], e);
-    } else {
-      const b = { x0: d.x0, y0: d.y0, x1: x, y1: y };
-      setBox(b);
-      const lane = getLane(ed.plan(), k);
-      const [bx0, bx1] = [Math.min(b.x0, b.x1), Math.max(b.x0, b.x1)];
-      const [by0, by1] = [Math.min(b.y0, b.y1), Math.max(b.y0, b.y1)];
-      const hits = new Set(d.base.get(k) ?? []);
-      lane.forEach((kf, i) => {
-        const kx = (kf.beat - view.start) * view.pxPerSec;
-        const ky = valueY(kf.value, range, height);
-        if (kx >= bx0 && kx <= bx1 && ky >= by0 && ky <= by1) hits.add(i);
-      });
-      const sel = new Map(d.base);
-      if (hits.size) sel.set(k, hits);
-      else sel.delete(k);
-      ed.setSel(sel);
-    }
-  };
-
-  const onUp = () => {
-    const d = drag.current;
-    drag.current = null;
-    useCursor.setState({ tip: null });
-    if (!d) return;
-    if (d.kind === "move") {
-      if (d.moved) ed.checkpoint(d.snap);
-      else if (d.toggle != null) {
-        const sel = new Map(ed.sel());
-        const s = new Set(sel.get(k) ?? []);
-        s.delete(d.toggle);
-        if (s.size) sel.set(k, s);
-        else sel.delete(k);
-        ed.setSel(sel);
-      }
-    } else setBox(null);
-  };
-
-  const onDouble = (e: ReactMouseEvent<HTMLCanvasElement>) => {
-    const { x, y } = local(e);
-    const plan = ed.plan();
-    const lane = getLane(plan, k);
-    if (hitKeyframe(lane, view, range, height, x, y) != null) return;
-    const grid = e.altKey ? 0.25 : 1;
-    const beat = e.shiftKey ? view.start + x / view.pxPerSec : snapTo(view.start + x / view.pxPerSec, grid);
-    const value = clamp(e.shiftKey ? yValue(y, range, height) : snapTo(yValue(y, range, height), meta.step), range[0], range[1]);
-    const prev = [...lane].reverse().find((kf) => kf.beat <= beat);
-    const kf: Keyframe = { beat: Math.round(beat * 1000) / 1000, value: Math.round(value * 1000) / 1000, curve: prev?.curve ?? "linear" };
-    const next = [...lane, kf].sort((a, b) => a.beat - b.beat);
-    ed.update(setLane(plan, k, next));
-    ed.setSel(new Map([[k, new Set([next.indexOf(kf)])]]));
-  };
-
-  const onContext = (e: ReactMouseEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const { x, y } = local(e);
-    const i = hitKeyframe(getLane(ed.plan(), k), view, range, height, x, y);
-    if (i == null) return;
-    if (!ed.sel().get(k)?.has(i)) ed.setSel(new Map([[k, new Set([i])]]));
-    ed.menu({ x: e.clientX, y: e.clientY, kind: "kf", key: k, index: i });
-  };
-
-  return (
-    <canvas
-      ref={ref}
-      style={{ height }}
-      className="block w-full cursor-crosshair touch-none"
-      onPointerDown={onDown}
-      onPointerMove={onMove}
-      onPointerUp={onUp}
-      onPointerCancel={onUp}
-      onPointerLeave={() => !drag.current && useCursor.setState({ hover: null })}
-      onDoubleClick={onDouble}
-      onContextMenu={onContext}
-    />
-  );
-});
-
-const DeckCanvas = memo(function DeckCanvas({ deck, an, view, width, tint }: { deck: DeckPlan; an: TrackAnalysis | null; view: View; width: number; tint: string }) {
-  const wave = useMemo(() => (an ? prepareWave(an) : null), [an]);
-  const ref = useRowCanvas(width, H_WAVE, (ctx, dpr) => paintDeck(ctx, dpr, view, width, H_WAVE, deck, wave, resolveColor(tint)), [deck, wave, view, tint]);
-  return <canvas ref={ref} style={{ height: H_WAVE }} className="block w-full" onPointerMove={(e) => useCursor.setState({ hover: view.start + (e.clientX - e.currentTarget.getBoundingClientRect().left) / view.pxPerSec })} onPointerLeave={() => useCursor.setState({ hover: null })} />;
-});
-
-const LoopsCanvas = memo(function LoopsCanvas({ d, deck, view, width, selected, ed }: { d: DeckId; deck: DeckPlan; view: View; width: number; selected: number | null; ed: Editor }) {
-  const ref = useRowCanvas(width, H_LOOPS, (ctx) => paintLoops(ctx, view, width, H_LOOPS, deck, selected), [deck, view, selected]);
-  const drag = useRef<{ mode: "move" | "start" | "end"; index: number; x: number; snap: MixPlan; orig: DeckLoop; moved: boolean } | null>(null);
-  const hit = (x: number): { index: number; mode: "move" | "start" | "end" } | null => {
-    for (let i = deck.loops.length - 1; i >= 0; i--) {
-      const l = deck.loops[i];
-      const x0 = (l.start_beat - view.start) * view.pxPerSec;
-      const x1 = (l.end_beat - view.start) * view.pxPerSec;
-      if (x >= x0 - 4 && x <= x1 + 4) return { index: i, mode: Math.abs(x - x0) <= 5 ? "start" : Math.abs(x - x1) <= 5 ? "end" : "move" };
-    }
-    return null;
-  };
-  const lx = (e: { clientX: number }) => e.clientX - ref.current!.getBoundingClientRect().left;
-  const setLoops = (plan: MixPlan, loops: DeckLoop[]): MixPlan => ({ ...plan, [d]: { ...plan[d], loops } });
-  return (
-    <canvas
-      ref={ref}
-      style={{ height: H_LOOPS }}
-      className="block w-full touch-none"
-      onPointerDown={(e) => {
-        if (e.button !== 0) return;
-        const h = hit(lx(e));
-        ed.setSel(new Map());
-        if (!h) return ed.setLoopSel(null);
-        e.currentTarget.setPointerCapture(e.pointerId);
-        ed.setLoopSel({ deck: d, index: h.index });
-        drag.current = { mode: h.mode, index: h.index, x: e.clientX, snap: ed.plan(), orig: deck.loops[h.index], moved: false };
-      }}
-      onPointerMove={(e) => {
-        const x = lx(e);
-        useCursor.setState({ hover: view.start + x / view.pxPerSec });
-        const h = hit(x);
-        e.currentTarget.style.cursor = drag.current ? (drag.current.mode === "move" ? "grabbing" : "ew-resize") : h ? (h.mode === "move" ? "grab" : "ew-resize") : "default";
-        const dr = drag.current;
-        if (!dr) return;
-        const raw = (e.clientX - dr.x) / view.pxPerSec;
-        if (!dr.moved && Math.abs(e.clientX - dr.x) < 3) return;
-        dr.moved = true;
-        const grid = e.altKey ? 0.25 : 1;
-        const o = dr.orig;
-        let l: DeckLoop;
-        if (dr.mode === "move") {
-          const db = snapTo(o.start_beat + raw, grid) - o.start_beat;
-          l = { ...o, start_beat: o.start_beat + db, end_beat: o.end_beat + db, source_beat: o.source_beat + db };
-        } else if (dr.mode === "end") l = { ...o, end_beat: Math.max(o.start_beat + 0.25, snapTo(o.end_beat + raw, grid)) };
-        else l = { ...o, start_beat: Math.min(o.end_beat - 0.25, snapTo(o.start_beat + raw, grid)) };
-        const loops = dr.snap[d].loops.map((x, i) => (i === dr.index ? l : x));
-        ed.update(setLoops(dr.snap, loops), { transient: true });
-        useCursor.setState({ tip: { x: e.clientX, y: e.clientY, text: `loop ${barLabel(l.start_beat)} → ${barLabel(l.end_beat)} · ${l.length_beats} beat${l.length_beats === 1 ? "" : "s"}` } });
-      }}
-      onPointerUp={() => {
-        const dr = drag.current;
-        drag.current = null;
-        useCursor.setState({ tip: null });
-        if (dr?.moved) ed.checkpoint(dr.snap);
-      }}
-      onPointerLeave={() => !drag.current && useCursor.setState({ hover: null })}
-      onDoubleClick={(e) => {
-        if (hit(lx(e))) return;
-        const start = snapTo(view.start + lx(e) / view.pxPerSec, e.altKey ? 0.25 : 1);
-        const plan = ed.plan();
-        const l: DeckLoop = { start_beat: start, end_beat: start + 4, source_beat: start, length_beats: 4 };
-        const loops = [...plan[d].loops, l].sort((a, b) => a.start_beat - b.start_beat);
-        ed.update(setLoops(plan, loops));
-        ed.setLoopSel({ deck: d, index: loops.indexOf(l) });
-      }}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        const h = hit(lx(e));
-        if (!h) return;
-        ed.setLoopSel({ deck: d, index: h.index });
-        ed.menu({ x: e.clientX, y: e.clientY, kind: "loop", deck: d, index: h.index });
-      }}
-    />
-  );
-});
-
-const RulerCanvas = memo(function RulerCanvas({ plan, view, width, ed }: { plan: MixPlan; view: View; width: number; ed: Editor }) {
-  const ref = useRowCanvas(width, H_RULER, (ctx) => paintRuler(ctx, view, width, H_RULER, plan), [plan.window, plan.markers, plan.a.play_to_beat, view]);
-  return (
-    <canvas
-      ref={ref}
-      style={{ height: H_RULER }}
-      className="block w-full cursor-pointer"
-      title="Click to play from here"
-      onPointerMove={(e) => useCursor.setState({ hover: view.start + (e.clientX - e.currentTarget.getBoundingClientRect().left) / view.pxPerSec })}
-      onPointerLeave={() => useCursor.setState({ hover: null })}
-      onClick={(e) => ed.playFrom(snapTo(view.start + (e.clientX - e.currentTarget.getBoundingClientRect().left) / view.pxPerSec, 1))}
-    />
-  );
-});
-
-/** The single subtle "+ N more lanes" row (expands / collapses the unused lanes). */
-function MoreRow({ open, onClick, label, title }: { open: boolean; onClick: () => void; label: string; title?: string }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      aria-expanded={open}
-      style={{ gridColumn: "1 / span 2", height: 20 }}
-      className="flex items-center gap-1 pl-3 text-left text-2xs text-fg-faint transition-colors hover:bg-raised/50 hover:text-fg-muted"
-    >
-      {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-      {label}
-    </button>
-  );
-}
-
-// ------------------------------------------------------------------------------------------------ DAW
+const DECK_TINT: Record<DeckId, string> = { a: "var(--color-fg-muted)", b: "var(--color-accent)" };
 
 const SHORTCUTS = "drag keys · dbl-click add · ⌫ delete · right-click curve · ⌥ ¼-beat · ⇧ fine · ⌘-scroll zoom · keyboard: the key list below";
-
-const DECK_TINT: Record<DeckId, string> = { a: "var(--color-fg-muted)", b: "var(--color-accent)" };
 
 export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo, anA, anB, nameA, nameB, clock, onPlayFrom, hotkeys = true }: MixDawProps) {
   const boxRef = useRef<HTMLDivElement>(null);
@@ -459,17 +97,7 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
 
   // a different plan shape (regenerated) → drop selections that no longer exist
   useEffect(() => {
-    setSel((s) => {
-      let changed = false;
-      const next: Sel = new Map();
-      for (const [k, idx] of s) {
-        const n = getLane(plan, k).length;
-        const keep = new Set([...idx].filter((i) => i < n));
-        if (keep.size !== idx.size) changed = true;
-        if (keep.size) next.set(k, keep);
-      }
-      return changed ? next : s;
-    });
+    setSel((s) => pruneSelection(s, plan));
   }, [plan]);
 
   const toggleShow = (k: keyof ShowAll) => setShowAll((v) => ({ ...SHOW_DEFAULT, ...v, [k]: !v[k] }));
@@ -484,14 +112,7 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
     }
     const s = refs.current.sel;
     if (!s.size) return false;
-    let next = p;
-    for (const [k, idx] of s) {
-      const lane = getLane(p, k);
-      let kept = lane.filter((_, i) => !idx.has(i));
-      if (!kept.length) kept = [lane[0]];
-      next = setLane(next, k, kept);
-    }
-    update(next);
+    update(deleteKeyframes(p, s));
     ed.setSel(new Map());
     return true;
   }, [update, ed]);
@@ -511,18 +132,25 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
     setMenu(null);
   };
 
-  useHotkey(["Delete", "Backspace"], () => deleteSelection(), { enabled: hotkeys });
-  useHotkey("Escape", () => {
+  const fit = () => tv.set({ start: plan.window.start_beat - 2, span: plan.window.end_beat - plan.window.start_beat + 4 });
+  const clear = () => {
     if (!menu && !refs.current.sel.size && !refs.current.loopSel) return false;
     setMenu(null);
     ed.setSel(new Map());
     ed.setLoopSel(null);
-  }, { enabled: hotkeys });
-  useHotkey("Mod+z", () => (canUndo ? undo() : false), { enabled: hotkeys });
-  useHotkey("Mod+Shift+z", () => (canRedo ? redo() : false), { enabled: hotkeys });
-  useHotkey(["=", "Shift+Equal"], () => tv.zoom(1.5), { enabled: hotkeys });
-  useHotkey("-", () => tv.zoom(1 / 1.5), { enabled: hotkeys });
-  useHotkey("0", () => tv.set({ start: plan.window.start_beat - 2, span: plan.window.end_beat - plan.window.start_beat + 4 }), { enabled: hotkeys });
+    return true;
+  };
+  useDawHotkeys({
+    enabled: hotkeys,
+    deleteSelection,
+    clear,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    zoom: tv.zoom,
+    fit,
+  });
 
   // wheel: ⌘/pinch zoom, horizontal scroll
   useEffect(() => {
@@ -682,7 +310,7 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
         <span className="shrink-0 text-2xs whitespace-nowrap text-fg-subtle num">{Math.round(tv.view.span / 4)} bars visible</span>
         <IconButton icon={Minus} label="Zoom out (−)" size="sm" onClick={() => tv.zoom(1 / 1.5)} />
         <IconButton icon={Plus} label="Zoom in (=)" size="sm" onClick={() => tv.zoom(1.5)} />
-        <IconButton icon={Scan} label="Fit the render window (0)" size="sm" onClick={() => tv.set({ start: plan.window.start_beat - 2, span: plan.window.end_beat - plan.window.start_beat + 4 })} />
+        <IconButton icon={Scan} label="Fit the render window (0)" size="sm" onClick={fit} />
       </div>
       <div className="relative overflow-hidden rounded-sm border border-line bg-bg">
         <div ref={rowsRef} className="grid" style={{ gridTemplateColumns: `${GUTTER}px minmax(0, 1fr)` }}>
@@ -725,83 +353,5 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
         )}
       {menu && <ContextMenu menu={menu} plan={plan} onClose={() => setMenu(null)} onCurve={setCurve} onLength={setLoopLength} onDelete={() => (deleteSelection(), setMenu(null))} />}
     </div>
-  );
-}
-
-function ContextMenu({ menu, plan, onClose, onCurve, onLength, onDelete }: { menu: Menu; plan: MixPlan; onClose: () => void; onCurve: (c: Curve) => void; onLength: (n: number) => void; onDelete: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  // keyboard: focus the checked (or first) item, give focus back to the opener when the menu goes away
-  useLayoutEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const items = [...(ref.current?.querySelectorAll<HTMLElement>("[role^=menuitem]") ?? [])];
-    (items.find((el) => el.getAttribute("aria-checked") === "true") ?? items[0])?.focus();
-    return () => {
-      if (opener?.isConnected && (!document.activeElement || document.activeElement === document.body || ref.current?.contains(document.activeElement))) opener.focus();
-    };
-  }, []);
-  useEffect(() => {
-    const close = () => onClose();
-    window.addEventListener("pointerdown", close);
-    window.addEventListener("blur", close);
-    return () => {
-      window.removeEventListener("pointerdown", close);
-      window.removeEventListener("blur", close);
-    };
-  }, [onClose]);
-  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    const items = [...e.currentTarget.querySelectorAll<HTMLElement>("[role^=menuitem]")];
-    const at = items.indexOf(document.activeElement as HTMLElement);
-    const go = (i: number) => items[(i + items.length) % items.length]?.focus();
-    if (e.key === "ArrowDown") go(at + 1);
-    else if (e.key === "ArrowUp") go(at < 0 ? -1 : at - 1);
-    else if (e.key === "Home") go(0);
-    else if (e.key === "End") go(-1);
-    else if (e.key === "Escape" || e.key === "Tab") onClose();
-    else {
-      // Enter/Space click the focused item; keep them (and everything else) from the page shortcuts (Space = play)
-      e.stopPropagation();
-      return;
-    }
-    e.preventDefault();
-    e.stopPropagation();
-  };
-  const current = menu.kind === "kf" ? getLane(plan, menu.key)[menu.index]?.curve : null;
-  const loopLen = menu.kind === "loop" ? plan[menu.deck].loops[menu.index]?.length_beats : null;
-  const item = "flex h-7 w-full items-center gap-2 rounded-xs px-2 text-left text-sm hover:bg-raised focus-visible:bg-raised";
-  const label = menu.kind === "kf" ? "Curve to next key" : "Loop length";
-  return createPortal(
-    <div
-      ref={ref}
-      role="menu"
-      aria-label={label}
-      className="fixed z-[1000] w-44 rounded-sm bg-overlay p-1 shadow-pop"
-      style={{ left: Math.min(menu.x, window.innerWidth - 190), top: Math.min(menu.y, window.innerHeight - 220) }}
-      onPointerDown={(e) => e.stopPropagation()}
-      onKeyDown={onKeyDown}
-    >
-      <div className="px-2 pt-1 pb-0.5 label-caps" aria-hidden>
-        {label}
-      </div>
-      {menu.kind === "kf"
-        ? CURVES.map((c) => (
-            <button key={c} type="button" role="menuitemradio" aria-checked={current === c} tabIndex={-1} className={item} onClick={() => onCurve(c)}>
-              <span className="w-3 text-accent-hover">{current === c ? "✓" : ""}</span>
-              <span className="capitalize">{c}</span>
-              <span className="ml-auto text-2xs text-fg-subtle">{c === "hold" ? "step" : c === "ease" ? "S-curve" : "ramp"}</span>
-            </button>
-          ))
-        : [1, 2, 4, 8, 16].map((n) => (
-            <button key={n} type="button" role="menuitemradio" aria-checked={loopLen === n} tabIndex={-1} className={item} onClick={() => onLength(n)}>
-              <span className="w-3 text-accent-hover">{loopLen === n ? "✓" : ""}</span>
-              {n} beat{n === 1 ? "" : "s"}
-            </button>
-          ))}
-      <div role="separator" className="my-1 h-px bg-line" />
-      <button type="button" role="menuitem" tabIndex={-1} className={cn(item, "text-danger")} onClick={onDelete}>
-        <span className="w-3" />
-        Delete <span className="ml-auto text-2xs text-fg-subtle">⌫</span>
-      </button>
-    </div>,
-    document.body,
   );
 }
