@@ -15,9 +15,10 @@ import { player, usePlayer } from "@/audio/player";
 
 const OVERVIEW_KEY = "seedbox.set.overview";
 
+// shown unless the user has hidden it
 function loadPref(): boolean {
   try {
-    return localStorage.getItem(OVERVIEW_KEY) === "1";
+    return localStorage.getItem(OVERVIEW_KEY) !== "0";
   } catch {
     return true;
   }
