@@ -498,10 +498,13 @@ def _pilot_map(speed: np.ndarray, sr: int, nominal: np.ndarray) -> tuple[np.ndar
     return clicks.astype(float), expect + resid
 
 
-def _to_master(src: np.ndarray, speed: np.ndarray, jq: np.ndarray, sr: int, key_lock: bool) -> tuple[np.ndarray, str]:
-    """Deck audio at master samples whose source positions are `jq` (fractional source indices)."""
+def _to_master(src: np.ndarray, speed: np.ndarray, jq: np.ndarray, sr: int, key_lock: bool,
+               anchor: int = 0) -> tuple[np.ndarray, str]:
+    """Deck audio at master samples whose source positions are `jq` (fractional source indices). A deck at its own
+    tempo is copied unstretched, lined up on master sample `anchor` (where it starts sounding)."""
     if np.max(np.abs(speed - 1.0)) < 1e-9:
-        start = int(round(float(jq[0])))
+        anchor = min(max(anchor, 0), jq.size - 1)
+        start = int(round(float(jq[anchor]))) - anchor
         out = np.zeros((2, jq.size), np.float32)
         a, b = max(0, -start), min(jq.size, src.shape[1] - start)
         if a < b:
@@ -705,8 +708,11 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
         warn.append("plays outside its audio file (silence there)")
     j = np.arange(src.shape[1])
     beats = s0 + j / (sr * spb)
-    speed = clock.bpm(beats) / deck["native_bpm"]
-    audible = np.abs(speed[(beats >= p0) & (beats <= p1)] - 1)  # the padding beats around the play range don't count
+    # the padding beats around the play range are silent: stretch them as the edges are, so a deck that plays at its
+    # own tempo up to (or from) a tempo jump on a cut isn't time-stretched at all
+    edge = min(1.0 / 64, (p1 - p0) / 4)
+    speed = clock.bpm(np.clip(beats, p0 + edge, p1 - edge)) / deck["native_bpm"]
+    audible = np.abs(speed - 1)
     if audible.size and audible.max() > 0.08:
         warn.append(f"tempo changed by up to {100 * audible.max():.0f}% (may sound stretched)")
     speed = np.clip(speed, 0.5, 2.0)
@@ -719,7 +725,7 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
     q = np.arange(qa, qb)
     beats_q = clock.beat(q / sr)
     jq = (beats_q - s0) * sr * spb
-    x, note = _to_master(src, speed.astype(np.float64), jq, sr, key_lock)
+    x, note = _to_master(src, speed.astype(np.float64), jq, sr, key_lock, int(round(t0)) - qa)
     if note:
         warn.append(note)
     # gate: the deck sounds on [p0, p1]
@@ -801,7 +807,8 @@ def _render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
             ein[:, : qb - e0] = send[:, first:]
             fb = np.full(m_total - e0, st["echo_fb"][-1], np.float32)
             fb[: qb - e0] = st["echo_fb"][first:]
-            beats = clock.beat(np.arange(e0, m_total) / sr)
+            # repeats keep the deck's tempo once it stops: a tempo jump on the cut would make the delay line jump
+            beats = np.minimum(clock.beat(np.arange(e0, m_total) / sr), d["play_to_beat"] - 1.0 / 64)
             delay = d["echo_beats"] * 60.0 / clock.bpm(beats) * sr
             stem[:, e0:] += ECHO_RETURN * _echo(ein, delay, fb, sr)
         if "reverb_send" in st:

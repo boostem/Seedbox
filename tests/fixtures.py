@@ -121,6 +121,8 @@ CLASH_KEY = Spec("clash_key", camelot="3B")
 # a 4-bar fill at bar 56: the breakdown, drop and 16-bar outro after it start 4 bars off the track's 8-bar grid
 INSERT = Spec("insert", bars=132, insert=56, drops=[68])
 OUTRO_24 = Spec("outro_24", outro_bars=24)  # a 16 + 8-bar outro: blends start on its 16-bar phrase
+SHORT_INTRO_DROP = Spec("short_intro_drop", intro_bars=8, drops=[16])  # 8-bar intro, 8-bar build, drop at bar 16
+BUILD_END = Spec("build_end", outro_bars=8, outro_drums=False, drops=[112])  # last build ends 16 bars from the end
 
 # (name, A, B): every pair has an expected planner outcome in test_planner.py and a line in the snapshot
 PAIRS = [
@@ -138,6 +140,10 @@ PAIRS = [
     ("short outro -> clash key", SHORT_OUTRO, CLASH_KEY),
     ("insert -> standard", INSERT, STANDARD),
     ("outro 24 -> standard", OUTRO_24, STANDARD),
+    ("standard -> short intro drop", STANDARD, SHORT_INTRO_DROP),
+    ("build end -> short intro drop", BUILD_END, SHORT_INTRO_DROP),
+    ("build end -> fast", BUILD_END, FAST),
+    ("build end -> standard", BUILD_END, STANDARD),
 ]
 
 
