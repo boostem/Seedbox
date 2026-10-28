@@ -69,25 +69,28 @@ plan: long blend, 16 bars, swap bar 9
 
 ## cold end -> standard
 suggest: echo out, 16 bars, swap 9, A out 216.774 s, B in 0.0 s, score 100
-plan: echo out, 16 bars, swap bar 9
+plan: loop roll, 16 bars, swap bar 17
   cue: A bar 112 (216.77 s) / B bar 0 (0.00 s)
   tempo: 124 BPM, window -32..96 beats
-  markers: B_in@0 bass_swap@32 echo_throw@62 A_out@64
-  A volume: 1@-32h 1@60h 0@64h
-  A eq_low: 0@-32h 0@0h 0@32l -30@33h
-  A eq_mid: 0@-32h 0@32e -6@64h
-  A eq_high: 0@-32h 0@32e -6@64h
-  A filter: 0@-32h 0@32e 0.35@64h
-  A echo_send: 0@-32h 0@62l 0.9@64h 0.9@65l 0@66h
+  markers: B_in@0 loop_roll@48 echo_throw@62 bass_swap@64 A_out@64
+  A volume: 1@-32h 1@48h 0@64h
+  A eq_low: 0@-32h 0@48h -30@56h
+  A filter: 0@-32h 0@48e 0.6@64h
+  A echo_send: 0@-32h 0@56l 0.5@63l 0.9@64h 0.9@65l 0@66h
   A echo_feedback: 0.7@-32h
   A reverb_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  A loop: beats 48..56 repeat 8 from 48
+  A loop: beats 56..60 repeat 4 from 48
+  A loop: beats 60..62 repeat 2 from 48
+  A loop: beats 62..63 repeat 1 from 48
+  A loop: beats 63..66 repeat 0.5 from 48
   B volume: 0@-32h 0@0e 1@16h
-  B eq_low: -30@-32h -30@0h -30@32l 0@33h
-  B eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  B eq_low: -30@-32h -30@0h 0@64h
+  B eq_mid: -15@-32h -15@0e 0@32h
   B eq_high: -12@-32h -12@0e 0@32h
   B filter: 0.3@-32h 0.3@0e 0@32h
-  note: A stops cold (full power to the end); B's 16-bar intro is drums-only → 16-bar blend from A 3:37 (bar 113), swap the bass on the 1 of bar 9 (A 3:52), then echo A out on its last beat and cut it on the 1 at 4:08.
-  note: A keeps its fader up under a slowly rising high-pass; a dotted-8th echo (feedback 0.7) catches its last 2 beats and rings over B for a few bars after the cut.
+  note: A stops cold (full power to the end); B's 16-bar intro is drums-only → 16-bar loop roll: B in at A 3:37 (bar 113) from B 0:00; then A rolls 2 bars → 1 bar → 2 beats → 1 → ½ under a rising high-pass and is cut on the 1 as B's bass drops in.
+  note: B stays bass-free until the roll ends; during the roll a high-pass rises on A, its lows go for the second half while a dotted-8th echo opens up, and the echo catches its last half beat.
   note: Same tempo (124.0 BPM), no pitch moves.
 
 ## vocal outro -> standard

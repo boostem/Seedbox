@@ -6,7 +6,7 @@
       next meeting tempo), a tracklist (.txt + .cue with timestamps) and progress in the UI. Builds on
       `musicreco/mixplan.py` + `musicreco/mixrender.py`.
 
-- [ ] **Use loops much more in transitions** (requested 2026-10-03): loop A's outro phrases to stretch short
+- [x] **Use loops much more in transitions** (requested 2026-10-03): loop A's outro phrases to stretch short
       outros into long blends, loop rolls (8→4→2→1 beats) as builds before cuts, loop B's intro to hold a groove
       under A — the planner rarely uses DeckLoop today.
 - [ ] **Blend multiple crates into a long setlist** (requested 2026-10-03): suggest crate-to-crate links (e.g. "the

@@ -35,6 +35,7 @@ CASES = {
     "big gap slam": (A_BUILD, B_FAST, None),
     "a loop blend": (A_OUTRO_8, B_SAME, None),
     "b loop blend": (A_MUSIC_OUTRO, B_INTRO_8, None),
+    "loop roll": (A, B_SAME, "loop roll"),
 }
 
 
@@ -140,6 +141,7 @@ SEND_CASES = {
     "blend, sends post-fader": (A_PAD, B_PAD, None, {"echo_tap": "post_fader", "reverb_tap": "post_fader"}),
     "echo out": (A_PAD, B_PAD_FAST, None, {}),
     "reverb wash": (A_PAD, B_PAD, "reverb wash", {}),
+    "loop roll": (A_PAD, B_PAD, "loop roll", {}),
 }
 # minimum level of a return over the 4 beats after A's exit, dB against A's untouched dry signal (before this
 # change a blend had echo -24 dB, reverb -23.5 dB; now about -7 and -5)
@@ -182,7 +184,7 @@ def _exit(plan: dict) -> float:
     return max(m["beat"] for m in plan["markers"] if m["label"] in ("A out", "cut"))
 
 
-@pytest.mark.parametrize("name", ["blend", "echo out", "reverb wash"])
+@pytest.mark.parametrize("name", ["blend", "echo out", "reverb wash", "loop roll"])
 def test_returns_are_audible_after_the_throw(send_renders: dict, name: str) -> None:
     plan, r = send_renders[name]
     E = _exit(plan)
@@ -235,3 +237,20 @@ def test_loops_play_on_the_beat(renders: dict) -> None:
     assert plan["b"]["loops"][0]["end_beat"] == 32.0 and plan["b"]["play_from_beat"] == 0.0
     assert float(mixplan.deck_time(plan["b"], 0.0)) == pytest.approx(B_INTRO_8.first_downbeat_s, abs=1e-3)
     assert float(mixplan.deck_time(plan["b"], 32.0)) == pytest.approx(B_INTRO_8.first_downbeat_s, abs=1e-3)
+
+
+def test_loop_roll_repeats_a_downbeat_down_to_half_beats(renders: dict) -> None:
+    """A 16-bar blend ending in a 4-bar roll: A's roll source (a downbeat) clicks again on the last half beat, where
+    A's own music has no click, and not between the beats of the 1-beat step before it."""
+    plan, r = renders["loop roll"]
+    E = 4.0 * plan["bars"]
+    assert plan["bars"] == 16 and [lp["length_beats"] for lp in plan["a"]["loops"]] == [8.0, 4.0, 2.0, 1.0, 0.5]
+    t = np.asarray(r["beat_times_s"])
+    first = np.ceil(r["start_beat"])
+
+    def at(beat: float) -> float:
+        i = int(beat - first)
+        return float(t[i] + (beat - first - i) * (t[i + 1] - t[i]))
+
+    assert click_offset(r["stems"]["A"], SR, at(E - 0.5), search_s=0.02) < 0.003  # the ½-beat roll
+    assert click_offset(r["stems"]["A"], SR, at(E - 1.5), search_s=0.02) > 0.01  # the 1-beat step: nothing there
