@@ -1,7 +1,9 @@
 """mixrender._render_audio on short click tracks with known grids: beats land on the master clock on both decks, the
-mix doesn't clip, the stems are there."""
+mix doesn't clip, the stems are there, and the echo / reverb returns are clearly audible where A is thrown out."""
 
 from __future__ import annotations
+
+import dataclasses
 
 import numpy as np
 import pytest
@@ -10,7 +12,7 @@ from scipy.io import wavfile
 from musicreco import mixplan, mixrender
 from musicreco.paths import ffmpeg_path
 
-from .fixtures import Spec, analysis, click_offset, click_track, track
+from .fixtures import Spec, analysis, click_offset, click_track, pad_track, track
 
 pytestmark = pytest.mark.skipif(ffmpeg_path() is None, reason="needs ffmpeg")
 
@@ -83,7 +85,9 @@ def test_stems_present(renders: dict, name: str) -> None:
     for stem in r["stems"].values():
         assert stem.shape == r["mix"].shape and np.abs(stem).max() > 1e-3
     if any(k["value"] > 0 for k in plan["a"]["lanes"]["reverb_send"]):
-        assert "reverb" in r["stems"]
+        assert "A reverb" in r["stems"]
+    if any(k["value"] > 0 for k in plan["a"]["lanes"]["echo_send"]):
+        assert "A echo" in r["stems"]
     assert r["duration_s"] == pytest.approx(r["mix"].shape[1] / SR)
     # B is silent until it starts: on master beat 0, or a bar before for a slam's pre-roll
     i0 = int(r["beat_times_s"][int(min(0.0, plan["b"]["play_from_beat"]) - np.ceil(r["start_beat"]))] * SR)
@@ -119,3 +123,89 @@ def test_big_gap_slam_jumps_tempo_without_stretching(renders: dict, monkeypatch:
     cut = int(-np.ceil(r["start_beat"]))
     assert gaps[cut - 1] == pytest.approx(60.0 / A_BUILD.bpm, rel=1e-3)
     assert gaps[cut] == pytest.approx(60.0 / B_FAST.bpm, rel=1e-3)
+
+
+# A with a sung phrase ending 8 bars into the blend, and both decks carrying a sustained chord for the sends to catch.
+# Their files run 4 bars past the analysed last bar, so A has audio to feed its sends past the exit.
+A_PAD = Spec("pad_a", bpm=124.0, bars=48, intro_bars=8, outro_bars=16, vocals=[(20, 40)])
+B_PAD = Spec("pad_b", bpm=124.0, bars=40, intro_bars=16, outro_bars=8)
+B_PAD_FAST = Spec("pad_b_fast", bpm=140.0, bars=40, intro_bars=16, outro_bars=8)
+SEND_CASES = {
+    "blend": (A_PAD, B_PAD, None, {}),
+    "blend, sends post-fader": (A_PAD, B_PAD, None, {"echo_tap": "post_fader", "reverb_tap": "post_fader"}),
+    "echo out": (A_PAD, B_PAD_FAST, None, {}),
+    "reverb wash": (A_PAD, B_PAD, "reverb wash", {}),
+}
+# minimum level of a return over the 4 beats after A's exit, dB against A's untouched dry signal (before this
+# change a blend had echo -24 dB, reverb -23.5 dB; now about -7 and -5)
+ECHO_MIN_DB, REVERB_MIN_DB = -14.0, -12.0
+
+
+@pytest.fixture(scope="module")
+def send_renders(tmp_path_factory: pytest.TempPathFactory) -> dict:
+    d = tmp_path_factory.mktemp("pads")
+    out = {}
+    for name, (a, b, tech, deck) in SEND_CASES.items():
+        paths = []
+        for s, pitch in ((a, 1000.0), (b, 3000.0)):
+            p = d / f"{s.id}.wav"
+            if not p.exists():
+                wavfile.write(p, SR, pad_track(dataclasses.replace(s, bars=s.bars + 4), SR, pitch).T)
+            paths.append(p)
+        an_a, an_b = analysis(a), analysis(b)
+        for s, an in ((a, an_a), (b, an_b)):
+            an["duration_s"] += 4 * s.bar_s
+        plan = mixplan.generate(track(a), an_a, track(b), an_b, "f", technique=tech)
+        plan["a"].update(deck)
+        out[name] = (plan, mixrender._render_audio(plan, paths[0], paths[1], SR))
+    return out
+
+
+def _level_db(r: dict, stem: str, b0: float, b1: float) -> float:
+    """RMS (dB) of a stem over master beats [b0, b1) against A's dry stem over the window's first 4 beats."""
+    clock, x = r["clock"], r["stems"].get(stem)
+
+    def rms(y: np.ndarray, c0: float, c1: float) -> float:
+        i0, i1 = (int(round(float(clock.time(c)) * SR)) for c in (c0, c1))
+        return 10 * np.log10(np.mean(y[:, i0:i1].astype(np.float64) ** 2) + 1e-20)
+
+    w0 = r["start_beat"]
+    return (rms(x, b0, b1) if x is not None else -200.0) - rms(r["stems"]["A"], w0, w0 + 4)
+
+
+def _exit(plan: dict) -> float:
+    return max(m["beat"] for m in plan["markers"] if m["label"] in ("A out", "cut"))
+
+
+@pytest.mark.parametrize("name", ["blend", "echo out", "reverb wash"])
+def test_returns_are_audible_after_the_throw(send_renders: dict, name: str) -> None:
+    plan, r = send_renders[name]
+    E = _exit(plan)
+    assert plan["a"]["play_to_beat"] == E + 2  # A keeps feeding its sends past the exit
+    assert _level_db(r, "A reverb", E, E + 4) > REVERB_MIN_DB
+    if name != "reverb wash":
+        assert _level_db(r, "A echo", E, E + 4) > ECHO_MIN_DB
+    assert _level_db(r, "A", E + 0.1, E + 4) < -60  # while A's own fader is down
+
+
+def test_reverb_wash_builds_before_the_cut(send_renders: dict) -> None:
+    _, r = send_renders["reverb wash"]
+    levels = [_level_db(r, "A reverb", b, b + 4) for b in (-32, -16, -4)]
+    assert levels[0] < levels[1] < levels[2] and levels[2] > REVERB_MIN_DB
+
+
+def test_mid_blend_echo_throw_is_audible(send_renders: dict) -> None:
+    plan, r = send_renders["blend"]
+    throws = [m["beat"] for m in plan["markers"] if m["label"] == "echo throw"]
+    assert throws, "A's vocal phrase ends inside the blend: expected an echo throw there"
+    t = throws[0] + 1  # the 1 the throw goes into
+    assert _level_db(r, "A echo", t, t + 3) > ECHO_MIN_DB
+    assert _level_db(r, "A echo", t - 8, t - 2) < -40  # nothing on the echo before it
+
+
+def test_pre_eq_sends_keep_what_the_eq_cuts(send_renders: dict) -> None:
+    plan, pre = send_renders["blend"]
+    _, post = send_renders["blend, sends post-fader"]
+    E = _exit(plan)
+    for stem in ("A echo", "A reverb"):
+        assert _level_db(pre, stem, E, E + 4) > _level_db(post, stem, E, E + 4) + 6, stem

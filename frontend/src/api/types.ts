@@ -248,9 +248,10 @@ export interface Keyframe {
 //   volume        0..1   linear fader gain (1 = unity)
 //   eq_low/mid/high  -30..+6 dB, 0 = flat, -30 = kill (DJ isolator, crossovers ~200 Hz / ~2.5 kHz)
 //   filter        -1..1  bipolar DJ filter: <0 low-pass closing (−1 ≈ 80 Hz), >0 high-pass opening (+1 ≈ 10 kHz), 0 = bypass
-//   echo_send     0..1   pre-fader send into the deck's beat-synced echo (its tail keeps ringing after the fader is down)
-//   echo_feedback 0..0.95
-//   reverb_send   0..1   pre-fader send into a wash reverb
+//   echo_send     0..1   send into the deck's beat-synced echo (its tail keeps ringing after the fader is down)
+//   echo_feedback 0..0.95 (default 0.55)
+//   reverb_send   0..1   send into the deck's wash reverb
+// Where the sends tap the deck: DeckPlan.echo_tap / reverb_tap.
 export const LANE_RANGES: Record<LaneId, [number, number]> = {
   volume: [0, 1], eq_low: [-30, 6], eq_mid: [-30, 6], eq_high: [-30, 6], filter: [-1, 1],
   echo_send: [0, 1], echo_feedback: [0, 0.95], reverb_send: [0, 1],
@@ -263,6 +264,10 @@ export interface DeckLoop {
   length_beats: number; // 1, 2, 4, 8, 16 ...
 }
 
+// "pre_eq": the send takes the deck before its EQ, filter and fader (a throw keeps what the EQ is cutting);
+// "post_fader": after them (the send follows the fader down)
+export type SendTap = "pre_eq" | "post_fader";
+
 export interface DeckPlan {
   track_id: string;
   beat0_s: number; // this deck's file time (s) at master beat 0
@@ -270,11 +275,14 @@ export interface DeckPlan {
   play_from_beat: number; // master beat where the deck starts sounding
   play_to_beat: number; // master beat where it stops (echo/reverb tails may ring past it)
   echo_beats: number; // echo time in beats (0.75 = dotted 8th, 1, 0.5 …)
+  echo_tap?: SendTap; // default "pre_eq"
+  reverb_tap?: SendTap; // default "pre_eq"
+  reverb_size?: number; // 0..1 room size / decay of the deck's reverb (default 0.75)
   loops: DeckLoop[];
   lanes: Record<LaneId, Keyframe[]>; // every lane present, at least one keyframe each
 }
 
-export type MixTechnique = Technique | "filter sweep" | "loop roll" | "slam";
+export type MixTechnique = Technique | "filter sweep" | "loop roll" | "slam" | "reverb wash";
 
 export interface MixMarker {
   beat: number;

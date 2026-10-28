@@ -31,7 +31,7 @@ RENDER_WORKERS = 2
 RENDER_CACHE_MB = 1024
 PROGRESS_STEP = 0.05  # publish render progress in steps of at least this much
 TECHNIQUES = ("long blend", "phrase blend", "bass swap", "drop swap", "quick cut", "echo out", "filter sweep",
-              "loop roll", "slam")  # fmt: skip
+              "loop roll", "slam", "reverb wash")  # fmt: skip
 BARS = (4, 8, 16, 32)
 _ID = re.compile(r"^[A-Za-z0-9]{1,64}$")
 _RENDER_ID = re.compile(r"^[A-Za-z0-9_-]{6,128}$")

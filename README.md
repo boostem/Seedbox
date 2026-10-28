@@ -35,7 +35,7 @@ Other flags:
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python -m pytest                                  # planner, render and snapshot tests (~10 s)
 UPDATE_SNAPSHOTS=1 .venv/bin/python -m pytest tests/test_snapshot.py   # accept a planner change
-.venv/bin/python -m musicreco.mixpair A.mp3 B.mp3 [--technique "bass swap"] [--bars 16] [--mix-length long] -o out.wav
+.venv/bin/python -m musicreco.mixpair A.mp3 B.mp3 [--technique "bass swap"] [--bars 16] [--mix-length long] -o out.wav [--stems dir]
 ```
 
 The tests run on synthetic analyses (`tests/fixtures.py`: known BPM, downbeat, phrase offset, intro/outro, drops,

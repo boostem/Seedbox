@@ -3,13 +3,13 @@
 Everything lives on one MASTER timeline in beats. Beat 0 is where B comes in, on A's phrase grid (the placement of
 transitions.suggest). Each deck maps master beats to its own file time through its beat grid (deck_time, loops
 honoured) and is time-stretched with key lock so its beats land on the master clock, whose BPM follows `tempo`.
-Lanes (fader, 3-band isolator EQ, bipolar filter, pre-fader echo/reverb sends) are keyframed in master beats, and
-lane_value is the one interpolation the renderer, the UI and the tests share.
+Lanes (fader, 3-band isolator EQ, bipolar filter, echo/reverb sends, pre-EQ by default) are keyframed in master
+beats, and lane_value is the one interpolation the renderer, the UI and the tests share.
 
 A master bar is 4 master beats: A bar a0 + k and B bar b0 + k sound together in master bar k (a half/double-time B
 is put on A's grid first, as in transitions, so its native_bpm is the analysis BPM x 2 or x 0.5). `bars` is the
-blend length; for the cuts (slam, quick cut, drop swap, an echo out without overlap) it is the length of A's
-lead-in effect (filter riser) before the cut on the 1.
+blend length; for the cuts (slam, quick cut, drop swap, reverb wash, an echo out without overlap) it is the length of
+A's lead-in effect (filter riser, reverb swell) before the cut on the 1.
 """
 
 from __future__ import annotations
@@ -31,17 +31,20 @@ LANE_RANGES: dict[str, tuple[float, float]] = {
     "volume": (0.0, 1.0), "eq_low": (-30.0, 6.0), "eq_mid": (-30.0, 6.0), "eq_high": (-30.0, 6.0),
     "filter": (-1.0, 1.0), "echo_send": (0.0, 1.0), "echo_feedback": (0.0, 0.95), "reverb_send": (0.0, 1.0),
 }  # fmt: skip
+ECHO_FEEDBACK = 0.55  # the echo_feedback lane's default, shared with the renderer and the UI
 LANE_DEFAULTS: dict[str, float] = {
     "volume": 1.0, "eq_low": 0.0, "eq_mid": 0.0, "eq_high": 0.0, "filter": 0.0,
-    "echo_send": 0.0, "echo_feedback": 0.55, "reverb_send": 0.0,
+    "echo_send": 0.0, "echo_feedback": ECHO_FEEDBACK, "reverb_send": 0.0,
 }  # fmt: skip
+SEND_TAPS = ("pre_eq", "post_fader")  # where a deck's echo / reverb send taps it: before its EQ/filter/fader, or after
+REVERB_SIZE = 0.75  # 0..1: room size and decay of a deck's reverb
 CURVES = ("linear", "hold", "ease")
-TECHNIQUES = (*transitions.TECHNIQUES, "filter sweep", "loop roll", "slam")
+TECHNIQUES = (*transitions.TECHNIQUES, "filter sweep", "loop roll", "slam", "reverb wash")
 BARS = (4, 8, 16, 32)
 TEMPO_RANGE = (40.0, 300.0)
 ECHO_BEATS_RANGE = (0.125, 4.0)
 
-_CUTS = ("drop swap", "quick cut", "slam")
+_CUTS = ("drop swap", "quick cut", "slam", "reverb wash")
 _GOOD_KEYS = ("same", "+1", "-1", "relative")
 _SWEEP_KEYS = ("+2 boost", "+7 boost", "clash")  # blends in these keys hide under a filter sweep
 _PHRASE = transitions.PHRASE
@@ -65,6 +68,9 @@ _SLAM_INTRO = 8  # B's intro up to this many bars is short enough to slam past
 _SLAM_LEAD = 8  # ... when its first drop comes at most this many bars after the intro
 _SLAM_JUMP = 1.25  # a drop (B's, or the one A's build leads into) is this much louder than the 4 bars before it
 _BUILD_BARS = 32  # A's build counts when the drop it leads into is within A's last 32 bars
+_SEND_TAIL = 2.0  # beats A keeps playing (fader down) after it is out, so its echo / reverb sends still get audio
+_MID_THROWS = 2  # at most this many echo throws inside a blend (ends of A's vocal phrases, breakdown exits)
+_WASH_SIZE = 0.95  # reverb size of a reverb wash
 
 # B's fader-in per loop-roll length, bars
 _FADE_IN = {4: 1, 8: 2, 16: 4, 32: 8}
@@ -198,6 +204,10 @@ def _loops(raw: object, what: str) -> list[dict]:
     return out
 
 
+def _tap(raw: object) -> str:
+    return raw if raw in SEND_TAPS else SEND_TAPS[0]
+
+
 def _deck(raw: object, what: str) -> dict:
     if not isinstance(raw, dict):
         raise ValueError(f"plan.{what} must be a deck object")
@@ -221,6 +231,8 @@ def _deck(raw: object, what: str) -> dict:
         "track_id": tid, "beat0_s": _req_num(raw, "beat0_s", what), "native_bpm": bpm,
         "play_from_beat": p0, "play_to_beat": p1,
         "echo_beats": min(ECHO_BEATS_RANGE[1], max(ECHO_BEATS_RANGE[0], echo)),
+        "echo_tap": _tap(raw.get("echo_tap")), "reverb_tap": _tap(raw.get("reverb_tap")),
+        "reverb_size": min(1.0, max(0.0, _num(raw.get("reverb_size"), REVERB_SIZE))),
         "loops": _loops(raw.get("loops"), what), "lanes": lanes,
     }  # fmt: skip
 
@@ -622,11 +634,17 @@ def _clash_bars(m: _Mix, a_deck: dict, place: _Place) -> list[int]:
     return out
 
 
-def _throw(A: dict, at: float, send: float = 0.9, reverb: float = 0.35) -> dict:
-    """Echo throw into the cut on the 1 at `at`: A's echo send ramps up over its last 2 beats and is held through
-    the cut (pre-fader, feedback 0.7: the repeats ring 2-4 bars over B), with a reverb wash over its last bar."""
-    A["echo_send"] = [(at - 2, 0.0, "linear"), (at, send, "hold"), (at + 4, 0.0, "hold")]
-    A["reverb_send"] = [(at - 4, 0.0, "linear"), (at, reverb, "hold"), (at + 4, 0.0, "hold")]
+def _tail(at: float, peak: float) -> list[tuple[float, float, str]]:
+    """A send held at `peak` from the cut on `at` for a beat, then off over the next: A's fader is down by then but
+    it still plays _SEND_TAIL beats into the send, and the tail rings on."""
+    return [(at, peak, "hold"), (at + 1, peak, "linear"), (at + _SEND_TAIL, 0.0, "hold")]
+
+
+def _throw(A: dict, at: float, send: float = 0.9, reverb: float = 0.6) -> dict:
+    """Echo throw into the cut on the 1 at `at`: A's echo send ramps up over its last 2 beats and stays open a beat
+    past the cut (pre-EQ, feedback 0.7: the repeats ring 2-4 bars over B), with a reverb wash over its last bar."""
+    A["echo_send"] = [(at - 2, 0.0, "linear"), *_tail(at, send)]
+    A["reverb_send"] = [(at - 4, 0.0, "linear"), *_tail(at, reverb)]
     return {"echo_beats": 0.75, "feedback": 0.7, "throw": at - 2}
 
 
@@ -642,14 +660,51 @@ def _phrases(length: int, swap: int | None) -> tuple[float, float, float]:
     return min(i_end, max(4.0, E / 4)), i_end, o_start
 
 
-def _blend_lanes(tech: str, length: int, swap: int | None, A: dict, B: dict) -> dict:
+def _mid_throws(m: _Mix, place: _Place) -> list[float]:
+    """Master beats (on a 1) inside a blend where A gets a short echo throw: right after one of A's vocal phrases
+    ends (2+ sung bars, then a bar without vocals) and on the 1 of a drop of either deck (a breakdown exit). At least
+    2 bars after B comes in and 2 bars before A's own exit throw, 2 bars apart, at most _MID_THROWS (drops first)."""
+    L = place.overlap
+    if not (L and m.real_a):
+        return []
+    ga, gb = m.ga, m.gb
+    on = transitions._VOCAL_ON
+
+    def sung(bar: int) -> bool:
+        return 0 <= bar < ga.n and ga.vocal[bar] >= on
+
+    drops = {d - place.a0 for d in ga.drops} | ({d - place.b0 for d in gb.drops} if m.real_b else set())
+    phrase_ends = {k for k in range(L) if sung(place.a0 + k - 1) and sung(place.a0 + k - 2) and not sung(place.a0 + k)}
+    out: list[float] = []
+    for k in sorted(k for k in drops if 2 <= k <= L - 2) + sorted(k for k in phrase_ends if 2 <= k <= L - 2):
+        if len(out) < _MID_THROWS and all(abs(4.0 * k - t) >= 8.0 for t in out):
+            out.append(4.0 * k)
+    return sorted(out)
+
+
+def _throw_points(at: float, send: float = 0.8) -> list[tuple[float, float, str]]:
+    """A short echo throw into the 1 at `at`: the send jumps up on the last beat before it and closes half a beat
+    after, so the echo catches the end of the phrase and its repeats ring into the next."""
+    return [(at - 1.0, 0.0, "linear"), (at - 0.75, send, "hold"), (at, send, "linear"), (at + 0.5, 0.0, "hold")]
+
+
+def _blend_lanes(tech: str, length: int, swap: int | None, A: dict, B: dict, throws: list[float]) -> dict:
+    """Blend automation (see _blend_body) plus short echo throws on A at the master beats in `throws` (ends of its
+    vocal phrases, breakdown exits)."""
+    info = _blend_body(tech, length, swap, A, B)
+    A["echo_send"] = [p for t in throws for p in _throw_points(t)] + A["echo_send"]
+    info["throws"] = [t - 1.0 for t in throws]
+    return info
+
+
+def _blend_body(tech: str, length: int, swap: int | None, A: dict, B: dict) -> dict:
     """Blend automation in phrases (same shape for 8/16/32 bars, see _phrases):
     - in: B comes in with its lows killed behind a gentle filter, its fader up over 4-8 bars, its highs and filter
       opening over the phrase while its mids stay 4 dB down;
     - ride: both decks play together; the bass swaps on the 1 of the swap bar with a 1-beat crossfade, B's mids
       come fully up over the bar after it;
     - out: the last phrase takes A out, highs first, then mids, then the fader, under a slowly rising high-pass, its
-      echo send building over its last 2 bars with a reverb wash on its last bar.
+      reverb swelling over its last 2 bars and echo over its last, both fed a beat past the cut.
     Without a swap (B brings no bass, or A rides until B's drop) A's bass carries to the end and the lows change
     hands on the 1 as A leaves. A filter sweep runs A's high-pass over the whole blend; an echo out keeps A's fader
     up and cuts it on the 1 under an echo throw."""
@@ -687,8 +742,8 @@ def _blend_lanes(tech: str, length: int, swap: int | None, A: dict, B: dict) -> 
         A["eq_high"] = [(o_start, 0.0, "ease"), (o_start + out / 2, -12.0, "hold")]
         A["eq_mid"] = [(o_start + out / 4, 0.0, "ease"), (o_start + 3 * out / 4, -10.0, "hold")]
         A["volume"] = [(o_start + out / 2, 1.0, "ease"), (E, 0.0, "hold")]
-    A["echo_send"] = [(E - 8, 0.0, "linear"), (E, 0.4 if S is not None else 0.25, "hold"), (E + 4, 0.0, "hold")]
-    A["reverb_send"] = [(E - 4, 0.0, "linear"), (E, 0.35, "hold"), (E + 4, 0.0, "hold")]
+    A["echo_send"] = [(E - 4, 0.0, "linear"), *_tail(E, 0.6 if S is not None else 0.45)]
+    A["reverb_send"] = [(E - 8, 0.0, "linear"), *_tail(E, 0.7 if tech == "filter sweep" else 0.55)]
     return info
 
 
@@ -769,9 +824,15 @@ def _cut_lanes(tech: str, bars: int, A: dict, into_drop: bool) -> dict:
     their own (_slam_lanes)."""
     info: dict = {"echo_beats": 0.75, "feedback": LANE_DEFAULTS["echo_feedback"], "throw": None}
     A["volume"] = [(-4.0, 1.0, "hold"), (0.0, 0.0, "hold")]
+    if tech == "reverb wash":  # the reverb send swells over 4-8 bars under a rising high-pass, then the cut
+        ramp = 4.0 * max(4, min(bars, 8))
+        A["filter"] = [(-ramp, 0.0, "ease"), (0.0, 0.55, "hold")]
+        A["reverb_send"] = [(-ramp, 0.0, "ease"), *_tail(0.0, 0.9)]
+        info["reverb_size"] = _WASH_SIZE
+        return info
     if into_drop:
         A["filter"] = [(-8.0, 0.0, "ease"), (0.0, 0.35, "hold")]
-        A["reverb_send"] = [(-1.0, 0.0, "linear"), (0.0, 0.4, "hold"), (4.0, 0.0, "hold")]
+        A["reverb_send"] = [(-1.0, 0.0, "linear"), *_tail(0.0, 0.6)]
         return info
     if tech == "echo out":
         riser = 4.0 * max(2, min(bars, 8))
@@ -876,6 +937,9 @@ def _headline(m: _Mix, tech: str, bars: int, place: _Place, info: dict) -> str:
         pre = "; B's last build bar creeps in under A's last bar" if info.get("pre_roll") else ""
         what = f"slam: A rides {riser}{roll}{pre}; on the 1 at {frm} A is cut into an " \
                f"echo/reverb throw and B slams in at {into} (B {tb}, bar {b0 + 1})"
+    elif tech == "reverb wash":
+        what = f"reverb wash: A's reverb swells over its last {max(4, min(bars, 8))} bars under a rising high-pass, " \
+               f"then on the 1 at A {t0} (bar {a0 + 1}) A cuts into B (from B {tb}) and the wash rings over it"
     elif tech == "drop swap":
         what = f"drop swap: let A's build run and on the 1 where A would drop (A {t0}, bar {a0 + 1}) cut into " \
                f"B's drop at {tb}, a short reverb wash on A's last beat"
@@ -905,8 +969,9 @@ def _eq_note(tech: str, place: _Place) -> str | None:
         ride = f"both ride together through bars {i_end + 1}–{o_start}; the last {out}" if o_start > i_end else \
             f"from bar {i_end + 1} both ride together while the last {out}"
         return f"In phrases: bars 1–{i_end} bring B in with its lows killed behind a gentle filter (fader up over " \
-               f"{_plural(fade_in, 'bar')}, highs opening, mids held 4 dB down until {until}); {ride}, A's echo " \
-               f"building over its last 2 bars and a reverb wash on its last."
+               f"{_plural(fade_in, 'bar')}, highs opening, mids held 4 dB down until {until}); {ride}; A's reverb " \
+               f"swells over its last 2 bars and its echo over the last, both still fed a beat past the cut so they " \
+               f"ring over B."
     if tech == "filter sweep":
         return "Classic filter crossfade: A's high-pass climbs over the whole blend (echo and reverb at the top), " \
                "B's low-pass opens over the first half, the bass swaps on the 1."
@@ -950,7 +1015,7 @@ def generate(
     bars_given = bars is not None
     if tech in _CUTS or (tech == "echo out" and bars is None and (e_place.overlap == 0 or big_gap)):
         place = _cut_place(m, tech, eng)
-        bars = bars or 4
+        bars = bars or (8 if tech == "reverb wash" else 4)
     else:
         bars = bars or _default_bars(m, tech, e_place)
         if tech == "loop roll":
@@ -980,6 +1045,11 @@ def generate(
         "track_id": a.id, "beat0_s": round(ga.fd + place.a0 * ga.bar_s, 4), "native_bpm": m.a_bpm,
         "play_from_beat": 0.0, "play_to_beat": E, "echo_beats": 0.75, "loops": [], "lanes": {},
     }  # fmt: skip
+    if m.a_dur > 0:  # A plays on (fader down) into its sends after it is out, while it has audio
+        a_end = (m.a_dur - a_deck["beat0_s"]) * m.a_bpm / 60.0
+        a_deck["play_to_beat"] = round(max(E, min(E + _SEND_TAIL, a_end)), 4)
+    else:
+        a_deck["play_to_beat"] = E + _SEND_TAIL
     b_beat0 = gb.fd + place.b0 * gb.bar_s
     b_deck = {
         "track_id": b.id, "beat0_s": round(b_beat0, 4), "native_bpm": m.b_bpm,
@@ -998,14 +1068,18 @@ def generate(
     elif tech == "loop roll":
         info = _loop_roll(m, place, A, B, a_deck)
     else:
-        info = _blend_lanes(tech, L, place.swap, A, B)
+        info = _blend_lanes(tech, L, place.swap, A, B, _mid_throws(m, place))
     clash = _clash_bars(m, a_deck, place) if tech not in ("filter sweep",) else []
     ducked = _duck_mids(A, B, clash, place.swap if tech != "loop roll" else None, L) if clash and L else ([], [])
     a_deck["echo_beats"] = info["echo_beats"]
+    if "reverb_size" in info:
+        a_deck["reverb_size"] = info["reverb_size"]
     if info["feedback"] != LANE_DEFAULTS["echo_feedback"]:
         A["echo_feedback"] = [(0.0, info["feedback"], "hold")]
 
     tempo = _tempo(m, E, cut=L == 0)
+    if tech == "slam" and tempo.keyframes[-1][0] <= E and tempo.keyframes[-1][1] != m.a_bpm:
+        a_deck["play_to_beat"] = E  # a slam jumps to B's tempo on the 1: A's tail would be time-stretched, so no tail
 
     # preview window: 8-16 bars before B, 8-16 bars after A is out, ~90 s at most (pre-ramps shown when they fit)
     pre, post = (16 if L <= 8 else 8), (16 if L == 0 else 8)
@@ -1056,8 +1130,10 @@ def generate(
         markers.append({"beat": -8.0, "label": "loop roll"})
     if info.get("pre_roll"):
         markers.append({"beat": -4.0, "label": "B pre-roll"})
-    if info["throw"] is not None:
-        markers.append({"beat": info["throw"], "label": "echo throw"})
+    for t in [*info.get("throws", []), *([info["throw"]] if info["throw"] is not None else [])]:
+        markers.append({"beat": t, "label": "echo throw"})
+    if tech == "reverb wash":
+        markers.append({"beat": -4.0 * max(4, min(bars, 8)), "label": "reverb wash"})
     if L:
         markers.append({"beat": E, "label": "A out"})
     if tempo.pre_start is not None:
@@ -1080,6 +1156,10 @@ def generate(
             who.append(f"A's mids are ducked to {_VOCAL_CUT:.0f} dB from bar {on_a[0] + 1} on its way out")
         notes.append(f"Vocals on both decks in {where} of the blend — {' and '.join(who)}, so the blend keeps its "
                      "length.")
+    if info.get("throws"):
+        bars_at = " and ".join(f"bar {int(t + 1) // 4 + 1}" for t in info["throws"])
+        notes.append(f"Short echo throws on A into {bars_at} of the blend (the end of a vocal phrase or a breakdown "
+                     "exit): the send opens on the last beat and the repeats ring over B.")
     notes.append(tempo.note)
     notes.extend(notes_extra)
     if not (m.real_a and m.real_b):
@@ -1115,6 +1195,11 @@ def summary(plan: dict, a_an: dict | None = None, b_an: dict | None = None) -> s
             kfs = deck["lanes"][lane]
             if any(k["value"] != LANE_DEFAULTS[lane] for k in kfs):
                 out.append(f"  {name} {lane}: " + " ".join(f"{k['value']:g}@{k['beat']:g}{k['curve'][0]}" for k in kfs))
+        sends = [f"{k} {deck[k]}" for k in ("echo_tap", "reverb_tap") if deck.get(k, SEND_TAPS[0]) != SEND_TAPS[0]]
+        if deck.get("reverb_size", REVERB_SIZE) != REVERB_SIZE:
+            sends.append(f"reverb_size {deck['reverb_size']:g}")
+        if sends:
+            out.append(f"  {name} sends: " + ", ".join(sends))
         for lp in deck["loops"]:
             out.append(f"  {name} loop: beats {lp['start_beat']:g}..{lp['end_beat']:g} repeat "
                        f"{lp['length_beats']:g} from {lp['source_beat']:g}")

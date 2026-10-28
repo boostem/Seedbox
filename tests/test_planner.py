@@ -334,7 +334,7 @@ def test_generate_vocal_clash_ducks_b_while_a_leads() -> None:
 
 def test_vocal_clash_after_the_swap_ducks_a_to_the_end() -> None:
     A, B = mixplan._lanes(), mixplan._lanes()
-    mixplan._blend_lanes("bass swap", 16, 8, A, B)
+    mixplan._blend_lanes("bass swap", 16, 8, A, B, [])
     on_b, on_a = mixplan._duck_mids(A, B, [6, 7, 8, 9, 10], 8, 16)
     assert (on_b, on_a) == ([6, 7], [8, 9, 10])
     a_mid = [{"beat": b, "value": v, "curve": c} for b, v, c in A["eq_mid"]]
@@ -533,3 +533,60 @@ def test_settings_mix_length() -> None:
     with pytest.raises(ValueError, match="mix_length"):
         settings.from_json({"mix_length": "huge"}, strict=True)
     assert settings.to_json(settings.from_json({"mix_length": "short"}))["mix_length"] == "short"
+
+
+def _send_at(plan: dict, lane: str, beats: list[float]) -> list[float]:
+    return [round(float(mixplan.lane_value(plan["a"]["lanes"][lane], b)), 3) for b in beats]
+
+
+def test_throws_keep_feeding_the_sends_past_the_cut() -> None:
+    an = analysis(STANDARD)
+    short = mixplan.generate(track(STANDARD), an, track(FAST), analysis(FAST), "f")
+    assert 0 < short["a"]["play_to_beat"] < 2.0  # A's file ends just after the cut: it plays to its end
+    an["duration_s"] += 10.0
+    plan = mixplan.generate(track(STANDARD), an, track(FAST), analysis(FAST), "f")
+    assert plan["technique"] == "echo out" and plan["a"]["play_to_beat"] == 2.0
+    assert mixplan.lane_value(plan["a"]["lanes"]["volume"], 0.0) == 0.0  # A's fader is down on the cut ...
+    echo, reverb = _send_at(plan, "echo_send", [-1, 0.5, 2]), _send_at(plan, "reverb_send", [0.5, 2])
+    assert echo[0] > 0.3 and echo[1] >= 0.9 and echo[2] == 0.0  # ... but its sends get a beat more of it
+    assert reverb[0] >= 0.6 and reverb[1] == 0.0
+
+
+def test_blend_echo_throw_at_the_end_of_a_vocal_phrase() -> None:
+    a = Spec("vocal_ends", vocals=[(64, 120)])  # A's vocals stop 8 bars into the 16-bar blend from bar 112
+    plan = mixplan.generate(track(a), analysis(a), track(STANDARD), analysis(STANDARD), "f", "long blend", 16)
+    assert {"beat": 31.0, "label": "echo throw"} in plan["markers"]
+    assert _send_at(plan, "echo_send", [30.0, 31.5, 33.0]) == [0.0, 0.8, 0.0]
+    assert any("echo throw" in n for n in plan["notes"])
+
+
+def test_mid_throws_on_breakdown_exits_and_spaced() -> None:
+    a = Spec("a_drops", vocals=[(96, 104), (106, 109)], drops=[104])
+    b = Spec("b_drop", intro_bars=4, drops=[12])
+    m = mixplan._mix(track(a), analysis(a), track(b), analysis(b), None)
+    # A's vocal phrase ends where it drops (overlap bar 4: one throw) and B drops on bar 12 (drops go first); the
+    # vocal phrase ending on bar 9 would be a third, over the cap
+    assert mixplan._mid_throws(m, mixplan._Place(100, 0, 16, None)) == [16.0, 48.0]
+    assert mixplan._mid_throws(m, mixplan._Place(100, 20, 16, None)) == [16.0, 36.0]  # B's drop outside the blend
+    assert mixplan._mid_throws(m, mixplan._Place(100, 0, 4, None)) == []  # no room inside a 4-bar blend
+
+
+def test_reverb_wash_swells_then_cuts() -> None:
+    plan = mixplan.generate(track(STANDARD), analysis(STANDARD), track(LONG_OUTRO), analysis(LONG_OUTRO), "f",
+                            "reverb wash")
+    assert plan["bars"] == 8 and plan["a"]["reverb_size"] > mixplan.REVERB_SIZE
+    assert _send_at(plan, "reverb_send", [-32, -16, 0, 2]) == [0.0, 0.45, 0.9, 0.0]
+    assert _send_at(plan, "filter", [-32, 0]) == [0.0, 0.55]
+    assert mixplan.lane_value(plan["a"]["lanes"]["volume"], 0.0) == 0.0
+    short = mixplan.generate(track(STANDARD), analysis(STANDARD), track(LONG_OUTRO), analysis(LONG_OUTRO), "f",
+                             "reverb wash", 4)
+    assert _send_at(short, "reverb_send", [-17, -16]) == [0.0, 0.0] and _send_at(short, "reverb_send", [-8])[0] > 0
+
+
+def test_validate_send_taps_and_reverb_size() -> None:
+    plan = mixplan.generate(track(STANDARD), analysis(STANDARD), track(LONG_OUTRO), analysis(LONG_OUTRO), "f")
+    assert plan["a"]["echo_tap"] == plan["a"]["reverb_tap"] == "pre_eq"
+    p = copy.deepcopy(plan)
+    p["a"].update(echo_tap="post_fader", reverb_tap="nonsense", reverb_size=3.0)
+    v = mixplan.validate(p)
+    assert (v["a"]["echo_tap"], v["a"]["reverb_tap"], v["a"]["reverb_size"]) == ("post_fader", "pre_eq", 1.0)
