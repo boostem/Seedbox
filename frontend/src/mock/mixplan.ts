@@ -7,8 +7,8 @@ import type { DeckLoop, DeckPlan, Keyframe, LaneId, MixMarker, MixPlan, MixRende
 import { LANE_RANGES } from "@/api/types";
 
 const LANE_IDS: LaneId[] = ["volume", "eq_low", "eq_mid", "eq_high", "filter", "echo_send", "echo_feedback", "reverb_send"];
-const NEUTRAL: Record<LaneId, number> = { volume: 1, eq_low: 0, eq_mid: 0, eq_high: 0, filter: 0, echo_send: 0, echo_feedback: 0.5, reverb_send: 0 };
-const TECHS: MixTechnique[] = ["long blend", "bass swap", "filter sweep", "echo out", "loop roll", "phrase blend", "drop swap", "slam", "quick cut"];
+const NEUTRAL: Record<LaneId, number> = { volume: 1, eq_low: 0, eq_mid: 0, eq_high: 0, filter: 0, echo_send: 0, echo_feedback: 0.55, reverb_send: 0 };
+const TECHS: MixTechnique[] = ["long blend", "bass swap", "filter sweep", "echo out", "loop roll", "phrase blend", "drop swap", "slam", "reverb wash", "quick cut"];
 
 const kf = (beat: number, value: number, curve: Keyframe["curve"] = "linear"): Keyframe => ({ beat, value, curve });
 
@@ -71,6 +71,13 @@ export function generateMixPlan(folder: string, a: Track, aAn: TrackAnalysis | n
       markers.push({ beat: 0, label: "A out" });
       if (tech === "slam") markers.push({ beat: -0.5, label: "echo throw" });
       notes.push(tech === "slam" ? "Slam: wash A into reverb + echo on its last half-beat and hit B's drop on the 1." : `${tech === "drop swap" ? "Drop swap" : "Quick cut"} on the 1 — no overlap.`);
+      break;
+    case "reverb wash":
+      A = deck(a, aAn, out, start, 0, { volume: [kf(-4, 1, "hold"), kf(0, 0)], filter: [kf(-32, 0, "ease"), kf(0, 0.55)], reverb_send: [kf(-32, 0, "ease"), kf(0, 0.9, "hold"), kf(1, 0.9, "linear"), kf(2, 0)] });
+      A.reverb_size = 0.95;
+      B = deck(b, bAn, inS, 0, end, {});
+      markers.push({ beat: -32, label: "reverb wash" }, { beat: 0, label: "A out" });
+      notes.push("Reverb wash: A's reverb swells over its last 8 bars under a rising high-pass, then cut to B on the 1.");
       break;
     default: {
       // long blend / phrase blend / bass swap

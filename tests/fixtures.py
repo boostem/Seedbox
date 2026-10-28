@@ -184,6 +184,18 @@ def click_track(s: Spec, sr: int, pitch: float) -> "np.ndarray":
     return np.stack([x, x])
 
 
+def pad_track(s: Spec, sr: int, pitch: float) -> "np.ndarray":
+    """click_track plus a sustained two-note chord (pitch / 2 and 3/4 pitch) from the first downbeat: mid-range
+    material for the echo and reverb sends to catch."""
+    import numpy as np
+
+    x = click_track(s, sr, pitch)
+    t = np.arange(x.shape[1]) / sr
+    pad = 0.1 * (np.sin(2 * np.pi * pitch / 2 * t) + np.sin(2 * np.pi * pitch * 0.75 * t))
+    pad[: int(round(s.first_downbeat_s * sr))] = 0.0
+    return (x + pad.astype(np.float32)).astype(np.float32)
+
+
 def click_offset(x: "np.ndarray", sr: int, t: float, search_s: float = 0.06) -> float:
     """Seconds between `t` and the loudest click within +-search_s of it in a (2, n) signal (inf: nothing there).
     The envelope is high-passed above 500 Hz so the bass under the clicks doesn't count."""

@@ -6,9 +6,10 @@ beat-accurate seams with 5 ms equal-power crossfades) -> Rubber Band time stretc
 tempo curve, then a sub-sample timing correction (a pilot click track stretched with the same ratios measures where
 every source sample actually landed; a 32-tap windowed-sinc warp moves it to the exact master time) -> auto gain to a
 common loudness -> 3-band isolator (Linkwitz-Riley 4th order at 200 Hz / 2.5 kHz, phase-compensated, -30 dB = kill)
--> bipolar 24 dB/oct resonant filter (per 64-sample block, smoothed) -> pre-fader echo / reverb sends -> fader.
-Bus: both decks + echo returns (beat-synced, darkening repeats, tails ring past the deck) + a shared reverb return
--> slow zero-phase leveller (tames blend bumps) -> look-ahead true-peak limiter (-1 dBTP) -> AAC m4a.
+-> bipolar 24 dB/oct resonant filter (per 64-sample block, smoothed) -> fader. Each deck's echo and reverb send taps
+it before the isolator (pre_eq, the default: a throw keeps the mids/highs the EQ is cutting) or after the fader.
+Bus: both decks -> slow zero-phase leveller (tames blend bumps), + each deck's echo return (beat-synced, darkening
+repeats, tails ring past the deck) and reverb return (size per deck) -> look-ahead true-peak limiter (-1 dBTP) -> AAC.
 
 Lanes follow types.ts: values between keyframes come from the left keyframe's curve (linear, ease = smoothstep,
 hold = step at the next keyframe), clamped to LANE_RANGES; steps are softened to ~10 ms ramps (filter: ~30 ms).
@@ -29,18 +30,12 @@ from pathlib import Path
 import numpy as np
 from scipy import ndimage, signal
 
+from .mixplan import LANE_DEFAULTS, LANE_RANGES, LANES, REVERB_SIZE, SEND_TAPS
 from .paths import ffmpeg_path
 
-RENDER_VERSION = 1  # bump whenever the output for the same plan + files changes (invalidates cached renders)
+RENDER_VERSION = 2  # bump whenever the output for the same plan + files changes (invalidates cached renders)
 SR = 44100
 
-LANES = ("volume", "eq_low", "eq_mid", "eq_high", "filter", "echo_send", "echo_feedback", "reverb_send")
-LANE_RANGES: dict[str, tuple[float, float]] = {
-    "volume": (0.0, 1.0), "eq_low": (-30.0, 6.0), "eq_mid": (-30.0, 6.0), "eq_high": (-30.0, 6.0),
-    "filter": (-1.0, 1.0), "echo_send": (0.0, 1.0), "echo_feedback": (0.0, 0.95), "reverb_send": (0.0, 1.0),
-}
-LANE_DEFAULTS = {"volume": 1.0, "eq_low": 0.0, "eq_mid": 0.0, "eq_high": 0.0, "filter": 0.0, "echo_send": 0.0,
-                 "echo_feedback": 0.5, "reverb_send": 0.0}
 CURVES = ("linear", "hold", "ease")
 
 DECODE_TIMEOUT_S = 300
@@ -54,8 +49,9 @@ MAKEUP_DB = 1.0
 XOVER_LOW_HZ, XOVER_HIGH_HZ = 200.0, 2500.0
 FILTER_LP_MIN_HZ, FILTER_LP_MAX_HZ = 80.0, 20000.0
 FILTER_HP_MIN_HZ, FILTER_HP_MAX_HZ = 20.0, 10000.0
-ECHO_RETURN = 0.85
-REVERB_RETURN = 0.55
+ECHO_RETURN = 1.0
+REVERB_RETURN = 0.7  # Freeverb's wet output is ~3-5 dB above its input in steady state: a full send ~ unity
+REVERB_BAND_HZ = (150.0, 9000.0)  # the reverb send is band-limited to this (no sub rumble, no fizz)
 SEAM_S = 0.005
 STEP_RAMP_S = 0.010
 FILTER_SMOOTH_S = 0.030
@@ -164,6 +160,7 @@ def _normalise(plan: dict) -> dict:
             nb, b0 = float(d["native_bpm"]), float(d["beat0_s"])
             pf, pt = float(d.get("play_from_beat", w0)), float(d.get("play_to_beat", w1))
             eb = float(d.get("echo_beats") or 0.75)
+            size = float(d.get("reverb_size", REVERB_SIZE))
         except (TypeError, ValueError) as e:
             raise ValueError(f"deck {name} has non-numeric fields") from e
         if not (math.isfinite(nb) and 20 <= nb <= 400) or not math.isfinite(b0):
@@ -174,6 +171,9 @@ def _normalise(plan: dict) -> dict:
             "beat0_s": round(b0, 6), "native_bpm": round(nb, 6),
             "play_from_beat": pf, "play_to_beat": pt,
             "echo_beats": _clamp(eb if math.isfinite(eb) and eb > 0 else 0.75, 0.0625, 8.0),
+            "echo_tap": d.get("echo_tap") if d.get("echo_tap") in SEND_TAPS else SEND_TAPS[0],
+            "reverb_tap": d.get("reverb_tap") if d.get("reverb_tap") in SEND_TAPS else SEND_TAPS[0],
+            "reverb_size": _clamp(size if math.isfinite(size) else REVERB_SIZE, 0.0, 1.0),
             "loops": _loops(d),
             "lanes": {k: _keyframes(lanes.get(k), *LANE_RANGES[k], LANE_DEFAULTS[k]) for k in LANES},
         }
@@ -647,13 +647,16 @@ def _echo(x: np.ndarray, delay: np.ndarray, fb: np.ndarray, sr: int) -> np.ndarr
     return out.astype(np.float32)
 
 
-def _reverb(x: np.ndarray, sr: int) -> np.ndarray:
-    """Wash: band-limited send into a long, fairly dark plate-ish reverb (wet only)."""
+def _reverb(x: np.ndarray, sr: int, size: float) -> np.ndarray:
+    """Wash: band-limited send into a plate-ish reverb (wet only); size 0..1 goes from a short room to a long,
+    brighter hall."""
     import pedalboard
 
-    pre = signal.sosfilt(np.vstack([signal.butter(2, 300.0, "highpass", fs=sr, output="sos"),
-                                    signal.butter(2, 7000.0, "lowpass", fs=sr, output="sos")]), x, axis=-1)
-    rv = pedalboard.Reverb(room_size=0.88, damping=0.45, wet_level=1.0, dry_level=0.0, width=1.0)
+    lo, hi = REVERB_BAND_HZ
+    pre = signal.sosfilt(np.vstack([signal.butter(2, lo, "highpass", fs=sr, output="sos"),
+                                    signal.butter(2, hi, "lowpass", fs=sr, output="sos")]), x, axis=-1)
+    rv = pedalboard.Reverb(room_size=0.6 + 0.37 * size, damping=0.6 - 0.3 * size, wet_level=1.0, dry_level=0.0,
+                           width=1.0)
     return rv.process(pre.astype(np.float32), sr).astype(np.float32)
 
 
@@ -694,7 +697,8 @@ def _limit(x: np.ndarray, ceiling_db: float) -> tuple[np.ndarray, float]:
 
 def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _Clock, w0: float, w1: float,
                 m_total: int, sr: int, key_lock: bool) -> dict | None:
-    """One deck through stretch, EQ, filter; returns its post-filter signal, fader gain and send gains."""
+    """One deck through stretch, EQ, filter; returns its post-filter signal, the pre-EQ signal (when a send taps
+    it), fader gain and send gains."""
     p0, p1 = max(deck["play_from_beat"], w0), min(deck["play_to_beat"], w1)
     if p1 <= p0:
         return None
@@ -737,6 +741,8 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
     x *= g * trim
     ctl_beats = clock.beat((qa + np.arange(0, q.size + CTL, CTL)) / sr)
     lanes = deck["lanes"]
+    sends = [k for k in ("echo_send", "reverb_send") if any(kf["value"] > 0 for kf in lanes[k])]
+    pre = x.copy() if any(deck[k.replace("_send", "_tap")] == "pre_eq" for k in sends) else None
 
     def lane(k: str, smooth: float = STEP_RAMP_S) -> np.ndarray:
         return _ctl(lanes[k], ctl_beats, smooth, sr, q.size)
@@ -746,12 +752,11 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
         x = _isolator(x, gl, gm, gh, sr)
     if any(kf["value"] != 0 for kf in lanes["filter"]):
         x = _dj_filter(x, lane("filter", FILTER_SMOOTH_S), sr)
-    out = {"name": name, "qa": qa, "qb": qb, "x": x, "volume": lane("volume"), "warnings": warn}
-    if any(kf["value"] > 0 for kf in lanes["echo_send"]):
-        out["echo_send"] = lane("echo_send")
+    out = {"name": name, "qa": qa, "qb": qb, "x": x, "pre": pre, "volume": lane("volume"), "warnings": warn}
+    for k in sends:
+        out[k] = lane(k)
+    if "echo_send" in sends:
         out["echo_fb"] = lane("echo_feedback")
-    if any(kf["value"] > 0 for kf in lanes["reverb_send"]):
-        out["reverb_send"] = lane("reverb_send")
     return out
 
 
@@ -787,9 +792,9 @@ def _render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
         stages = [f.result() for f in futs]
     del audios
     report(0.7)
-    mix = np.zeros((2, m_total), np.float32)
+    dry_mix = np.zeros((2, m_total), np.float32)
+    fx = np.zeros((2, m_total), np.float32)
     stems: dict[str, np.ndarray] = {}
-    rev_in = np.zeros((2, m_total), np.float32)
     warnings: list[str] = []
     for st, d in zip(stages, decks):
         if st is None:
@@ -799,8 +804,11 @@ def _render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
         dry = st["x"] * st["volume"]
         stem = np.zeros((2, m_total), np.float32)
         stem[:, qa:qb] = dry
+        stems[st["name"]] = stem
+        dry_mix += stem
+        taps = {k: st["pre"] if d[f"{k}_tap"] == "pre_eq" else dry for k in ("echo", "reverb")}
         if "echo_send" in st:
-            send = st["x"] * st["echo_send"]
+            send = taps["echo"] * st["echo_send"]
             first = int(np.argmax(st["echo_send"] > 1e-4))
             e0 = qa + first
             ein = np.zeros((2, m_total - e0), np.float32)
@@ -810,22 +818,25 @@ def _render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
             # repeats keep the deck's tempo once it stops: a tempo jump on the cut would make the delay line jump
             beats = np.minimum(clock.beat(np.arange(e0, m_total) / sr), d["play_to_beat"] - 1.0 / 64)
             delay = d["echo_beats"] * 60.0 / clock.bpm(beats) * sr
-            stem[:, e0:] += ECHO_RETURN * _echo(ein, delay, fb, sr)
+            ret = np.zeros((2, m_total), np.float32)
+            ret[:, e0:] = ECHO_RETURN * _echo(ein, delay, fb, sr)
+            stems[f"{st['name']} echo"] = ret
+            fx += ret
         if "reverb_send" in st:
-            rev_in[:, qa:qb] += st["x"] * st["reverb_send"]
-        stems[st["name"]] = stem
-        mix += stem
+            send = taps["reverb"] * st["reverb_send"]
+            first = qa + int(np.argmax(st["reverb_send"] > 1e-4))
+            rin = np.zeros((2, m_total - first), np.float32)
+            rin[:, : qb - first] = send[:, first - qa:]
+            ret = np.zeros((2, m_total), np.float32)
+            ret[:, first:] = REVERB_RETURN * _reverb(rin, sr, d["reverb_size"])
+            stems[f"{st['name']} reverb"] = ret
+            fx += ret
     report(0.8)
-    if rev_in.any():
-        first = int(np.argmax(np.abs(rev_in).max(axis=0) > 0))
-        rv = np.zeros_like(mix)
-        rv[:, first:] = REVERB_RETURN * _reverb(rev_in[:, first:], sr)
-        stems["reverb"] = rv
-        mix += rv
-    del rev_in
+    # the leveller only tames the dry decks' blend bump; echo and reverb returns ride on top of it unlevelled
     ref_power = 10 ** ((DECK_LUFS + 0.691) / 10)
-    gain, lev_red = _level(mix, ref_power, sr)
-    mix *= gain
+    gain, lev_red = _level(dry_mix, ref_power, sr)
+    mix = dry_mix * gain + fx * 10 ** (MAKEUP_DB / 20)
+    del dry_mix, fx
     mix, lim_red = _limit(mix, CEILING_DBTP)
     fi, fo = int(0.005 * sr), int(0.03 * sr)
     mix[:, :fi] *= np.linspace(0, 1, fi, dtype=np.float32)

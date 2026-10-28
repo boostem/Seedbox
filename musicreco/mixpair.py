@@ -1,10 +1,11 @@
 """Plan and render one A → B transition from two audio files, for listening to planner changes:
 
-    python -m musicreco.mixpair A.mp3 B.mp3 [--technique "bass swap"] [--bars 16] [--mix-length long] -o out.wav
+    python -m musicreco.mixpair A.mp3 B.mp3 [--technique "bass swap"] [--bars 16] [--mix-length long] -o out.wav [--stems DIR]
 
 Analyses both files (structure.analyze, no cache), builds the plan with mixplan.generate, prints its summary, notes and
-render stats, and writes the mix (.wav as is, .m4a encoded like the app). The Camelot keys come from the files' TKEY
-tags unless given; without them the planner treats the key move as unknown.
+render stats, and writes the mix (.wav as is, .m4a encoded like the app); --stems also writes every stem (each deck
+after its fader, each deck's echo and reverb return) as a .wav, before the leveller and limiter. The Camelot keys come
+from the files' TKEY tags unless given; without them the planner treats the key move as unknown.
 """
 
 from __future__ import annotations
@@ -52,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--key-a", help="A's Camelot key (default: its TKEY tag)")
     p.add_argument("--key-b", help="B's Camelot key (default: its TKEY tag)")
     p.add_argument("--plan", type=Path, help="also write the plan JSON here")
+    p.add_argument("--stems", type=Path, help="also write each stem as DIR/<stem>.wav")
     args = p.parse_args(argv)
 
     try:
@@ -75,6 +77,10 @@ def main(argv: list[str] | None = None) -> int:
             mixrender.encode_m4a(r["mix"], r["sr"], args.out)
         else:
             wavfile.write(args.out, r["sr"], np.ascontiguousarray(r["mix"].T))
+        if args.stems:
+            args.stems.mkdir(parents=True, exist_ok=True)
+            for name, stem in r["stems"].items():
+                wavfile.write(args.stems / f"{name.replace(' ', '_')}.wav", r["sr"], np.ascontiguousarray(stem.T))
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

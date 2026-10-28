@@ -41,7 +41,7 @@ export const LANES: LaneMeta[] = [
     fmt: (v) => (Math.abs(v) < 0.005 ? "off" : v < 0 ? `LPF ${Math.round(-v * 100)}%` : `HPF ${Math.round(v * 100)}%`),
   },
   { id: "echo_send", label: "Echo send", short: "ECHO", color: "var(--color-move-boost)", step: 0.05, fine: 0.01, neutral: 0, fmt: pct },
-  { id: "echo_feedback", label: "Echo feedback", short: "FB", color: "var(--color-move-boost)", step: 0.05, fine: 0.01, neutral: 0.5, fmt: pct },
+  { id: "echo_feedback", label: "Echo feedback", short: "FB", color: "var(--color-move-boost)", step: 0.05, fine: 0.01, neutral: 0.55, fmt: pct },
   { id: "reverb_send", label: "Reverb send", short: "VERB", color: "var(--color-ok)", step: 0.05, fine: 0.01, neutral: 0, fmt: pct },
 ];
 
@@ -138,7 +138,7 @@ export function timeAt(r: MixRender, beat: number): number {
 
 export const CURVES: Curve[] = ["linear", "ease", "hold"];
 
-export const TECHNIQUES = ["long blend", "bass swap", "filter sweep", "echo out", "loop roll", "phrase blend", "drop swap", "slam", "quick cut"] as const;
+export const TECHNIQUES = ["long blend", "bass swap", "filter sweep", "echo out", "loop roll", "phrase blend", "drop swap", "slam", "reverb wash", "quick cut"] as const;
 export const BAR_OPTIONS = [4, 8, 16, 32] as const;
 
 /** "bar.beat" relative to B in (beat 0 = bar 1.1; negative beats count back from it). */
