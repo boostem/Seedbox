@@ -29,7 +29,7 @@ import { parseCamelot } from "@/lib/camelot";
 import { cn } from "@/lib/cn";
 import { fmtBpm, fmtDateTime, fmtRelative, plural, tildify } from "@/lib/format";
 import { useHotkey } from "@/lib/hotkeys";
-import { navigate, useHashQuery } from "@/lib/router";
+import { Link, navigate, useHashQuery } from "@/lib/router";
 import { useApp } from "@/store/app";
 
 type View = "grid" | "list";
@@ -74,58 +74,37 @@ const reveal = (c: CrateSummary) => void api.reveal(c.path);
 function CrateCard({ crate }: { crate: CrateSummary }) {
   const s = crate.seed;
   return (
-    <div
-      role="link"
-      tabIndex={0}
-      onClick={() => open(crate)}
-      onKeyDown={(e) => e.key === "Enter" && open(crate)}
-      className="group flex min-w-0 flex-col overflow-hidden rounded-md border border-line bg-panel shadow-card transition-colors hover:border-line-strong hover:bg-raised/40"
-    >
-      <div className="relative">
-        <CoverArt src={s?.cover_url} fill rounded="xs" camelot={s?.camelot} alt={title(crate)} className="rounded-none" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-black/0 opacity-0 transition-opacity group-hover:opacity-100" />
-        <div className="absolute inset-x-2 bottom-2 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
-          <Button size="xs" variant="secondary" iconRight={ArrowRight} onClick={(e) => (e.stopPropagation(), open(crate))}>
+    <div className="group relative flex min-w-0 flex-col overflow-hidden rounded-md border border-line bg-panel shadow-card transition-colors hover:border-line-strong hover:bg-raised/40 has-[>a:focus-visible]:outline-2 has-[>a:focus-visible]:outline-[var(--color-focus)]">
+      <Link to={{ name: "set", folder: crate.folder }} className="flex min-w-0 flex-col outline-none">
+        <div className="relative">
+          <CoverArt src={s?.cover_url} fill rounded="xs" camelot={s?.camelot} alt={title(crate)} className="rounded-none" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-black/0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100" />
+          <span className="absolute top-2 right-2 rounded-xs bg-black/65 px-1.5 py-0.5 text-2xs font-semibold text-white backdrop-blur-sm num">{crate.track_count}</span>
+        </div>
+        <div className="flex flex-col gap-1 px-2.5 pt-2 pb-2.5">
+          <div className="truncate text-sm font-semibold" title={crate.folder}>
+            {title(crate)}
+          </div>
+          <div className="truncate text-xs text-fg-muted">{s ? s.artists.join(", ") : <span className="text-fg-subtle italic">No crate metadata</span>}</div>
+          <div className="mt-1 flex items-center gap-2 text-2xs text-fg-subtle">
+            {s && <KeyBadge camelot={s.camelot} keyName={s.key} size="xs" />}
+            {s && <span className="text-fg-muted num">{fmtBpm(s.bpm)} BPM</span>}
+            <span className="flex-1" />
+            <span title={fmtDateTime(crate.updated_at)} className="num">
+              {fmtRelative(crate.updated_at)}
+            </span>
+          </div>
+        </div>
+      </Link>
+      <div className="pointer-events-none absolute inset-x-0 top-0 aspect-square">
+        <div className="absolute inset-x-2 bottom-2 [&>button]:pointer-events-auto flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          {/* Same target as the card link, so mouse-only: keyboard users already have the link. */}
+          <Button size="xs" variant="secondary" iconRight={ArrowRight} tabIndex={-1} aria-hidden onClick={() => open(crate)}>
             Open set
           </Button>
           <span className="flex-1" />
-          <IconButton
-            icon={FolderOpen}
-            label="Reveal in Finder"
-            size="sm"
-            variant="secondary"
-            onClick={(e) => {
-              e.stopPropagation();
-              reveal(crate);
-            }}
-          />
-          {s && (
-            <IconButton
-              icon={Sprout}
-              label="More recommendations for this seed"
-              size="sm"
-              variant="secondary"
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate({ name: "crate", seedId: s.id });
-              }}
-            />
-          )}
-        </div>
-        <span className="absolute top-2 right-2 rounded-xs bg-black/65 px-1.5 py-0.5 text-2xs font-semibold text-white backdrop-blur-sm num">{crate.track_count}</span>
-      </div>
-      <div className="flex flex-col gap-1 px-2.5 pt-2 pb-2.5">
-        <div className="truncate text-sm font-semibold" title={crate.folder}>
-          {title(crate)}
-        </div>
-        <div className="truncate text-xs text-fg-muted">{s ? s.artists.join(", ") : <span className="text-fg-subtle italic">No crate metadata</span>}</div>
-        <div className="mt-1 flex items-center gap-2 text-2xs text-fg-subtle">
-          {s && <KeyBadge camelot={s.camelot} keyName={s.key} size="xs" />}
-          {s && <span className="text-fg-muted num">{fmtBpm(s.bpm)} BPM</span>}
-          <span className="flex-1" />
-          <span title={fmtDateTime(crate.updated_at)} className="num">
-            {fmtRelative(crate.updated_at)}
-          </span>
+          <IconButton icon={FolderOpen} label="Reveal in Finder" size="sm" variant="secondary" onClick={() => reveal(crate)} />
+          {s && <IconButton icon={Sprout} label="More recommendations for this seed" size="sm" variant="secondary" onClick={() => navigate({ name: "crate", seedId: s.id })} />}
         </div>
       </div>
     </div>
