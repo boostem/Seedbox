@@ -5,8 +5,9 @@ Signal flow per deck: decode (ffmpeg, stereo) -> source audio for the window in 
 beat-accurate seams with 5 ms equal-power crossfades) -> Rubber Band time stretch (key lock) driven by the master
 tempo curve, then a sub-sample timing correction (a pilot click track stretched with the same ratios measures where
 every source sample actually landed; a 32-tap windowed-sinc warp moves it to the exact master time) -> auto gain to a
-common loudness -> deck effects (spinback, brake, stutter: they read the deck's own stretched signal like a record
-under the needle) -> 3-band isolator (Linkwitz-Riley 4th order at 200 Hz / 2.5 kHz, phase-compensated, -30 dB = kill)
+common loudness over the overlap (B: plus the phrase after it; capped near the whole-track trim) -> deck effects
+(spinback, brake, stutter: they read the deck's own stretched signal like a record under the needle) -> 3-band
+isolator (Linkwitz-Riley 4th order at 200 Hz / 2.5 kHz, phase-compensated, -30 dB = kill)
 -> bipolar 24 dB/oct resonant filter (per 64-sample block, smoothed; resonance from the filter_res lane) -> fader. Each deck's echo and reverb send taps
 it before the isolator (pre_eq, the default: a throw keeps the mids/highs the EQ is cutting) or after the fader.
 Bus: both decks -> slow zero-phase leveller (tames blend bumps), + each deck's echo return (beat-synced, darkening
@@ -34,13 +35,17 @@ from scipy import ndimage, signal
 from .mixplan import deck_time, lane_value, validate
 from .paths import ffmpeg_path
 
-RENDER_VERSION = 3  # bump whenever the output for the same plan + files changes (invalidates cached renders)
+RENDER_VERSION = 4  # bump whenever the output for the same plan + files changes (invalidates cached renders)
 SR = 44100
 
 DECODE_TIMEOUT_S = 300
 ENCODE_TIMEOUT_S = 300
-DECK_LUFS = -12.0  # every deck is trimmed to this integrated loudness (whole track) before the mixer
+DECK_LUFS = -12.0  # every deck is trimmed to this loudness over the bars it plays in the overlap before the mixer
 TRIM_LIMIT_DB = 12.0
+OVERLAP_TRIM_CAP_DB = 6.0  # the overlap trim stays this close to the whole-track trim (no blown-up silent intros)
+FOLLOW_BEATS = 32.0  # B's measurement also covers this much after the overlap (the phrase it's heading into)
+CUT_BEATS = 16.0  # with no overlap (a cut), each deck is measured over this much on its side of the cut
+MIN_MEASURE_S = 3.0  # shorter than this: whole-track trim
 CEILING_DBTP = -1.6  # limiter ceiling; leaves room for AAC overshoot under -1 dBTP
 LEVEL_THRESHOLD_DB = 1.0  # leveller acts this far above the deck reference
 LEVEL_RATIO = 3.0
@@ -228,6 +233,41 @@ def _track_lufs(path: Path, audio: np.ndarray, sr: int) -> float:
             _loudness_cache.clear()
         _loudness_cache[key] = lufs
     return lufs
+
+
+def _overlap_beats(decks: list[dict], w0: float, w1: float) -> list[tuple[float, float]]:
+    """Master-beat range each deck's trim is measured over: where both decks play inside the window (B: plus
+    FOLLOW_BEATS after it); on a cut, CUT_BEATS on each deck's side of it."""
+    (a0, a1), (b0, b1) = ((max(d["play_from_beat"], w0), min(d["play_to_beat"], w1)) for d in decks)
+    o0, o1 = max(a0, b0), min(a1, b1)
+    if o1 - o0 >= 4:
+        return [(o0, o1), (o0, o1 + FOLLOW_BEATS)]
+    return [(max(a0, a1 - CUT_BEATS), a1), (b0, b0 + CUT_BEATS + FOLLOW_BEATS)]
+
+
+def _range_lufs(x: np.ndarray, sr: int) -> float:
+    """Loudness of a short range: BS.1770 400 ms blocks above the -70 LUFS gate, without the relative gate (a quiet
+    intro next to a loud phrase still counts)."""
+    z = _block_power(x, sr, 0.4, 0.1)
+    z = z[-0.691 + 10 * np.log10(z + 1e-12) > -70]
+    return float(-0.691 + 10 * np.log10(z.mean())) if z.size else -70.0
+
+
+def _deck_trim_db(path: Path, deck: dict, audio: np.ndarray, beats: tuple[float, float],
+                  sr: int) -> tuple[float, float]:
+    """(trim, whole-track trim) in dB: DECK_LUFS minus the deck's loudness over `beats` (its source audio for them,
+    loops spliced in), within OVERLAP_TRIM_CAP_DB of the whole-track trim; the whole-track trim when that range is
+    too short or silent."""
+    whole = _clamp(DECK_LUFS - _track_lufs(path, audio, sr), -TRIM_LIMIT_DB, TRIM_LIMIT_DB)
+    b0, b1 = beats
+    if (b1 - b0) * 60.0 / float(deck["native_bpm"]) < MIN_MEASURE_S:
+        return whole, whole
+    src, _ = _source(audio, deck, b0, b1, sr)
+    lufs = _range_lufs(src[:, ::2], sr // 2) if sr % 2 == 0 else _range_lufs(src, sr)
+    if lufs <= -70:
+        return whole, whole
+    trim = _clamp(DECK_LUFS - lufs, whole - OVERLAP_TRIM_CAP_DB, whole + OVERLAP_TRIM_CAP_DB)
+    return _clamp(trim, -TRIM_LIMIT_DB, TRIM_LIMIT_DB), whole
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -757,8 +797,9 @@ def render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
     report(0.02)
     with ThreadPoolExecutor(2) as pool:
         audios = list(pool.map(lambda p: decode_stereo(Path(p), sr), (a_path, b_path)))
-        trims = [10 ** (_clamp(DECK_LUFS - _track_lufs(Path(p), au, sr), -TRIM_LIMIT_DB, TRIM_LIMIT_DB) / 20)
-                 for p, au in zip((a_path, b_path), audios)]
+        trims_db = [_deck_trim_db(Path(p), d, au, rng, sr)
+                    for p, d, au, rng in zip((a_path, b_path), decks, audios, _overlap_beats(decks, w0, w1))]
+        trims = [10 ** (t / 20) for t, _ in trims_db]
         report(0.1)
         futs = [pool.submit(_deck_stage, nm, d, au, tr, clock, w0, w1, m_total, sr, norm["key_lock"])
                 for nm, d, au, tr in zip(("A", "B"), decks, audios, trims)]
@@ -827,6 +868,8 @@ def render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
         "true_peak_db": round(true_peak_db(mix), 2),
         "warnings": warnings,
         "leveller_db": round(lev_red, 2), "limiter_db": round(lim_red, 2),
+        "trim_db": {nm: round(t, 2) for nm, (t, _) in zip("AB", trims_db)},
+        "track_trim_db": {nm: round(w, 2) for nm, (_, w) in zip("AB", trims_db)},
     }
 
 

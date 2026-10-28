@@ -86,6 +86,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(f"render: {r['duration_s']:.1f} s, {r['lufs']:.1f} LUFS, true peak {r['true_peak_db']:.1f} dBTP, "
           f"leveller {r['leveller_db']:.1f} dB, limiter {r['limiter_db']:.1f} dB -> {args.out}")
+    print("trim: " + ", ".join(f"{d} {r['trim_db'][d]:+.1f} dB (whole track {r['track_trim_db'][d]:+.1f})"
+                               for d in "AB"))
     for w in r["warnings"]:
         print(f"  ! {w}")
     return 0

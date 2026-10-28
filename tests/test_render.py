@@ -304,3 +304,59 @@ def test_b_build_is_rendered(send_renders: dict) -> None:
     np.testing.assert_allclose(r["stems"]["B"][:, before], r0["stems"]["B"][:, before], atol=1e-6)
     assert np.abs(r["stems"]["B"][:, build] - r0["stems"]["B"][:, build]).max() > 1e-3
     assert np.abs(r["mix"]).max() <= 1.0
+
+
+
+B_QUIET_INTRO = Spec("click_b_quiet", bpm=124.0, bars=64, intro_bars=16, outro_bars=8)
+QUIET_GAIN = 4.0  # the click tracks are ~-25 LUFS, where the whole-track trim is already at TRIM_LIMIT_DB
+
+
+def _quiet_intro(s: Spec, pitch: float, db: float, bars: int) -> np.ndarray:
+    """QUIET_GAIN * click_track(s) with its first `bars` bars `db` down."""
+    x = QUIET_GAIN * click_track(s, SR, pitch)
+    x[:, : int(round(bars * s.bar_s * SR))] *= 10 ** (db / 20)
+    return x
+
+
+def _range_db(r: dict, stem: str, b0: float, b1: float) -> float:
+    i0, i1 = (int(round(float(r["clock"].time(b)) * SR)) for b in (b0, b1))
+    return float(10 * np.log10(np.mean(r["stems"][stem][:, i0:i1].astype(np.float64) ** 2) + 1e-20))
+
+
+@pytest.fixture(scope="module")
+def quiet_renders(tmp_path_factory: pytest.TempPathFactory) -> dict:
+    """A into B over B's 16-bar intro: B steady, B with its intro 10 dB down, B with 32 near-silent bars."""
+    d = tmp_path_factory.mktemp("quiet")
+    a = d / "a.wav"
+    wavfile.write(a, SR, _quiet_intro(A, 1000.0, 0.0, 0).T)
+    plan = mixplan.generate(track(A), analysis(A), track(B_QUIET_INTRO), analysis(B_QUIET_INTRO), "f")
+    out = {"plan": plan}
+    for name, db, bars in (("steady", 0.0, 0), ("quiet intro", -10.0, 16), ("near silent", -30.0, 32)):
+        b = d / f"{name.replace(' ', '_')}.wav"
+        wavfile.write(b, SR, _quiet_intro(B_QUIET_INTRO, 3000.0, db, bars).T)
+        out[name] = mixrender.render_audio(plan, a, b, SR)
+    return out
+
+
+def test_quiet_intro_is_trimmed_on_the_overlap(quiet_renders: dict) -> None:
+    """B's intro is 10 dB down: B's trim comes from the overlap plus the 8 bars after it, not the whole track, so B
+    comes into the blend hotter than a whole-track trim would bring it; A and a steady B keep their trims."""
+    plan, steady, quiet = quiet_renders["plan"], quiet_renders["steady"], quiet_renders["quiet intro"]
+    assert plan["b"]["play_from_beat"] == 0.0 and plan["a"]["play_to_beat"] > 64  # the blend is over B's intro
+    for deck in "AB":
+        assert steady["trim_db"][deck] == pytest.approx(steady["track_trim_db"][deck], abs=0.5)
+    assert quiet["trim_db"]["A"] == steady["trim_db"]["A"]
+    assert quiet["trim_db"]["B"] > quiet["track_trim_db"]["B"] + 2.5
+    # B's stem over its intro: the 10 dB the file is down, minus the overlap trim's lift
+    gap = _range_db(steady, "B", 0, 64) - _range_db(quiet, "B", 0, 64)
+    assert gap == pytest.approx(10 - (quiet["trim_db"]["B"] - steady["trim_db"]["B"]), abs=0.3)
+    assert gap < 7.5
+
+
+def test_near_silent_overlap_trim_is_capped(quiet_renders: dict) -> None:
+    """32 bars 30 dB down cover the overlap and the phrase after it: the trim stops OVERLAP_TRIM_CAP_DB above the
+    whole-track trim instead of lifting B's intro by ~25 dB."""
+    r = quiet_renders["near silent"]
+    assert r["trim_db"]["B"] == pytest.approx(r["track_trim_db"]["B"] + mixrender.OVERLAP_TRIM_CAP_DB, abs=0.01)
+    assert r["trim_db"]["B"] < mixrender.TRIM_LIMIT_DB
+    assert np.abs(r["mix"]).max() <= 1.0
