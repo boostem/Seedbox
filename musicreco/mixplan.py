@@ -947,3 +947,43 @@ def generate(
         "a": a_deck, "b": b_deck, "markers": markers, "notes": notes, "edited": False,
     }  # fmt: skip
     return validate(plan)
+
+
+# --- summary -------------------------------------------------------------------------------------------------------
+
+
+def summary(plan: dict, a_an: dict | None = None, b_an: dict | None = None) -> str:
+    """Text digest of a plan (technique, bars, cue bars, swap bar, tempo, markers, every automated lane) for the
+    pair-render script and the snapshot test. Cue bars count from each deck's first downbeat (0 s without analysis)."""
+
+    def cue(deck: dict, an: dict | None) -> str:
+        fd = _num((an or {}).get("first_downbeat_s"))
+        bar = (deck["beat0_s"] - fd) * deck["native_bpm"] / 240.0
+        return f"bar {bar:g} ({deck['beat0_s']:.2f} s)" if abs(bar - round(bar)) > 1e-3 else \
+            f"bar {round(bar)} ({deck['beat0_s']:.2f} s)"
+
+    def effects(name: str, deck: dict) -> list[str]:
+        """One line per lane that leaves its default: keyframes as value@beat + curve initial (l/h/e)."""
+        out = []
+        for lane in LANES:
+            kfs = deck["lanes"][lane]
+            if any(k["value"] != LANE_DEFAULTS[lane] for k in kfs):
+                out.append(f"  {name} {lane}: " + " ".join(f"{k['value']:g}@{k['beat']:g}{k['curve'][0]}" for k in kfs))
+        for lp in deck["loops"]:
+            out.append(f"  {name} loop: beats {lp['start_beat']:g}..{lp['end_beat']:g} repeat "
+                       f"{lp['length_beats']:g} from {lp['source_beat']:g}")
+        return out or [f"  {name}: no effects"]
+
+    tempo = [round(k["value"], 1) for k in plan["tempo"]]
+    tempo = [t for i, t in enumerate(tempo) if i == 0 or t != tempo[i - 1]]
+    swap = next((m["beat"] for m in plan["markers"] if m["label"] == "bass swap"), None)
+    marks = " ".join(f"{m['label'].replace(' ', '_')}@{m['beat']:g}" for m in plan["markers"])
+    w = plan["window"]
+    return "\n".join([
+        f"{plan['technique']}, {plan['bars']} bars, swap {'-' if swap is None else f'bar {swap / 4 + 1:g}'}",
+        f"  cue: A {cue(plan['a'], a_an)} / B {cue(plan['b'], b_an)}",
+        f"  tempo: {' -> '.join(f'{t:g}' for t in tempo)} BPM, window {w['start_beat']:g}..{w['end_beat']:g} beats",
+        f"  markers: {marks}",
+        *effects("A", plan["a"]),
+        *effects("B", plan["b"]),
+    ])  # fmt: skip

@@ -29,6 +29,20 @@ Other flags:
 
 `.venv/bin/python -m seedbox.server --port 8765 --dev` runs the bare API (no window, no built UI).
 
+### Tests and listening to mixes
+
+```sh
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest                                  # planner, render and snapshot tests (~10 s)
+UPDATE_SNAPSHOTS=1 .venv/bin/python -m pytest tests/test_snapshot.py   # accept a planner change
+.venv/bin/python -m musicreco.mixpair A.mp3 B.mp3 [--technique "bass swap"] [--bars 16] -o out.wav
+```
+
+The tests run on synthetic analyses (`tests/fixtures.py`: known BPM, downbeat, phrase offset, intro/outro, drops,
+vocals) and click tracks, not on the analyser. `tests/snapshots/plan_summaries.txt` holds the plan of every fixture
+pair, so a planner change shows up as a diff of that file. `musicreco.mixpair` analyses two real files, prints the
+plan and writes the rendered transition (`.wav`, or `.m4a` like the app).
+
 ### Build the app to share
 
 ```sh
