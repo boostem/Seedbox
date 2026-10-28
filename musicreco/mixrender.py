@@ -5,7 +5,8 @@ Signal flow per deck: decode (ffmpeg, stereo) -> source audio for the window in 
 beat-accurate seams with 5 ms equal-power crossfades) -> Rubber Band time stretch (key lock) driven by the master
 tempo curve, then a sub-sample timing correction (a pilot click track stretched with the same ratios measures where
 every source sample actually landed; a 32-tap windowed-sinc warp moves it to the exact master time) -> auto gain to a
-common loudness -> 3-band isolator (Linkwitz-Riley 4th order at 200 Hz / 2.5 kHz, phase-compensated, -30 dB = kill)
+common loudness -> deck effects (spinback, brake, stutter: they read the deck's own stretched signal like a record
+under the needle) -> 3-band isolator (Linkwitz-Riley 4th order at 200 Hz / 2.5 kHz, phase-compensated, -30 dB = kill)
 -> bipolar 24 dB/oct resonant filter (per 64-sample block, smoothed; resonance from the filter_res lane) -> fader. Each deck's echo and reverb send taps
 it before the isolator (pre_eq, the default: a throw keeps the mids/highs the EQ is cutting) or after the fader.
 Bus: both decks -> slow zero-phase leveller (tames blend bumps), + each deck's echo return (beat-synced, darkening
@@ -601,6 +602,67 @@ def _limit(x: np.ndarray, ceiling_db: float) -> tuple[np.ndarray, float]:
 
 
 # ---------------------------------------------------------------------------------------------------------------
+# deck effects
+
+
+SPINBACK_SPEED = 3.0  # a spinback starts at this many times normal speed backwards and slows to a stop
+STUTTER_DUTY = 0.7  # a stutter repeat sounds for this share of its length, then the gate closes
+FX_FADE_S = 0.003
+
+
+def _read(src: np.ndarray, pos: np.ndarray) -> np.ndarray:
+    """src (2, n) at fractional sample positions (linear interpolation; silence outside)."""
+    n = src.shape[1]
+    i = np.floor(pos).astype(np.int64)
+    f = (pos - i).astype(np.float32)
+    out = np.zeros((2, pos.size), np.float32)
+    for k, w in ((i, 1 - f), (i + 1, f)):
+        ok = (k >= 0) & (k < n)
+        out[:, ok] += src[:, k[ok]] * w[ok]
+    return out
+
+
+def _deck_fx(x: np.ndarray, events: list[dict], clock: _Clock, qa: int, sr: int) -> np.ndarray:
+    """x (the deck on master time from sample qa) with its effect events played over it. Each reads the signal the
+    deck would have played (the record under the needle), from the event's start: a spinback runs backwards from
+    SPINBACK_SPEED x to a stop (quadratic slow-down, about a beat of the record back per beat), a brake slows from
+    full speed to a stop (linear: half the event's length of record), both fading as they slow and leaving the
+    deck silent after; a stutter retriggers the slice at its start every `div` beats, gated to STUTTER_DUTY."""
+    if not events:
+        return x
+    src, out = x, x.copy()
+    n = x.shape[1]
+    fade = FX_FADE_S * sr
+    for ev in events:
+        ts, te = (float(clock.time(b)) * sr - qa for b in (ev["start_beat"], ev["end_beat"]))
+        i0, i1 = min(n, max(0, math.ceil(ts))), min(n, max(0, math.ceil(te)))
+        k = np.arange(i0, i1, dtype=np.float64)
+        u = (k - ts) / max(te - ts, 1.0)
+        if ev["type"] == "spinback":
+            pos = ts - SPINBACK_SPEED * (te - ts) / 3 * (1 - (1 - u) ** 3)
+            y = _read(src, pos) * ((1 - u) ** 1.5).astype(np.float32)
+        elif ev["type"] == "brake":
+            pos = ts + (te - ts) * (u - u * u / 2)
+            y = _read(src, pos) * np.sqrt(1 - u).astype(np.float32)
+        else:
+            beats = clock.beat((qa + k) / sr)
+            r0 = ev["start_beat"] + np.floor((beats - ev["start_beat"]) / ev["div"] + 1e-9) * ev["div"]
+            t_r0 = clock.time(r0) * sr - qa
+            off = k - t_r0
+            length = clock.time(r0 + ev["div"]) * sr - qa - t_r0
+            gate = np.clip(off / fade, 0, 1) * np.clip((STUTTER_DUTY * length - off) / fade, 0, 1)
+            y = _read(src, ts + off) * gate.astype(np.float32)
+        out[:, i0:i1] = y
+        if ev["type"] == "stutter":  # back in where the record would have been, after a short fade
+            j = min(n, i1 + int(fade))
+            out[:, i1:j] *= np.linspace(0, 1, j - i1, dtype=np.float32)
+        else:  # the record has stopped: nothing after it plays
+            out[:, i1:] = 0.0
+            break
+    return out
+
+
+# ---------------------------------------------------------------------------------------------------------------
 # render
 
 
@@ -648,6 +710,7 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
     g = np.minimum(g, np.clip((t1 - q) / max(fade_out, 1), 0, 1).astype(np.float32))
     g = (np.sin(0.5 * np.pi * g) ** 2).astype(np.float32)
     x *= g * trim
+    x = _deck_fx(x, deck.get("fx") or [], clock, qa, sr)
     ctl_beats = clock.beat((qa + np.arange(0, q.size + CTL, CTL)) / sr)
     lanes = deck["lanes"]
     sends = [k for k in ("echo_send", "reverb_send") if any(kf["value"] > 0 for kf in lanes[k])]

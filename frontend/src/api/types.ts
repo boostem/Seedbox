@@ -271,6 +271,18 @@ export interface DeckLoop {
   length_beats: number; // 1, 2, 4, 8, 16 ...
 }
 
+// A deck effect over [start_beat, end_beat): it replaces what the deck plays there, reading the record it would have
+// played. spinback: pushed back, reverse playback slowing to a stop; brake: turntable stop, the platter (and pitch)
+// slowing to nothing; stutter: the slice at start_beat retriggered every `div` beats, gated. The deck is silent after
+// a spinback or a brake (the record has stopped).
+export type DeckFxType = "spinback" | "brake" | "stutter";
+export interface DeckFx {
+  type: DeckFxType;
+  start_beat: number;
+  end_beat: number; // at most 16 beats after start_beat
+  div?: number; // stutter only: beats per repeat, 1/16..1 (default 0.25)
+}
+
 // "pre_eq": the send takes the deck before its EQ, filter and fader (a throw keeps what the EQ is cutting);
 // "post_fader": after them (the send follows the fader down)
 export type SendTap = "pre_eq" | "post_fader";
@@ -286,10 +298,11 @@ export interface DeckPlan {
   reverb_tap?: SendTap; // default "pre_eq"
   reverb_size?: number; // 0..1 room size / decay of the deck's reverb (default 0.75)
   loops: DeckLoop[];
+  fx?: DeckFx[]; // effect events, sorted, non-overlapping (missing = none)
   lanes: Record<LaneId, Keyframe[]>; // every lane present, at least one keyframe each
 }
 
-export type MixTechnique = Technique | "filter sweep" | "loop roll" | "slam" | "reverb wash";
+export type MixTechnique = Technique | "filter sweep" | "loop roll" | "slam" | "reverb wash" | DeckFxType; // a DeckFxType: a cut where A ends in that effect
 
 export interface MixMarker {
   beat: number;

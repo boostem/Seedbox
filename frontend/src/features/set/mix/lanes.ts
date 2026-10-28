@@ -2,7 +2,7 @@
  * MixPlan model helpers (mirrors musicreco/mixplan.py): lane metadata (range, colour, snapping, formatting),
  * keyframe interpolation, master beat → deck file time (loops honoured), and render-audio time ↔ master beat.
  */
-import type { Curve, DeckPlan, Keyframe, LaneId, MixPlan, MixRender } from "@/api/types";
+import type { Curve, DeckFx, DeckFxType, DeckPlan, Keyframe, LaneId, MixPlan, MixRender } from "@/api/types";
 import { LANE_RANGES } from "@/api/types";
 
 export type DeckId = "a" | "b";
@@ -139,7 +139,17 @@ export function timeAt(r: MixRender, beat: number): number {
 
 export const CURVES: Curve[] = ["linear", "ease", "hold"];
 
-export const TECHNIQUES = ["long blend", "bass swap", "filter sweep", "echo out", "loop roll", "phrase blend", "drop swap", "slam", "reverb wash", "quick cut"] as const;
+export const TECHNIQUES = ["long blend", "bass swap", "filter sweep", "echo out", "loop roll", "phrase blend", "drop swap", "slam", "reverb wash", "quick cut", "spinback", "brake", "stutter"] as const;
+
+export const FX_TYPES: DeckFxType[] = ["spinback", "brake", "stutter"];
+export const FX_HINT: Record<DeckFxType, string> = { spinback: "reverse to a stop", brake: "turntable stop", stutter: "gated repeats" };
+/** Stutter repeat lengths offered (beats). */
+export const STUTTER_DIVS = [1, 0.5, 0.25, 0.125, 0.0625];
+export const STUTTER_DIV = 0.25;
+export const MAX_FX_BEATS = 16;
+/** "1/4" for 0.25 beats, "1" for a beat. */
+export const divLabel = (div: number) => (div >= 1 ? `${div}` : `1/${Math.round(1 / div)}`);
+export const fxLabel = (f: DeckFx) => (f.type === "stutter" ? `stutter ${divLabel(f.div ?? STUTTER_DIV)}` : f.type);
 export const BAR_OPTIONS = [4, 8, 16, 32] as const;
 
 /** "bar.beat" relative to B in (beat 0 = bar 1.1; negative beats count back from it). */

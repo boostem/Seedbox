@@ -3,8 +3,10 @@
 mixplan.generate on its own sees one pair at a time, so a set of similar tracks gets the same transition again and
 again. plan_set gives every pair a few techniques that work for it (the pair's own pick costs nothing, alternatives
 cost what they give up) and picks one per pair with a dynamic program over (previous technique, transitions since
-the last cut or echo out), adding set costs: repeating a cut or effect, a run of blends that drags on without a slam,
-cut or echo out, cuts in the quiet stretches (and cheaper ones at the energy peaks). Long blends stay the default.
+the last cut or echo out, that last cut or echo out), adding set costs: repeating a cut or effect (back to back, or
+as the next cut after a few blends), a run of blends that drags on without a slam, cut or echo out, cuts in the quiet
+stretches (and cheaper ones at the energy peaks). Long blends stay the default; cuts and A's deck effects
+(spinback, brake, stutter) take turns.
 
 The picks depend only on the running order, the tracks and their analyses, never on saved plan edits: regenerating
 or editing one transition leaves every other pair's pick as it was.
@@ -18,23 +20,26 @@ from . import mixing, mixplan, transitions
 from .models import Track
 
 BLENDS = ("long blend", "phrase blend", "bass swap")
-CUTS = ("slam", "quick cut", "drop swap", "reverb wash")  # B in on the 1, A out under an effect or not at all
+CUTS = ("slam", "quick cut", "drop swap", "reverb wash", *mixplan.FX_TYPES)  # B in on the 1, A out under an effect
 BREAKERS = (*CUTS, "echo out")  # what breaks up a run of blends
 # the effect a technique leans on: two in a row with the same one sound like a repeat even when the names differ
 FAMILY = {
     "slam": "cut", "quick cut": "cut", "drop swap": "cut", "reverb wash": "reverb", "echo out": "echo",
-    "filter sweep": "filter", "loop roll": "loop",
+    "filter sweep": "filter", "loop roll": "loop", "spinback": "turntable", "brake": "turntable", "stutter": "stutter",
 }  # fmt: skip
 
 # what an alternative to the pair's own pick costs (it gives up some of the pair's fit); the pick itself costs 0
 _ALT_COST = {
     "long blend": 1.0, "phrase blend": 3.0, "bass swap": 3.0, "echo out": 3.0, "filter sweep": 4.0, "slam": 2.0,
-    "drop swap": 4.0, "reverb wash": 5.0, "quick cut": 5.0,
+    "drop swap": 4.0, "reverb wash": 5.0, "quick cut": 5.0, "spinback": 5.0, "brake": 5.0, "stutter": 5.0,
 }  # fmt: skip
+_TURNTABLE_GAP = 2.5  # a spinback or brake is this much cheaper where the tempos are too far apart to blend
+_FX_FIT = 0.5  # a deck effect is this much cheaper where A's last bar suits it (_fx_fit), dearer where it doesn't
 _KEY_BLEND_COST = 6.0  # a plain blend over keys that don't sit together (a filter sweep or echo out hides them)
 _REPEAT = 25.0  # the same cut or effect technique twice in a row: never, unless nothing else works
 _REPEAT_BLEND = {"long blend": 0.5, "phrase blend": 1.5, "bass swap": 1.5}  # blends may run on, long ones most
 _SAME_FAMILY = 5.0  # e.g. a quick cut right after a slam
+_REPEAT_BREAKER = 3.0  # the same cut or echo out as the set's last one, with blends in between
 _LONG_BONUS = 1.0  # long blends are the default way through a set
 _PACE_MIN = 1  # a breaker right after another one (fewer transitions in between than this) costs _TOO_SOON
 _TOO_SOON = 5.0
@@ -78,16 +83,31 @@ def _candidates(m: mixplan.Mix) -> tuple[str, dict[str, float]]:
     a_drops = [d for d in m.ga.drops if m.ga.end * 0.4 <= d <= m.ga.end - transitions.PHRASE]
     if a_drops and any(d > m.gb.intro[0] for d in m.gb.drops):
         alts.append("drop swap")
-    alts += ["reverb wash", "quick cut"]
+    alts += ["reverb wash", "quick cut", *mixplan.FX_TYPES]  # A ends in a deck effect: a spinback, brake or stutter
+    fits = _fx_fit(m, e_tech, e)
     for tech in alts:
         cost = _ALT_COST[tech] + (_KEY_BLEND_COST if tech in BLENDS and not good_key else 0.0)
+        if FAMILY.get(tech) == "turntable" and gap > mixplan.MAX_BLEND_GAP:  # the stop hides the tempo jump
+            cost -= _TURNTABLE_GAP
+        if tech in mixplan.FX_TYPES:
+            cost += -_FX_FIT if tech == fits else _FX_FIT
         out.setdefault(tech, cost)
     return own, out
 
 
-def _step(prev: str | None, since: int, tech: str | None, energy: float) -> tuple[float, int]:
-    """Set cost of playing `tech` after `prev` with `since` transitions since the last breaker, and the new since.
-    energy: the pair's place in the set's energy range, 0 (quietest) to 1 (peak)."""
+def _fx_fit(m: mixplan.Mix, e_tech: str, e: mixplan._Place) -> str | None:
+    """The deck effect A's last bar before the cut suits: a stutter on drums only, a spinback on a vocal; None on
+    other music (a reverb wash suits that better; a brake is for tempo gaps, _TURNTABLE_GAP)."""
+    a0 = mixplan._cut_place(m, "quick cut", (e_tech, e)).a0
+    last = min(max(0, a0 - 1), len(m.ga.perc) - 1)
+    if m.ga.perc[last]:
+        return "stutter"
+    return "spinback" if m.ga.vocal[last] >= 0.4 else None
+
+
+def _step(prev: str | None, since: int, tech: str | None, energy: float, last: str | None = None) -> tuple[float, int]:
+    """Set cost of playing `tech` after `prev` with `since` transitions since the last breaker (`last`), and the new
+    since. energy: the pair's place in the set's energy range, 0 (quietest) to 1 (peak)."""
     if tech is None:
         return 0.0, min(_PACE_CAP, since + 1)
     if tech in BREAKERS:
@@ -98,6 +118,8 @@ def _step(prev: str | None, since: int, tech: str | None, energy: float) -> tupl
         cost += _REPEAT_BLEND.get(tech, _REPEAT)
     elif tech in FAMILY and FAMILY.get(prev) == FAMILY[tech]:
         cost += _SAME_FAMILY
+    elif tech == last:
+        cost += _REPEAT_BREAKER
     if tech == "long blend":
         cost -= _LONG_BONUS
     if tech in CUTS:
@@ -117,18 +139,18 @@ def _energies(tracks: list[Track]) -> list[float]:
 def choose(options: list[dict[str | None, float]], energies: list[float]) -> list[str | None]:
     """The cheapest technique per pair: the options' fit costs plus _step's set costs, summed over the set.
     Ties keep the option listed first."""
-    State = tuple[str | None, int]  # (previous technique, transitions since the last breaker)
-    states: dict[State, float] = {(None, _START_SINCE): 0.0}
+    State = tuple[str | None, int, str | None]  # (previous technique, transitions since the last breaker, that one)
+    states: dict[State, float] = {(None, _START_SINCE, None): 0.0}
     back: list[dict[State, State]] = []  # per pair: state reached -> the state it came from
     for opts, energy in zip(options, energies):
         nxt: dict[State, float] = {}
         came: dict[State, State] = {}
-        for (prev, since), total in states.items():
+        for (prev, since, last), total in states.items():
             for tech, fit in opts.items():
-                cost, since2 = _step(prev, since, tech, energy)
-                key, val = (tech, since2), total + fit + cost
+                cost, since2 = _step(prev, since, tech, energy, last)
+                key, val = (tech, since2, tech if tech in BREAKERS else last), total + fit + cost
                 if key not in nxt or val < nxt[key] - 1e-9:
-                    nxt[key], came[key] = val, (prev, since)
+                    nxt[key], came[key] = val, (prev, since, last)
         states = nxt
         back.append(came)
     if not back:
@@ -141,11 +163,13 @@ def choose(options: list[dict[str | None, float]], energies: list[float]) -> lis
     return picks[::-1]
 
 
-def _reason(tech: str, own: str, prev: str | None, since: int, energy: float) -> str:
+def _reason(tech: str, own: str, prev: str | None, since: int, energy: float, last: str | None = None) -> str:
     if tech in CUTS and energy >= 2 / 3:
         why = "at an energy peak of the set"
     elif prev == own and own not in BLENDS:
         why = f"so the set doesn't play two {own}s in a row"
+    elif last == own and own in BREAKERS:
+        why = f"so the set's next cut isn't another {own}"
     elif tech in BREAKERS and since >= 2:
         why = f"to break up a run of {since} blends"
     else:
@@ -177,12 +201,13 @@ def plan_set(
     picks = choose(options, energies)
 
     out: list[Pick] = []
-    prev, since = None, _START_SINCE
+    prev, since, last = None, _START_SINCE, None
     for a, b, tech, own, energy in zip(tracks, tracks[1:], picks, owns, energies):
-        reason = None if tech is None or own is None or tech == own else _reason(tech, own, prev, since, energy)
+        reason = None if tech is None or own is None or tech == own else \
+            _reason(tech, own, prev, since, energy, last)
         out.append(Pick(a.id, b.id, tech, own, reason))
-        since = _step(prev, since, tech, energy)[1]
-        prev = tech
+        since = _step(prev, since, tech, energy, last)[1]
+        prev, last = tech, tech if tech in BREAKERS else last
     return out
 
 

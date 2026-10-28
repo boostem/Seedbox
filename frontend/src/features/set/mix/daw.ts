@@ -21,6 +21,10 @@ export const H_TEMPO = 44;
 export const H_WAVE = 60;
 export const H_LANE = 30;
 export const H_LOOPS = 20;
+export const H_FX = 20;
+
+/** A loop or an effect event on one deck. */
+export type RegionSel = { deck: DeckId; index: number } | null;
 
 /** Everything the rows need to edit, behind stable refs (rows stay memoised during drags). */
 export interface Editor {
@@ -30,8 +34,10 @@ export interface Editor {
   update: (p: MixPlan, opts?: { transient?: boolean }) => void;
   checkpoint: (p: MixPlan) => void;
   view: () => View;
-  loopSel: () => { deck: DeckId; index: number } | null;
-  setLoopSel: (s: { deck: DeckId; index: number } | null) => void;
+  loopSel: () => RegionSel;
+  setLoopSel: (s: RegionSel) => void;
+  fxSel: () => RegionSel;
+  setFxSel: (s: RegionSel) => void;
   menu: (m: Menu | null) => void;
   playFrom: (beat: number) => void;
 }

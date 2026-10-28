@@ -149,4 +149,4 @@ export function mixPlan(folder: string, a: string, b: string, technique?: string
   return plan && { ...clone(plan), edited: false };
 }
 
-export const TECHNIQUES: MixTechnique[] = ["long blend", "phrase blend", "bass swap", "drop swap", "quick cut", "echo out", "filter sweep", "loop roll", "slam", "reverb wash"];
+export const TECHNIQUES: MixTechnique[] = ["long blend", "phrase blend", "bass swap", "drop swap", "quick cut", "echo out", "filter sweep", "loop roll", "slam", "reverb wash", "spinback", "brake", "stutter"];

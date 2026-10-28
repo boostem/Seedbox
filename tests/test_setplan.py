@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from musicreco import mixplan, setplan, transitions
 
-from .fixtures import SET_12, set_tracks
+from .fixtures import FAST, MUSIC_OUTRO, SET_12, STANDARD, Spec, analysis, set_tracks, track
 
 
 def _set(entries=SET_12):
@@ -34,7 +34,7 @@ def test_twelve_track_set_is_paced():
         run = 0 if t in setplan.BREAKERS else run + 1
         assert run <= setplan._PACE_EVERY + 1, f"{run} transitions without a cut or echo out: {techs}"
     assert techs == [
-        "long blend", "long blend", "long blend", "echo out", "long blend", "slam", "long blend", "reverb wash",
+        "long blend", "long blend", "long blend", "echo out", "long blend", "slam", "long blend", "stutter",
         "long blend", "long blend", "long blend",
     ]  # fmt: skip
     # the cut that isn't the pair's own pick comes at the set's energy peak, with a note saying so
@@ -82,6 +82,41 @@ def test_choose_cuts_more_at_energy_peaks():
     quiet = setplan.choose([dict(opts) for _ in range(12)], [0.0] * 12)
     peak = setplan.choose([dict(opts) for _ in range(12)], [1.0] * 12)
     assert quiet.count("quick cut") < peak.count("quick cut"), (quiet, peak)
+
+
+def test_choose_rotates_its_cuts():
+    """With blends in between, the next cut is a different one than the last (cheapest first)."""
+    opts = {"long blend": 0.0, "echo out": 3.0, "spinback": 4.5, "brake": 4.5}
+    techs = [t for t in setplan.choose([dict(opts) for _ in range(16)], [0.5] * 16) if t != "long blend"]
+    assert len(techs) >= 3 and all(x != y for x, y in zip(techs, techs[1:])), techs
+    assert "spinback" in techs
+
+
+def test_long_set_ends_a_cut_in_a_deck_effect_now_and_then():
+    entries = [(f"{p}{i[1:]}", s, e) for p in "stu" for i, s, e in SET_12]
+    tracks, analyses = set_tracks(entries)
+    picks = setplan.plan_set(tracks, analyses)
+    techs = [p.technique for p in picks]
+    fx = [p for p in picks if p.technique in mixplan.FX_TYPES]
+    assert 1 <= len(fx) <= len(picks) // 8, techs
+    assert all(p.reason and p.own != p.technique for p in fx)
+    assert {"echo out", "slam", "reverb wash"} <= set(techs)  # the effects don't push the other cuts out
+
+
+def _fx_costs(a: Spec, b: Spec) -> dict[str, float]:
+    m = mixplan.make_mix(track(a), analysis(a), track(b), analysis(b), None)
+    return {t: c for t, c in setplan._candidates(m)[1].items() if t in (*mixplan.FX_TYPES, "reverb wash")}
+
+
+def test_deck_effects_go_where_a_ends_in_what_they_suit():
+    drums = _fx_costs(STANDARD, STANDARD)  # a drums-only outro: a stutter
+    assert drums["stutter"] < drums["reverb wash"] < drums["spinback"] == drums["brake"]
+    sung = _fx_costs(Spec("sung_end", outro_drums=False, vocals=[(100, 128)]), STANDARD)  # a vocal on A's last bar
+    assert sung["spinback"] < sung["reverb wash"] < sung["stutter"]
+    music = _fx_costs(MUSIC_OUTRO, STANDARD)  # other music: a reverb wash rather than an effect
+    assert music["reverb wash"] < min(music[t] for t in mixplan.FX_TYPES)
+    gap = _fx_costs(MUSIC_OUTRO, FAST)  # too far apart to blend: the record stops and B starts at its own tempo
+    assert gap["brake"] == gap["spinback"] < gap["reverb wash"]
 
 
 def test_choose_takes_the_only_option():
