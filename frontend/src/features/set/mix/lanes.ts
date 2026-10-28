@@ -40,6 +40,7 @@ export const LANES: LaneMeta[] = [
     bipolar: true,
     fmt: (v) => (Math.abs(v) < 0.005 ? "off" : v < 0 ? `LPF ${Math.round(-v * 100)}%` : `HPF ${Math.round(v * 100)}%`),
   },
+  { id: "filter_res", label: "Resonance", short: "RES", color: "var(--color-info)", step: 0.05, fine: 0.01, neutral: 0, fmt: pct },
   { id: "echo_send", label: "Echo send", short: "ECHO", color: "var(--color-move-boost)", step: 0.05, fine: 0.01, neutral: 0, fmt: pct },
   { id: "echo_feedback", label: "Echo feedback", short: "FB", color: "var(--color-move-boost)", step: 0.05, fine: 0.01, neutral: 0.55, fmt: pct },
   { id: "reverb_send", label: "Reverb send", short: "VERB", color: "var(--color-ok)", step: 0.05, fine: 0.01, neutral: 0, fmt: pct },

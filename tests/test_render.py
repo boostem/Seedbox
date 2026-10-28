@@ -3,6 +3,7 @@ mix doesn't clip, the stems are there, and the echo / reverb returns are clearly
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 
 import numpy as np
@@ -164,7 +165,7 @@ def send_renders(tmp_path_factory: pytest.TempPathFactory) -> dict:
             an["duration_s"] += 4 * s.bar_s
         plan = mixplan.generate(track(a), an_a, track(b), an_b, "f", technique=tech)
         plan["a"].update(deck)
-        out[name] = (plan, mixrender.render_audio(plan, paths[0], paths[1], SR))
+        out[name] = (plan, mixrender.render_audio(plan, paths[0], paths[1], SR) | {"paths": paths})
     return out
 
 
@@ -254,3 +255,52 @@ def test_loop_roll_repeats_a_downbeat_down_to_half_beats(renders: dict) -> None:
 
     assert click_offset(r["stems"]["A"], SR, at(E - 0.5), search_s=0.02) < 0.003  # the ½-beat roll
     assert click_offset(r["stems"]["A"], SR, at(E - 1.5), search_s=0.02) > 0.01  # the 1-beat step: nothing there
+
+
+def _filter_response(f: float, res: float) -> tuple[np.ndarray, np.ndarray]:
+    """Magnitude response (dB) of mixrender's DJ filter held at `f` with resonance `res`, and its frequencies."""
+    n = SR
+    imp = np.zeros((2, n), np.float32)
+    imp[:, 0] = 1.0
+    y = mixrender._dj_filter(imp, np.full(n, f), SR, np.full(n, res))[0]
+    return 20 * np.log10(np.abs(np.fft.rfft(y)) + 1e-12), np.fft.rfftfreq(n, 1 / SR)
+
+
+@pytest.mark.parametrize("f", [0.35, 0.85, -0.5, -1.0])
+def test_filter_resonance_peaks_at_the_cutoff_within_a_safe_limit(f: float) -> None:
+    light, fr = _filter_response(f, 0.0)
+    full, _ = _filter_response(f, 1.0)
+    passband = (fr > 15000) if f > 0 else (fr < 30)
+    assert full.max() - full[passband].mean() > 7.0  # a clear resonant peak over the passband ...
+    assert full.max() < 8.0  # ... that never goes more than ~8 dB over the dry signal
+    assert light.max() < 2.0  # resonance 0: the light default
+    assert full[passband].mean() > -3.5  # the level compensation costs little of the passband
+
+
+def test_filter_resonance_zero_is_the_old_filter() -> None:
+    rng = np.random.default_rng(1)
+    x = (0.2 * rng.standard_normal((2, SR))).astype(np.float32)
+    f = np.linspace(-1.0, 1.0, SR)
+    np.testing.assert_array_equal(mixrender._dj_filter(x, f, SR), mixrender._dj_filter(x, f, SR, np.zeros(SR)))
+    y = mixrender._dj_filter(x, f, SR, np.full(SR, 5.0))  # out of range: clamped to 1
+    np.testing.assert_array_equal(y, mixrender._dj_filter(x, f, SR, np.ones(SR)))
+    assert np.isfinite(y).all() and np.abs(y).max() < 2 * np.abs(x).max()
+
+
+def test_b_build_is_rendered(send_renders: dict) -> None:
+    """The blend's high-pass build on B (resonant) changes B only over the build, and the mix doesn't clip."""
+    plan, r = send_renders["blend"]
+    flat = copy.deepcopy(plan)
+    for d in ("a", "b"):
+        flat[d]["lanes"]["filter_res"] = [{"beat": 0.0, "value": 0.0, "curve": "hold"}]
+    r0 = mixrender.render_audio(flat, *r["paths"], SR)
+    clock = r["clock"]
+    x0 = next(k["beat"] for k in plan["b"]["lanes"]["filter_res"] if k["curve"] == "ease")
+
+    def span(c0: float, c1: float) -> slice:
+        return slice(*(int(round(float(clock.time(c)) * SR)) for c in (c0, c1)))
+
+    before, build = span(r["start_beat"], x0 - 1), span(x0 + 4, x0 + 7.5)
+    np.testing.assert_allclose(r["stems"]["B"][:, before], r0["stems"]["B"][:, before], atol=1e-6)
+    assert np.abs(r["stems"]["B"][:, build] - r0["stems"]["B"][:, build]).max() > 1e-3
+    assert np.abs(r["mix"]).max() <= 1.0

@@ -240,7 +240,7 @@ export interface PickFolderResult { path: string | null } // null = cancelled; 5
 // on A's phrase grid). Each deck maps master beats to its own file time via its beat grid (+ loops), and is
 // time-stretched with key lock so its beats land on the master clock, whose tempo follows `tempo`.
 
-export type LaneId = "volume" | "eq_low" | "eq_mid" | "eq_high" | "filter" | "echo_send" | "echo_feedback" | "reverb_send";
+export type LaneId = "volume" | "eq_low" | "eq_mid" | "eq_high" | "filter" | "filter_res" | "echo_send" | "echo_feedback" | "reverb_send";
 
 export type Curve = "linear" | "hold" | "ease"; // shape from this keyframe to the next ("hold" = step at the next keyframe)
 
@@ -254,12 +254,13 @@ export interface Keyframe {
 //   volume        0..1   linear fader gain (1 = unity)
 //   eq_low/mid/high  -30..+6 dB, 0 = flat, -30 = kill (DJ isolator, crossovers ~200 Hz / ~2.5 kHz)
 //   filter        -1..1  bipolar DJ filter: <0 low-pass closing (−1 ≈ 80 Hz), >0 high-pass opening (+1 ≈ 10 kHz), 0 = bypass
+//   filter_res    0..1   the filter's resonance: 0 = light (default), 1 = a sharp peak at the cutoff (capped, level-compensated)
 //   echo_send     0..1   send into the deck's beat-synced echo (its tail keeps ringing after the fader is down)
 //   echo_feedback 0..0.95 (default 0.55)
 //   reverb_send   0..1   send into the deck's wash reverb
 // Where the sends tap the deck: DeckPlan.echo_tap / reverb_tap.
 export const LANE_RANGES: Record<LaneId, [number, number]> = {
-  volume: [0, 1], eq_low: [-30, 6], eq_mid: [-30, 6], eq_high: [-30, 6], filter: [-1, 1],
+  volume: [0, 1], eq_low: [-30, 6], eq_mid: [-30, 6], eq_high: [-30, 6], filter: [-1, 1], filter_res: [0, 1],
   echo_send: [0, 1], echo_feedback: [0, 0.95], reverb_send: [0, 1],
 };
 
