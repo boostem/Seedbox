@@ -763,3 +763,55 @@ def test_validate_send_taps_and_reverb_size() -> None:
     p["a"].update(echo_tap="post_fader", reverb_tap="nonsense", reverb_size=3.0)
     v = mixplan.validate(p)
     assert (v["a"]["echo_tap"], v["a"]["reverb_tap"], v["a"]["reverb_size"]) == ("post_fader", "pre_eq", 1.0)
+
+
+def test_filter_sweep_peaks_on_phrase_ends_and_releases_on_the_downbeat() -> None:
+    """A filter sweep climbs phrase by phrase: a resonant peak on each phrase's last 16th, half of it back on the
+    next downbeat, the full sweep where A leaves."""
+    plan = _generate(VOCAL_OUTRO, STANDARD)
+    assert (plan["technique"], plan["bars"]) == ("filter sweep", 16)
+    a = plan["a"]["lanes"]
+    f = mixplan.lane_value(a["filter"], [16.0, 31.8, 32.0, 48.0, 64.0])
+    assert f[0] < f[1] == pytest.approx(0.425)
+    assert f[2] == pytest.approx(f[1] / 2)  # released on the 1 of the next phrase
+    assert f[2] < f[3] < f[4] == pytest.approx(mixplan._FULL_SWEEP)
+    res = mixplan.lane_value(a["filter_res"], [31.8, 32.0, 64.0])
+    assert res.tolist() == [mixplan._SWEEP_RES, 0.0, mixplan._SWEEP_RES]
+
+
+@pytest.mark.parametrize(("name", "a", "b"), PAIRS, ids=IDS)
+def test_blends_build_a_high_pass_on_b_before_its_lows_drop_in(name: str, a: Spec, b: Spec) -> None:
+    plan = _generate(a, b)
+    if plan["technique"] not in ("long blend", "bass swap", "phrase blend", "filter sweep"):
+        return
+    b_lanes = plan["b"]["lanes"]
+    low = b_lanes["eq_low"]
+    land = next(k["beat"] for k in low if k["value"] == 0.0) - (1.0 if len(low) > 2 else 0.0)  # its lows' 1
+    if land - mixplan._B_BUILD_BEATS < 8.0:  # no room for the build
+        return
+    f = mixplan.lane_value(b_lanes["filter"], [land - 8.0, land - 4.0, land - 0.1, land])
+    assert f[0] == 0.0 < f[1] < f[2] == pytest.approx(mixplan._B_BUILD)
+    assert f[3] == 0.0  # let go on the downbeat as the lows come in
+    res = mixplan.lane_value(b_lanes["filter_res"], [land - 0.1, land])
+    assert res.tolist() == [mixplan._SWEEP_RES, 0.0]
+
+
+def test_slam_pre_roll_builds_b_into_the_cut() -> None:
+    plan = _generate(BUILD_END, SHORT_INTRO_DROP)
+    assert {"beat": -4.0, "label": "B pre-roll"} in plan["markers"]
+    b = plan["b"]["lanes"]
+    f = mixplan.lane_value(b["filter"], [-4.0, -2.0, -0.1, 0.0])
+    assert f[0] < f[1] < f[2] == pytest.approx(mixplan._B_BUILD) and f[3] == 0.0
+    assert mixplan.lane_value(b["filter_res"], [-0.1, 0.0]).tolist() == [mixplan._SWEEP_RES, 0.0]
+    a = plan["a"]["lanes"]  # A's riser peaks, resonant, on the cut and holds as A leaves
+    assert mixplan.lane_value(a["filter_res"], 0.0) == mixplan._SWEEP_RES
+
+
+def test_filter_res_lane_is_clamped_and_defaults_off() -> None:
+    plan = _generate(LONG_OUTRO, STANDARD)
+    p = copy.deepcopy(plan)
+    p["a"]["lanes"]["filter_res"] = [{"beat": 0.0, "value": 7.0, "curve": "hold"}]
+    del p["b"]["lanes"]["filter_res"]
+    v = mixplan.validate(p)
+    assert v["a"]["lanes"]["filter_res"][0]["value"] == 1.0
+    assert v["b"]["lanes"]["filter_res"] == [{"beat": 0.0, "value": 0.0, "curve": "hold"}]

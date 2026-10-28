@@ -6,7 +6,7 @@ beat-accurate seams with 5 ms equal-power crossfades) -> Rubber Band time stretc
 tempo curve, then a sub-sample timing correction (a pilot click track stretched with the same ratios measures where
 every source sample actually landed; a 32-tap windowed-sinc warp moves it to the exact master time) -> auto gain to a
 common loudness -> 3-band isolator (Linkwitz-Riley 4th order at 200 Hz / 2.5 kHz, phase-compensated, -30 dB = kill)
--> bipolar 24 dB/oct resonant filter (per 64-sample block, smoothed) -> fader. Each deck's echo and reverb send taps
+-> bipolar 24 dB/oct resonant filter (per 64-sample block, smoothed; resonance from the filter_res lane) -> fader. Each deck's echo and reverb send taps
 it before the isolator (pre_eq, the default: a throw keeps the mids/highs the EQ is cutting) or after the fader.
 Bus: both decks -> slow zero-phase leveller (tames blend bumps), + each deck's echo return (beat-synced, darkening
 repeats, tails ring past the deck) and reverb return (size per deck) -> look-ahead true-peak limiter (-1 dBTP) -> AAC.
@@ -33,7 +33,7 @@ from scipy import ndimage, signal
 from .mixplan import deck_time, lane_value, validate
 from .paths import ffmpeg_path
 
-RENDER_VERSION = 2  # bump whenever the output for the same plan + files changes (invalidates cached renders)
+RENDER_VERSION = 3  # bump whenever the output for the same plan + files changes (invalidates cached renders)
 SR = 44100
 
 DECODE_TIMEOUT_S = 300
@@ -53,6 +53,9 @@ REVERB_BAND_HZ = (150.0, 9000.0)  # the reverb send is band-limited to this (no 
 SEAM_S = 0.005
 STEP_RAMP_S = 0.010
 FILTER_SMOOTH_S = 0.030
+FILTER_Q_BASE = 1.3066  # the resonant stage's Q at filter_res 0 (Butterworth), plus a touch as the filter closes
+FILTER_Q_MAX = 5.0  # its Q at filter_res 1: a ~+14 dB peak before the level compensation (safe limit)
+FILTER_RES_ONSET = 0.2  # resonance fades in over |filter| 0..this (no boost at 20 Hz / 20 kHz, where it's just mud)
 CTL = 16  # control-rate decimation (samples)
 FILTER_BLOCK = 64
 PILOT_SPACING = 2048
@@ -477,16 +480,23 @@ def _biquads(kind: str, fc: np.ndarray, q: np.ndarray, sr: int) -> np.ndarray:
     return np.concatenate([b / a0[:, None], a], axis=1)
 
 
-def _dj_filter(x: np.ndarray, f: np.ndarray, sr: int) -> np.ndarray:
-    """Bipolar filter (f < 0 low-pass to 80 Hz, f > 0 high-pass to 10 kHz), 24 dB/oct with light resonance.
-    Coefficients per 64-sample block from the smoothed lane; dry below |f| = 0.03 with a short blend."""
+def _dj_filter(x: np.ndarray, f: np.ndarray, sr: int, res: np.ndarray | None = None) -> np.ndarray:
+    """Bipolar filter (f < 0 low-pass to 80 Hz, f > 0 high-pass to 10 kHz), 24 dB/oct, resonance 0..1 (`res`, light
+    by default): the second stage's Q goes up to FILTER_Q_MAX, faded in over the first FILTER_RES_ONSET of the sweep,
+    with its level brought down by the 4th root of the Q gain: the peak stays within ~+8 dB of the dry signal.
+    Coefficients per 64-sample block from the smoothed lanes; dry below |f| = 0.03 with a short blend."""
     n = x.shape[1]
     out = x.copy()
     nb = (n + FILTER_BLOCK - 1) // FILTER_BLOCK
-    fb = f[np.minimum(np.arange(nb) * FILTER_BLOCK + FILTER_BLOCK // 2, n - 1)].astype(float)
+    mid = np.minimum(np.arange(nb) * FILTER_BLOCK + FILTER_BLOCK // 2, n - 1)
+    fb = f[mid].astype(float)
     mag = np.abs(fb)
     wet = np.clip(np.abs(f) / 0.03, 0.0, 1.0)
-    q2 = 1.3066 + 0.6 * np.clip(mag, 0, 1) ** 1.5
+    q_light = FILTER_Q_BASE + 0.6 * np.clip(mag, 0, 1) ** 1.5
+    r = np.zeros(nb) if res is None else np.clip(res[mid].astype(float), 0.0, 1.0)
+    r = np.round(r * np.clip(mag / FILTER_RES_ONSET, 0.0, 1.0), 3)  # rounded: holds still merge into one call
+    q2 = q_light + r * np.maximum(FILTER_Q_MAX - q_light, 0.0)
+    comp = (q_light / q2) ** 0.25
     for kind, sel in (("lp", fb < 0), ("hp", fb > 0)):
         active = ndimage.binary_dilation(sel & (mag >= 0.003), iterations=24)
         if not active.any():
@@ -498,6 +508,7 @@ def _dj_filter(x: np.ndarray, f: np.ndarray, sr: int) -> np.ndarray:
             fc = FILTER_HP_MIN_HZ * (FILTER_HP_MAX_HZ / FILTER_HP_MIN_HZ) ** m
         s1 = _biquads(kind, fc, np.full_like(fc, 0.5412), sr)
         s2 = _biquads(kind, fc, q2, sr)
+        s2[:, :3] *= comp[:, None]
         y = np.zeros((2, n))
         zi = np.zeros((2, 2, 2))
         idx = np.nonzero(active)[0]
@@ -649,7 +660,8 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
         gl, gm, gh = (_iso_gain(lane(k)) for k in ("eq_low", "eq_mid", "eq_high"))
         x = _isolator(x, gl, gm, gh, sr)
     if any(kf["value"] != 0 for kf in lanes["filter"]):
-        x = _dj_filter(x, lane("filter", FILTER_SMOOTH_S), sr)
+        res = lane("filter_res", FILTER_SMOOTH_S) if any(kf["value"] > 0 for kf in lanes["filter_res"]) else None
+        x = _dj_filter(x, lane("filter", FILTER_SMOOTH_S), sr, res)
     out = {"name": name, "qa": qa, "qb": qb, "x": x, "pre": pre, "volume": lane("volume"), "warnings": warn}
     for k in sends:
         out[k] = lane(k)

@@ -27,14 +27,17 @@ from .transitions import Grid, finite, num, plural
 
 PLAN_VERSION = 2
 
-LANES = ("volume", "eq_low", "eq_mid", "eq_high", "filter", "echo_send", "echo_feedback", "reverb_send")
+LANES = (
+    "volume", "eq_low", "eq_mid", "eq_high", "filter", "filter_res", "echo_send", "echo_feedback", "reverb_send",
+)
 LANE_RANGES: dict[str, tuple[float, float]] = {
     "volume": (0.0, 1.0), "eq_low": (-30.0, 6.0), "eq_mid": (-30.0, 6.0), "eq_high": (-30.0, 6.0),
-    "filter": (-1.0, 1.0), "echo_send": (0.0, 1.0), "echo_feedback": (0.0, 0.95), "reverb_send": (0.0, 1.0),
+    "filter": (-1.0, 1.0), "filter_res": (0.0, 1.0), "echo_send": (0.0, 1.0), "echo_feedback": (0.0, 0.95),
+    "reverb_send": (0.0, 1.0),
 }  # fmt: skip
 ECHO_FEEDBACK = 0.55  # the echo_feedback lane's default, shared with the renderer and the UI
 LANE_DEFAULTS: dict[str, float] = {
-    "volume": 1.0, "eq_low": 0.0, "eq_mid": 0.0, "eq_high": 0.0, "filter": 0.0,
+    "volume": 1.0, "eq_low": 0.0, "eq_mid": 0.0, "eq_high": 0.0, "filter": 0.0, "filter_res": 0.0,
     "echo_send": 0.0, "echo_feedback": ECHO_FEEDBACK, "reverb_send": 0.0,
 }  # fmt: skip
 SEND_TAPS = ("pre_eq", "post_fader")  # where a deck's echo / reverb send taps it: before its EQ/filter/fader, or after
@@ -71,6 +74,12 @@ _BUILD_BARS = 32  # A's build counts when the drop it leads into is within A's l
 _SEND_TAIL = 2.0  # beats A keeps playing (fader down) after it is out, so its echo / reverb sends still get audio
 _MID_THROWS = 2  # at most this many echo throws inside a blend (ends of A's vocal phrases, breakdown exits)
 _WASH_SIZE = 0.95  # reverb size of a reverb wash
+_SWEEP_RES = 0.6  # filter_res at the top of a high-pass build / sweep
+_OUT_RES = 0.35  # ... at the top of the gentle high-pass that takes A out of a blend
+_RELEASE = 0.25  # a build holds its peak for the last 16th of the phrase and lets go on the downbeat after it
+_B_BUILD = 0.45  # B's high-pass build tops out here (~330 Hz: its lows are killed already, this thins its low mids)
+_B_BUILD_BEATS = 8.0  # ... over the 2 bars before its lows drop in
+_FULL_SWEEP = 0.85  # a filter sweep's high-pass on A at the end of the blend
 
 # B's fader-in per loop-roll length, bars
 _FADE_IN = {4: 1, 8: 2, 16: 4, 32: 8}
@@ -661,6 +670,46 @@ def _throw(A: dict, at: float, send: float = 0.9, reverb: float = 0.6) -> dict:
     return {"echo_beats": 0.75, "feedback": 0.7, "throw": at - 2}
 
 
+def _sweep(x0: float, at: float, peak: float, res: float = _SWEEP_RES, start: float = 0.0,
+           release: bool = True) -> tuple[list[tuple[float, float, str]], list[tuple[float, float, str]]]:
+    """(filter, filter_res) points of a high-pass build from master beat x0 (at `start`) that peaks on the phrase end
+    at `at`, its resonance riding up with it. With `release` it holds the peak over the phrase's last 16th and lets
+    go on the downbeat at `at` (filter and resonance back to 0); without (a deck that leaves on that 1) it holds."""
+    top = at - _RELEASE if release else at
+    end = [(at, 0.0, "hold")] if release else []
+    return [(x0, start, "ease"), (top, peak, "hold"), *end], [(x0, 0.0, "ease"), (top, res, "hold"), *end]
+
+
+def _phrase_sweep(E: float) -> tuple[list[tuple[float, float, str]], list[tuple[float, float, str]]]:
+    """A filter sweep's high-pass on A over a blend of E beats, in 8-bar phrases: it climbs over each phrase to a
+    resonant peak on its last 16th, falls back to half that on the downbeat of the next and climbs higher again,
+    up to _FULL_SWEEP where A leaves (one climb on blends of 8 bars or less)."""
+    f: list[tuple[float, float, str]] = []
+    r: list[tuple[float, float, str]] = []
+    level, s = 0.0, 0.0
+    while s < E:
+        e = min(E, s + 4.0 * _PHRASE)
+        ff, rr = _sweep(s, e, _FULL_SWEEP * e / E, start=level, release=e < E)
+        f += ff[:2]
+        r += rr[:2]
+        level, s = _FULL_SWEEP * e / E / 2, e
+    return f, r
+
+
+def _b_build(B: dict, i_end: float, D: float, open_val: float) -> bool:
+    """B's opening filter from the blend's start (open_val up to 0 over the in-phrase), then a resonant high-pass
+    build over the 2 bars before its lows drop in on the 1 at master beat D, let go on that 1 (_sweep). With no
+    room for both (D in the blend's first 4 bars) just the opening. Returns whether B builds."""
+    x0 = D - _B_BUILD_BEATS
+    if x0 < 8.0:
+        B["filter"] = [(0.0, open_val, "ease"), (i_end, 0.0, "hold")]
+        return False
+    f, r = _sweep(x0, D, _B_BUILD)
+    B["filter"] = [(0.0, open_val, "ease"), (min(i_end, x0), 0.0, "hold"), *f]
+    B["filter_res"] = r
+    return True
+
+
 def _phrases(length: int, swap: int | None) -> tuple[float, float, float]:
     """(fader-in end, in-phrase end, out-phrase start) of a blend, in master beats. The in and out phrases are 8 bars
     (the halves of an 8- or 4-bar blend); the bass swap, on a phrase boundary, closes the in-phrase early or holds
@@ -731,15 +780,17 @@ def _blend_body(tech: str, length: int, swap: int | None, A: dict, B: dict) -> d
     B["eq_high"] = [(0.0, -12.0, "ease"), (i_end, 0.0, "hold")]
     B["eq_mid"] = [(0.0, -15.0, "ease"), (i_end, -4.0, "hold"), (mids_full, -4.0, "ease"),
                    (min(E, mids_full + 4), 0.0, "hold")]
-    B["filter"] = [(0.0, -0.6 if tech == "filter sweep" else 0.4 if tech == "long blend" else 0.3, "ease"),
-                   (i_end, 0.0, "hold")]
+    info["b_build"] = _b_build(B, i_end, S if S is not None else E,
+                               -0.6 if tech == "filter sweep" else 0.4 if tech == "long blend" else 0.3)
     if S is not None:
         B["eq_low"] = [(0.0, _KILL, "hold"), (S, _KILL, "linear"), (S + 1, 0.0, "hold")]
         A["eq_low"] = [(0.0, 0.0, "hold"), (S, 0.0, "linear"), (S + 1, _KILL, "hold")]
     else:
         B["eq_low"] = [(0.0, _KILL, "hold"), (E, 0.0, "hold")]
-    sweep = 0.85 if tech == "filter sweep" else 0.35
-    A["filter"] = [(0.0 if tech == "filter sweep" else o_start, 0.0, "ease"), (E, sweep, "hold")]
+    if tech == "filter sweep":
+        A["filter"], A["filter_res"] = _phrase_sweep(E)
+    else:
+        A["filter"], A["filter_res"] = _sweep(o_start, E, 0.35, _OUT_RES, release=False)
     if tech == "echo out":  # A's fader stays up; cut on the 1 under a long echo throw
         A["eq_mid"] = [(o_start, 0.0, "ease"), (E, -6.0, "hold")]
         A["eq_high"] = [(o_start, 0.0, "ease"), (E, -6.0, "hold")]
@@ -749,7 +800,7 @@ def _blend_body(tech: str, length: int, swap: int | None, A: dict, B: dict) -> d
     if S is None:  # A rides, bass and full energy, to the 1 where B's lows land (no dip before B's drop)
         A["eq_mid"] = [(o_start, 0.0, "ease"), (E, -6.0, "hold")]
         A["eq_high"] = [(o_start, 0.0, "ease"), (E, -6.0, "hold")]
-        A["filter"] = [(E - 8, 0.0, "ease"), (E, 0.12, "hold")]
+        A["filter"], A["filter_res"] = _sweep(E - 8, E, 0.12, _OUT_RES, release=False)
         A["volume"] = [(E - 4, 1.0, "hold"), (E, 0.0, "hold")]
     else:  # highs over the first half of the out-phrase, mids over its middle, the fader over its second half
         A["eq_high"] = [(o_start, 0.0, "ease"), (o_start + out / 2, -12.0, "hold")]
@@ -813,7 +864,7 @@ def _roll_build(A: dict, a_deck: dict, at: float, src: float, bars: int, build: 
     A["eq_low"] = [(R, 0.0, "hold"), (at - 2.0 * bars, _KILL, "hold")]
     info: dict = {"roll": R, "roll_bars": bars}
     if build:
-        A["filter"] = [(R, 0.0, "ease"), (at, 0.6, "hold")]
+        A["filter"], A["filter_res"] = _sweep(R, at, 0.6, release=False)
         info.update(_throw(A, at))
         A["echo_send"] = [(at - 2.0 * bars, 0.0, "linear"), (at - 1.0, 0.5, "linear"), *_tail(at, 0.9)]
     return info
@@ -867,17 +918,17 @@ def _cut_lanes(m: Mix, place: _Place, tech: str, bars: int, A: dict, a_deck: dic
     A["volume"] = [(-4.0, 1.0, "hold"), (0.0, 0.0, "hold")]
     if tech == "reverb wash":  # the reverb send swells over 4-8 bars under a rising high-pass, then the cut
         ramp = 4.0 * max(4, min(bars, 8))
-        A["filter"] = [(-ramp, 0.0, "ease"), (0.0, 0.55, "hold")]
+        A["filter"], A["filter_res"] = _sweep(-ramp, 0.0, 0.55, release=False)
         A["reverb_send"] = [(-ramp, 0.0, "ease"), *_tail(0.0, 0.9)]
         info["reverb_size"] = _WASH_SIZE
         return info
     if into_drop:
-        A["filter"] = [(-8.0, 0.0, "ease"), (0.0, 0.35, "hold")]
+        A["filter"], A["filter_res"] = _sweep(-8.0, 0.0, 0.35, release=False)
         A["reverb_send"] = [(-1.0, 0.0, "linear"), *_tail(0.0, 0.6)]
         return info
     if tech == "echo out":
         riser = 4.0 * max(2, min(bars, 8))
-        A["filter"] = [(-riser, 0.0, "ease"), (0.0, 0.4, "hold")]
+        A["filter"], A["filter_res"] = _sweep(-riser, 0.0, 0.4, release=False)
     info.update(_throw(A, 0.0))
     return info
 
@@ -890,7 +941,7 @@ def _slam_lanes(m: Mix, place: _Place, bars: int, A: dict, B: dict, a_deck: dict
     into_drop = place.b0 in gb.drops
     A["volume"] = [(-4.0, 1.0, "hold"), (0.0, 0.0, "hold")]
     riser = 8.0 if into_drop else 4.0 * max(2, min(bars, 8))
-    A["filter"] = [(-riser, 0.0, "ease"), (0.0, 0.35 if into_drop else 0.4, "hold")]
+    A["filter"], A["filter_res"] = _sweep(-riser, 0.0, 0.35 if into_drop else 0.4, release=False)
     info = _throw(A, 0.0, send=0.7 if into_drop else 0.9)
     info.update(pre_roll=False, **_cut_roll(m, place, A, a_deck))
     # over a wider tempo gap B would be stretched to A's tempo for that bar and jump to its own on the 1: no pre-roll
@@ -898,7 +949,7 @@ def _slam_lanes(m: Mix, place: _Place, bars: int, A: dict, B: dict, a_deck: dict
         b_deck["play_from_beat"] = -4.0
         B["volume"] = [(-4.0, 0.0, "ease"), (-1.0, 0.6, "hold"), (0.0, 1.0, "hold")]
         B["eq_low"] = [(-4.0, _KILL, "hold"), (0.0, 0.0, "hold")]
-        B["filter"] = [(-4.0, 0.5, "ease"), (-1.0, 0.25, "hold"), (0.0, 0.0, "hold")]
+        B["filter"], B["filter_res"] = _sweep(-4.0, 0.0, _B_BUILD, start=0.25)
         info["pre_roll"] = True
     return info
 
@@ -971,7 +1022,8 @@ def _headline(m: Mix, tech: str, bars: int, place: _Place, info: dict) -> str:
         riser = "a short high-pass riser" if b0 in gb.drops else \
             f"a high-pass riser over its last {max(2, min(bars, 8))} bars"
         roll = ", rolling its last 2 bars 1 bar → 2 beats → 1 → ½" if info.get("roll") is not None else ""
-        pre = "; B's last build bar creeps in under A's last bar" if info.get("pre_roll") else ""
+        pre = "; B's last build bar creeps in under A's last bar on a resonant high-pass build, let go on the 1" \
+            if info.get("pre_roll") else ""
         what = f"slam: A rides {riser}{roll}{pre}; on the 1 at {frm} A is cut into an " \
                f"echo/reverb throw and B slams in at {into} (B {tb}, bar {b0 + 1})"
     elif tech == "reverb wash":
@@ -994,6 +1046,9 @@ def _headline(m: Mix, tech: str, bars: int, place: _Place, info: dict) -> str:
 
 def _eq_note(tech: str, place: _Place) -> str | None:
     L = place.overlap
+    land = place.swap if place.swap is not None else L  # the bar B's lows drop in on
+    build = f" B's high-pass builds, resonant, over the 2 bars before its lows drop in on bar {land + 1} and lets go " \
+            f"on that 1." if 4.0 * land - _B_BUILD_BEATS >= 8.0 and tech not in ("loop roll",) else ""
     if tech in ("long blend", "bass swap", "phrase blend"):
         fade_in, i_end, o_start = (round(x / 4) for x in _phrases(L, place.swap))
         if place.swap is not None:
@@ -1009,13 +1064,14 @@ def _eq_note(tech: str, place: _Place) -> str | None:
         return f"In phrases: bars 1–{i_end} bring B in with its lows killed behind a gentle filter (fader up over " \
                f"{plural(fade_in, 'bar')}, highs opening, mids held 4 dB down until {until}); {ride}; A's reverb " \
                f"swells over its last 2 bars and its echo over the last, both still fed a beat past the cut so they " \
-               f"ring over B."
+               f"ring over B.{build}"
     if tech == "filter sweep":
-        return "Classic filter crossfade: A's high-pass climbs over the whole blend (echo and reverb at the top), " \
-               "B's low-pass opens over the first half, the bass swaps on the 1."
+        return "Classic filter crossfade: A's high-pass climbs over the whole blend phrase by phrase, peaking with " \
+               "resonance on each phrase end and falling back on the next downbeat (echo and reverb at the top), " \
+               f"B's low-pass opens over the first half, the bass swaps on the 1.{build}"
     if tech == "echo out" and L:
         return "A keeps its fader up under a slowly rising high-pass; a dotted-8th echo (feedback 0.7) catches " \
-               "its last 2 beats and rings over B for a few bars after the cut."
+               f"its last 2 beats and rings over B for a few bars after the cut.{build}"
     if tech == "loop roll":
         return "B stays bass-free until the roll ends; during the roll a high-pass rises on A, its lows go for the " \
                "second half while a dotted-8th echo opens up, and the echo catches its last half beat."
