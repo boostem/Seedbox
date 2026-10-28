@@ -10,8 +10,8 @@ import pytest
 from musicreco import mixplan, structure, transitions
 
 from .fixtures import (
-    COLD_END, DROP_HEAVY, DROP_HEAVY_B, FAST, HALF_TIME, INSERT, LONG_OUTRO, OUTRO_24, PAIRS, PICKUP, SHORT_OUTRO,
-    STANDARD, VOCAL_INTRO, VOCAL_OUTRO, Spec, analysis, track,
+    BUILD_END, COLD_END, DROP_HEAVY, DROP_HEAVY_B, FAST, HALF_TIME, INSERT, LONG_OUTRO, OUTRO_24, PAIRS, PICKUP,
+    SHORT_INTRO_DROP, SHORT_OUTRO, STANDARD, VOCAL_INTRO, VOCAL_OUTRO, Spec, analysis, track,
 )  # fmt: skip
 
 PHRASE = transitions.PHRASE
@@ -32,6 +32,10 @@ EXPECTED = {
     "short outro -> clash key": ("phrase blend", 16, "filter sweep", 16),
     "insert -> standard": ("long blend", 16, "long blend", 16),
     "outro 24 -> standard": ("long blend", 16, "long blend", 16),
+    "standard -> short intro drop": ("phrase blend", 8, "slam", 4),
+    "build end -> short intro drop": ("phrase blend", 8, "slam", 4),
+    "build end -> fast": ("phrase blend", 16, "slam", 4),
+    "build end -> standard": ("phrase blend", 16, "long blend", 16),
 }
 IDS = [name for name, _, _ in PAIRS]
 
@@ -325,6 +329,73 @@ def test_generate_drop_swap_cuts_on_both_drops() -> None:
     assert _on_bar(_bar(ga, plan["a"]["beat0_s"])) == 136
     assert _on_bar(_bar(gb, plan["b"]["beat0_s"])) == 24
     assert [m["label"] for m in plan["markers"]] == ["cut"]
+
+
+def _cues(plan: dict, a: Spec, b: Spec) -> tuple[int, int]:
+    ga, gb = _grids(a, b)
+    return _on_bar(_bar(ga, plan["a"]["beat0_s"])), _on_bar(_bar(gb, plan["b"]["beat0_s"]))
+
+
+def test_slam_lines_a_build_end_up_with_b_drop() -> None:
+    plan = _generate(BUILD_END, SHORT_INTRO_DROP)
+    # A's build ends where its last drop would hit (bar 112); on that 1 (master beat 0) B's drop hits (bar 16)
+    assert _cues(plan, BUILD_END, SHORT_INTRO_DROP) == (112, 16)
+    assert any(m["label"] == "cut" and m["beat"] == 0 for m in plan["markers"])
+    assert mixplan.lane_value(plan["a"]["lanes"]["volume"], [-0.01, 0.0]).tolist() == [1.0, 0.0]
+    assert "the end of A's build" in plan["notes"][0]
+
+
+def test_slam_without_a_build_cuts_at_a_outro_into_b_drop() -> None:
+    plan = _generate(STANDARD, SHORT_INTRO_DROP)
+    assert _cues(plan, STANDARD, SHORT_INTRO_DROP) == (STANDARD.bars - STANDARD.outro_bars, 16)
+
+
+def test_slam_throws_a_and_rolls_its_last_two_bars() -> None:
+    plan = _generate(BUILD_END, SHORT_INTRO_DROP)
+    a = plan["a"]
+    assert mixplan.lane_value(a["lanes"]["echo_send"], 0.0) > 0.5
+    assert mixplan.lane_value(a["lanes"]["reverb_send"], 0.0) > 0
+    assert [(lp["start_beat"], lp["length_beats"]) for lp in a["loops"]] == [(-8, 4), (-4, 2), (-2, 1), (-1, 0.5)]
+    assert all(lp["source_beat"] == -8 for lp in a["loops"])
+    assert mixplan.lane_value(a["lanes"]["eq_low"], -2.0) == mixplan._KILL  # A's lows out on the roll's last bar
+    assert [m["label"] for m in plan["markers"]] == ["loop roll", "B pre-roll", "echo throw", "cut"]
+
+
+def test_slam_does_not_roll_a_sung_build() -> None:
+    sung = Spec("sung_build", outro_bars=8, outro_drums=False, drops=[112], vocals=[(100, 112)])
+    plan = _generate(sung, SHORT_INTRO_DROP)
+    assert plan["technique"] == "slam" and plan["a"]["loops"] == []
+    assert "loop roll" not in [m["label"] for m in plan["markers"]]
+
+
+def test_slam_pre_rolls_b_last_build_bar_under_a() -> None:
+    plan = _generate(BUILD_END, SHORT_INTRO_DROP)
+    b = plan["b"]
+    assert b["play_from_beat"] == -4.0
+    vol = mixplan.lane_value(b["lanes"]["volume"], [-4.0, -2.0, 0.0])
+    assert vol[0] == 0.0 and 0 < vol[1] < 1 and vol[2] == 1.0
+    assert mixplan.lane_value(b["lanes"]["eq_low"], -1.0) == mixplan._KILL  # no bass under A
+    assert mixplan.lane_value(b["lanes"]["eq_low"], 0.0) == 0.0 and mixplan.lane_value(b["lanes"]["filter"], 0.0) == 0
+
+
+def test_slam_over_a_big_tempo_gap_jumps_on_the_cut_without_pre_roll() -> None:
+    plan = _generate(BUILD_END, FAST)
+    assert plan["technique"] == "slam"
+    assert _cues(plan, BUILD_END, FAST)[0] == 112
+    tempo = mixplan.lane_value(plan["tempo"], [-0.01, 0.0])
+    assert tempo.tolist() == pytest.approx([BUILD_END.bpm, FAST.bpm])
+    assert plan["b"]["play_from_beat"] == 0.0  # B would be stretched to A's tempo for its pre-roll bar
+    assert "B pre-roll" not in [m["label"] for m in plan["markers"]]
+
+
+def test_slam_needs_a_short_intro_and_a_hitting_drop() -> None:
+    long_intro = Spec("long_intro_drop", intro_bars=16, drops=[32])
+    assert _generate(STANDARD, long_intro)["technique"] != "slam"
+    flat = Spec("flat_drop", intro_bars=8, drops=[16])
+    an = analysis(flat)
+    an["energy_per_bar"][12:16] = [0.95] * 4  # no build before it: the drop doesn't hit
+    plan = mixplan.generate(track(STANDARD), analysis(STANDARD), track(flat), an, "folder")
+    assert plan["technique"] != "slam"
 
 
 @pytest.mark.parametrize("technique", mixplan.TECHNIQUES)
