@@ -41,6 +41,7 @@ export function jobProgress(job: Job): { done: number; total: number; counts: Pa
 /** "3 downloaded · 1 failed" (empty when nothing finished yet). */
 export function countsSummary(counts: Partial<Record<FinalStatus, number>>): string {
   return Object.entries(counts)
+    .filter(([, n]) => n)
     .map(([k, n]) => `${n} ${k}`)
     .join(" · ");
 }
