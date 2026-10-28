@@ -1,4 +1,4 @@
-"""mixrender._render_audio on short click tracks with known grids: beats land on the master clock on both decks, the
+"""mixrender.render_audio on short click tracks with known grids: beats land on the master clock on both decks, the
 mix doesn't clip, the stems are there, and the echo / reverb returns are clearly audible where A is thrown out."""
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ def renders(tmp_path_factory: pytest.TempPathFactory) -> dict:
                 wavfile.write(p, SR, click_track(s, SR, pitch).T)
             paths.append(p)
         plan = mixplan.generate(track(a), analysis(a), track(b), analysis(b), "f", technique=tech)
-        out[name] = (plan, mixrender._render_audio(plan, paths[0], paths[1], SR) | {"paths": paths})
+        out[name] = (plan, mixrender.render_audio(plan, paths[0], paths[1], SR) | {"paths": paths})
     return out
 
 
@@ -122,7 +122,7 @@ def test_big_gap_slam_jumps_tempo_without_stretching(renders: dict, monkeypatch:
 
     plan, r = renders["big gap slam"]
     monkeypatch.setattr(pedalboard, "time_stretch", no_stretch)
-    again = mixrender._render_audio(plan, *r["paths"], SR)
+    again = mixrender.render_audio(plan, *r["paths"], SR)
     assert np.array_equal(again["mix"], r["mix"])
     assert not [w for w in again["warnings"] if "stretch" in w]
     gaps = np.diff(r["beat_times_s"])
@@ -164,7 +164,7 @@ def send_renders(tmp_path_factory: pytest.TempPathFactory) -> dict:
             an["duration_s"] += 4 * s.bar_s
         plan = mixplan.generate(track(a), an_a, track(b), an_b, "f", technique=tech)
         plan["a"].update(deck)
-        out[name] = (plan, mixrender._render_audio(plan, paths[0], paths[1], SR))
+        out[name] = (plan, mixrender.render_audio(plan, paths[0], paths[1], SR))
     return out
 
 

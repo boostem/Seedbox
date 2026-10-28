@@ -30,13 +30,11 @@ from pathlib import Path
 import numpy as np
 from scipy import ndimage, signal
 
-from .mixplan import LANE_DEFAULTS, LANE_RANGES, LANES, REVERB_SIZE, SEND_TAPS
+from .mixplan import deck_time, lane_value, validate
 from .paths import ffmpeg_path
 
 RENDER_VERSION = 2  # bump whenever the output for the same plan + files changes (invalidates cached renders)
 SR = 44100
-
-CURVES = ("linear", "hold", "ease")
 
 DECODE_TIMEOUT_S = 300
 ENCODE_TIMEOUT_S = 300
@@ -68,59 +66,6 @@ _encoder: list[str] = []
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# plan semantics (same as mixplan.lane_value / deck_time)
-
-
-def lane_value(keyframes: list[dict], beat: float | np.ndarray) -> float | np.ndarray:
-    """Value of a lane at master beat(s): constant before the first / after the last keyframe, else the left
-    keyframe's curve towards the next one (linear, ease = smoothstep, hold = step at the next keyframe)."""
-    scalar = np.ndim(beat) == 0
-    b = np.atleast_1d(np.asarray(beat, dtype=float))
-    if not keyframes:
-        return 0.0 if scalar else np.zeros_like(b)
-    kb = np.array([float(k["beat"]) for k in keyframes])
-    kv = np.array([float(k["value"]) for k in keyframes])
-    order = np.argsort(kb, kind="stable")
-    kb, kv = kb[order], kv[order]
-    kc = np.array([CURVES.index(c) if (c := keyframes[i].get("curve")) in CURVES else 0 for i in order])
-    i = np.clip(np.searchsorted(kb, b, side="right") - 1, 0, kb.size - 1)
-    j = np.minimum(i + 1, kb.size - 1)
-    span = kb[j] - kb[i]
-    u = np.clip(np.where(span > 0, (b - kb[i]) / np.where(span > 0, span, 1.0), 0.0), 0.0, 1.0)
-    c = kc[i]
-    u = np.where(c == 1, 0.0, np.where(c == 2, u * u * (3 - 2 * u), u))
-    out = kv[i] + (kv[j] - kv[i]) * u
-    out = np.where(b < kb[0], kv[0], out)
-    return float(out[0]) if scalar else out
-
-
-def _loops(deck: dict) -> list[dict]:
-    out = []
-    for lp in deck.get("loops") or []:
-        try:
-            s, e, src, n = (float(lp[k]) for k in ("start_beat", "end_beat", "source_beat", "length_beats"))
-        except (KeyError, TypeError, ValueError):
-            continue
-        if n > 0 and e > s and all(map(math.isfinite, (s, e, src, n))):
-            out.append({"start_beat": s, "end_beat": e, "source_beat": src, "length_beats": n})
-    return sorted(out, key=lambda lp: lp["start_beat"])
-
-
-def deck_time(deck: dict, beat: float | np.ndarray) -> float | np.ndarray:
-    """Master beat(s) -> the deck's file time (s). Outside loops the deck runs on its own grid (beat0_s + beats at
-    native_bpm); inside a loop it repeats [source_beat, source_beat + length_beats) of that un-looped timeline, and
-    after the loop releases it continues where the un-looped timeline is (slip mode). A later loop wins."""
-    scalar = np.ndim(beat) == 0
-    b = np.atleast_1d(np.asarray(beat, dtype=float))
-    src = b.copy()
-    for lp in _loops(deck):
-        inside = (b >= lp["start_beat"]) & (b < lp["end_beat"])
-        src = np.where(inside, lp["source_beat"] + np.mod(b - lp["start_beat"], lp["length_beats"]), src)
-    t = float(deck["beat0_s"]) + src * 60.0 / float(deck["native_bpm"])
-    return float(t[0]) if scalar else t
-
-
-# ---------------------------------------------------------------------------------------------------------------
 # normalisation + hash
 
 
@@ -128,57 +73,10 @@ def _clamp(v: float, lo: float, hi: float) -> float:
     return lo if v < lo else hi if v > hi else v
 
 
-def _keyframes(raw: object, lo: float, hi: float, default: float) -> list[dict]:
-    out = []
-    for k in raw if isinstance(raw, list) else []:
-        try:
-            b, v = float(k["beat"]), float(k["value"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if math.isfinite(b) and math.isfinite(v):
-            c = k.get("curve")
-            out.append({"beat": b, "value": _clamp(v, lo, hi), "curve": c if c in CURVES else "linear"})
-    out.sort(key=lambda k: k["beat"])
-    return out or [{"beat": 0.0, "value": default, "curve": "hold"}]
-
-
 def _normalise(plan: dict) -> dict:
-    """The audio-relevant part of a plan, clamped and sorted. ValueError on nonsense."""
-    try:
-        w0, w1 = float(plan["window"]["start_beat"]), float(plan["window"]["end_beat"])
-    except (KeyError, TypeError, ValueError) as e:
-        raise ValueError("plan has no usable window") from e
-    if not (math.isfinite(w0) and math.isfinite(w1) and w1 > w0):
-        raise ValueError("plan window is empty")
-    tempo = _keyframes(plan.get("tempo"), 40.0, 300.0, 120.0)
-    decks = {}
-    for name in ("a", "b"):
-        d = plan.get(name)
-        if not isinstance(d, dict):
-            raise ValueError(f"plan has no deck {name}")
-        try:
-            nb, b0 = float(d["native_bpm"]), float(d["beat0_s"])
-            pf, pt = float(d.get("play_from_beat", w0)), float(d.get("play_to_beat", w1))
-            eb = float(d.get("echo_beats") or 0.75)
-            size = float(d.get("reverb_size", REVERB_SIZE))
-        except (TypeError, ValueError) as e:
-            raise ValueError(f"deck {name} has non-numeric fields") from e
-        if not (math.isfinite(nb) and 20 <= nb <= 400) or not math.isfinite(b0):
-            raise ValueError(f"deck {name} has no usable native_bpm / beat0_s")
-        lanes = d.get("lanes") if isinstance(d.get("lanes"), dict) else {}
-        decks[name] = {
-            "track_id": str(d.get("track_id", "")),
-            "beat0_s": round(b0, 6), "native_bpm": round(nb, 6),
-            "play_from_beat": pf, "play_to_beat": pt,
-            "echo_beats": _clamp(eb if math.isfinite(eb) and eb > 0 else 0.75, 0.0625, 8.0),
-            "echo_tap": d.get("echo_tap") if d.get("echo_tap") in SEND_TAPS else SEND_TAPS[0],
-            "reverb_tap": d.get("reverb_tap") if d.get("reverb_tap") in SEND_TAPS else SEND_TAPS[0],
-            "reverb_size": _clamp(size if math.isfinite(size) else REVERB_SIZE, 0.0, 1.0),
-            "loops": _loops(d),
-            "lanes": {k: _keyframes(lanes.get(k), *LANE_RANGES[k], LANE_DEFAULTS[k]) for k in LANES},
-        }
-    return {"window": {"start_beat": w0, "end_beat": w1}, "tempo": tempo, "key_lock": bool(plan.get("key_lock", True)),
-            "a": decks["a"], "b": decks["b"]}
+    """The audio-relevant part of a plan (mixplan.validate: clamped and sorted). ValueError on nonsense."""
+    v = validate(plan)
+    return {"window": v["window"], "tempo": v["tempo"], "key_lock": v["key_lock"], "a": v["a"], "b": v["b"]}
 
 
 def _round_floats(x: object) -> object:
@@ -362,7 +260,7 @@ class _Clock:
 def _segments(deck: dict, b0: float, b1: float) -> list[tuple[float, float, float]]:
     """(start_beat, end_beat, file_time_at_start) pieces of [b0, b1) on which file time runs linearly."""
     cuts = {b0, b1}
-    for lp in _loops(deck):
+    for lp in deck["loops"]:
         s, e, n = lp["start_beat"], lp["end_beat"], lp["length_beats"]
         if e <= b0 or s >= b1:
             continue
@@ -760,7 +658,7 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
     return out
 
 
-def _render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
+def render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
                   progress: Callable[[float], None] | None = None) -> dict:
     """Everything render() does except encoding; also returns the master mix and per-deck stems (for tests)."""
     def report(f: float) -> None:
@@ -861,7 +759,7 @@ def render(plan: dict, a_path: Path, b_path: Path, out_path: Path, sr: int = SR,
            progress: Callable[[float], None] | None = None) -> dict:
     """Render `plan` (deck a from a_path, deck b from b_path) to an AAC m4a at out_path. Returns the MixRender
     fields except audio_url / render_id. ValueError for an unusable plan or undecodable audio."""
-    r = _render_audio(plan, a_path, b_path, sr, progress)
+    r = render_audio(plan, a_path, b_path, sr, progress)
     encode_m4a(r["mix"], sr, Path(out_path))
     if progress is not None:
         try:
@@ -870,12 +768,3 @@ def render(plan: dict, a_path: Path, b_path: Path, out_path: Path, sr: int = SR,
             pass
     return {k: r[k] for k in ("duration_s", "start_beat", "beat_times_s", "lufs", "true_peak_db", "warnings")}
 
-
-try:  # one source of truth for lane / loop semantics once mixplan is importable
-    from .mixplan import deck_time as _mp_deck_time
-    from .mixplan import lane_value as _mp_lane_value
-except Exception:  # noqa: BLE001 - keep the private equivalents above
-    pass
-else:
-    lane_value = _mp_lane_value  # noqa: F811
-    deck_time = _mp_deck_time  # noqa: F811

@@ -42,6 +42,7 @@ updater.activate()  # before anything imports yt_dlp (`python -m seedbox.server`
 
 from musicreco import library  # noqa: E402
 from musicreco.models import Track  # noqa: E402
+from musicreco.previews import PreviewManager  # noqa: E402
 from musicreco.tunebat import TunebatError  # noqa: E402
 
 from . import engine, serializers
@@ -149,7 +150,7 @@ class AppState:
         self.crates = CrateService(lambda: self.settings, self.analysis, self.bus, busy=self.jobs.busy)
         self.mixes = MixService(self.crates, self.bus, lambda: self.cache_dir)
         self._lock = threading.RLock()
-        self._previews: Any = None
+        self._previews: PreviewManager | None = None
         self._last_preload: list[Track] = []
         # Every `preview` event goes through this one thread, in order: the manager's own status changes and the
         # snapshots sent when a crate opens. A snapshot is read when its turn comes, so it can never overwrite a
@@ -169,34 +170,22 @@ class AppState:
 
     # previews
 
-    def previews(self, required: bool = True) -> Any:
-        """The PreviewManager (created on first use); None/503 when musicreco.previews isn't available."""
+    def previews(self) -> PreviewManager:
+        """The PreviewManager, created on first use."""
         with self._lock:
             if self._previews is None:
-                mod = engine.optional("previews")
-                if mod is None:
-                    if required:
-                        raise ApiError("previews aren't available in this build", 503)
-                    return None
-                self._previews = mod.PreviewManager(**self._preview_kwargs(mod))
+                s = self.settings
+                self._previews = PreviewManager(
+                    cache_dir=self.cache_dir,
+                    concurrency=int(s.preview_concurrency),
+                    max_cache_mb=int(s.preview_cache_mb),
+                    on_event=lambda status: self._preview_q.put(("event", status)),
+                    tolerance_s=float(s.tolerance_s),
+                )
             return self._previews
 
-    def _preview_kwargs(self, mod: Any) -> dict:
-        s = self.settings
-        kw: dict[str, Any] = {
-            "cache_dir": self.cache_dir,
-            "concurrency": int(s.preview_concurrency),
-            "max_cache_mb": int(s.preview_cache_mb),
-            "on_event": lambda status: self._preview_q.put(("event", status)),
-        }
-        if engine.accepts(mod.PreviewManager, "tolerance_s"):
-            kw["tolerance_s"] = float(s.tolerance_s)
-        return kw
-
     def preload(self, tracks: list[Track]) -> None:
-        mgr = self.previews(required=False)
-        if mgr is None:
-            return
+        mgr = self.previews()
         with self._lock:
             self._last_preload = list(tracks)
         mgr.clear_queue()
@@ -249,7 +238,7 @@ class AppState:
             mgr.shutdown()
             self._previews = None
             if self._last_preload:
-                self.previews(required=False).preload(self._last_preload)
+                self.previews().preload(self._last_preload)
             return
         if hasattr(mgr, "max_cache_bytes"):
             mgr.max_cache_bytes = max(0, int(new.preview_cache_mb)) * 1024 * 1024
@@ -413,9 +402,7 @@ def create_app(
     def preview_prioritize(track_id: str) -> Response:
         _check_id(track_id)
         mgr = state.previews()
-        if engine.accepts(mgr.prioritize, "track"):
-            return JSON(mgr.prioritize(track_id, state.tunebat.track(track_id)))
-        return JSON(mgr.prioritize(track_id))
+        return JSON(mgr.prioritize(track_id, state.tunebat.track(track_id)))
 
     @app.get("/api/previews/{track_id}/audio")
     def preview_audio(track_id: str) -> Response:

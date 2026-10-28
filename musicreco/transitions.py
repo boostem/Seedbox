@@ -21,7 +21,7 @@ PHRASE = 8  # bars; overlaps are 8, 16 or 32 bars and always start on a phrase i
 _MAX_BARS = 20_000  # sanity cap on bar_count (a 2-hour track at 130 BPM is ~3,900 bars)
 _LENGTHS = (32, 16, 8)
 _MAX_CUT_BARS = 32  # never end the overlap more than this many bars before A's music ends
-_VOCAL_ON = 0.5  # vocal_per_bar at/above this counts as a sung bar
+VOCAL_ON = 0.5  # vocal_per_bar at/above this counts as a sung bar
 _VOCAL_FLOOR = 0.3  # the soft clash only counts likelihood above this (hats/synths read as weak "vocals")
 _BASS_ON = 0.5  # mean low_per_bar at/above this = kick/bass weight on that deck
 _NO_BASS = 0.25  # below this B has no real low end in the overlap
@@ -29,7 +29,7 @@ _MAX_CLASH_BARS = 2  # a blend with more overlapping vocal bars than this and th
 # (the mixer ducks one deck's mids through a clash, which saves part of a blend, not all of it)
 _MAX_TONAL_CLASH_BARS = 4  # with clashing keys, at most this many bars with music (not just drums) on both decks
 _MIN_BLEND_FIT = 50.0
-_LOUD = 0.85  # energy_per_bar of a full-power bar
+LOUD = 0.85  # energy_per_bar of a full-power bar
 _COLD_END_BARS = 2  # a full-power bar this close to A's last bar = A stops cold (no wind-down to ride out)
 
 _HARMONIC_WEIGHT = 0.6  # score = 0.6 * mixing.score + 0.4 * structural fit
@@ -79,16 +79,24 @@ _MOVE_WORDS = {
     "diagonal": "diagonal move",
 }
 
-def _mmss(t: float) -> str:
+
+# --- shared helpers (also used by mixplan) -------------------------------------------------------------------------
+
+
+def mmss(t: float) -> str:
     m, s = divmod(max(0, round(t)), 60)
     return f"{m}:{s:02d}"
 
 
-def _num(x: object, default: float = 0.0) -> float:
-    return float(x) if isinstance(x, (int, float)) and math.isfinite(x) else default
+def finite(x: object) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
 
 
-def _plural(n: int, word: str) -> str:
+def num(x: object, default: float = 0.0) -> float:
+    return float(x) if finite(x) else default
+
+
+def plural(n: int, word: str) -> str:
     return f"{n} {word}{'' if n == 1 else 's'}"
 
 
@@ -96,7 +104,7 @@ def _plural(n: int, word: str) -> str:
 
 
 @dataclass(frozen=True)
-class _Grid:
+class Grid:
     """One track's analysis on a bar grid (rescaled to the partner's bars for a half/double-time pair)."""
 
     fd: float  # first downbeat, s (track time)
@@ -138,13 +146,13 @@ class _Grid:
         return self.outro[1] - self.outro[0]
 
 
-def _grid(an: dict | None, scale: float = 1.0) -> _Grid | None:
+def make_grid(an: dict | None, scale: float = 1.0) -> Grid | None:
     """Grid view of a TrackAnalysis dict, or None when it is missing or has no usable beat grid."""
     if not isinstance(an, dict):
         return None
-    bar_s = _num(an.get("bar_s")) / scale
-    n_src = int(_num(an.get("bar_count")))
-    fd = _num(an.get("first_downbeat_s"))
+    bar_s = num(an.get("bar_s")) / scale
+    n_src = int(num(an.get("bar_count")))
+    fd = num(an.get("first_downbeat_s"))
     if bar_s <= 0 or not 0 < n_src <= _MAX_BARS:
         return None
     n = max(1, int(n_src * scale))
@@ -156,7 +164,7 @@ def _grid(an: dict | None, scale: float = 1.0) -> _Grid | None:
 
     def per_bar(key: str) -> tuple[float, ...]:
         raw = an.get(key)
-        src = [_num(v) for v in raw] if isinstance(raw, list) else []
+        src = [num(v) for v in raw] if isinstance(raw, list) else []
         out = []
         for k in range(n):
             lo = int(k / scale)
@@ -191,14 +199,14 @@ def _grid(an: dict | None, scale: float = 1.0) -> _Grid | None:
         return q if abs(q - k) <= 1 and 0 < q < n else k
 
     i0 = bar(intro_d.get("start_s"), 0)
-    i1 = max(i0, snap(bar(intro_d.get("end_s"), i0 + round(_num(intro_d.get("bars")) * scale))))
+    i1 = max(i0, snap(bar(intro_d.get("end_s"), i0 + round(num(intro_d.get("bars")) * scale))))
     end = bar(outro_d.get("end_s"), n)
-    o0 = min(end, max(i1, snap(bar(outro_d.get("start_s"), end - round(_num(outro_d.get("bars")) * scale)))))
+    o0 = min(end, max(i1, snap(bar(outro_d.get("start_s"), end - round(num(outro_d.get("bars")) * scale)))))
     sections = [(kind, snap(s0) if s0 else 0, snap(s1)) for kind, s0, s1 in raw_sections]
     energy = per_bar("energy_per_bar")
     pts = [(p, lv) for p, lv in phrase_grid([s0 for _, s0, _ in sections], off, end, energy) if 0 <= p <= end]
 
-    return _Grid(
+    return Grid(
         fd=fd, bar_s=bar_s, n=n,
         vocal=per_bar("vocal_per_bar"), low=per_bar("low_per_bar"), energy=energy,
         perc=tuple((intro_drums and i0 <= k < i1) or (outro_drums and o0 <= k < end) for k in range(n)),
@@ -211,12 +219,12 @@ def _grid(an: dict | None, scale: float = 1.0) -> _Grid | None:
     )  # fmt: skip
 
 
-def _tempo(track: Track, an: dict | None) -> tuple[float, str | None]:
+def track_tempo(track: Track, an: dict | None) -> tuple[float, str | None]:
     """(BPM of the audio, warning). The analysis tempo when present (the grid the times are on), else tunebat's.
     A detected tempo unrelated to tunebat's (x1/x2/x0.5 within 3 %) means the file is probably another track."""
-    tb = _num(track.bpm)
+    tb = num(track.bpm)
     an = an if isinstance(an, dict) else {}
-    bpm = _num(an.get("bpm"))
+    bpm = num(an.get("bpm"))
     if bpm <= 0:
         return tb, None
     if an.get("bpm_source") == "tunebat" or tb <= 0:
@@ -228,7 +236,7 @@ def _tempo(track: Track, an: dict | None) -> tuple[float, str | None]:
 
 def _pitch_on_b(a_bpm: float, b_bpm: float) -> tuple[float, float] | None:
     """(tempo change on B in %, factor) to play B (x1, x2 or x0.5) at A's tempo."""
-    p = mixing._pitch(a_bpm, b_bpm)
+    p = mixing.pitch_factor(a_bpm, b_bpm)
     if p is None:
         return None
     return (a_bpm / (b_bpm * p[1]) - 1) * 100, p[1]
@@ -259,7 +267,7 @@ def deck_bar(bar0: int, loop: Loop | None, k: int) -> int:
     return bar0 + k - loop.bars
 
 
-def _extend_with_loop(g: _Grid, edge: str, bar: int, need: int, at: int = 0) -> Loop | None:
+def _extend_with_loop(g: Grid, edge: str, bar: int, need: int, at: int = 0) -> Loop | None:
     """Loop that makes up `need` bars (a multiple of 4) of a deck reaching track bar `bar` at overlap bar `at`: the
     cleanest 4- or 8-bar phrase of its outro (before `bar`) or intro (from `bar`) on the deck's 4-bar grid there,
     drums-led and least vocal, an 8-bar phrase when `need` holds whole ones. None when no phrase is clean enough."""
@@ -283,7 +291,7 @@ def _extend_with_loop(g: _Grid, edge: str, bar: int, need: int, at: int = 0) -> 
     return None if best is None else best[1]
 
 
-def _a_loop(a: _Grid, a0: int, length: int) -> Loop | None:
+def outro_loop(a: Grid, a0: int, length: int) -> Loop | None:
     """A's loop when its music runs out before a blend of `length` bars from a0 ends: from the last 4-bar line of
     A's music to the end of the blend, at most half of it. None when A doesn't run out or can't loop."""
     if a0 + length <= a.end:
@@ -295,7 +303,7 @@ def _a_loop(a: _Grid, a0: int, length: int) -> Loop | None:
     return _extend_with_loop(a, "outro", q, need, q - a0)
 
 
-def _b_loop(b: _Grid, b0: int, length: int) -> Loop | None:
+def intro_loop(b: Grid, b0: int, length: int) -> Loop | None:
     """B's loop when its intro from b0 is shorter than a blend of `length` bars: whole phrases from its cue so the
     intro then runs to the end of the blend, at most half of it. None when the intro is long enough or can't loop."""
     short = length - (b.intro[1] - b0)
@@ -306,7 +314,7 @@ def _b_loop(b: _Grid, b0: int, length: int) -> Loop | None:
 
 
 @dataclass
-class _Plan:
+class Plan:
     technique: str
     a0: int  # A bar where B comes in (the cut point for cut-style techniques)
     b0: int  # B's cue bar
@@ -323,13 +331,13 @@ class _Plan:
 
 
 def _window(
-    a: _Grid, b: _Grid, a0: int, b0: int, length: int, key_clash: bool, pref: str = "normal",
+    a: Grid, b: Grid, a0: int, b0: int, length: int, key_clash: bool, pref: str = "normal",
     b_loop: Loop | None = None,
-) -> _Plan:
+) -> Plan:
     """Score one phrase-aligned overlap: A bars [a0, a0+L) under B bars [b0, b0+L), under a mix length preference.
-    Past A's music A loops a phrase of its outro (_a_loop), and B may loop one of its intro (b_loop); every bar is
+    Past A's music A loops a phrase of its outro (outro_loop), and B may loop one of its intro (b_loop); every bar is
     read through the loops, each looped bar costs a little."""
-    a_loop = _a_loop(a, a0, length)
+    a_loop = outro_loop(a, a0, length)
     xa, xb = (a_loop.bars if a_loop else 0), (b_loop.bars if b_loop else 0)
     e = a0 + length - xa  # A bar where A's own play ends
     o0, end = a.outro
@@ -343,14 +351,14 @@ def _window(
     pen += sum(_P_B_BODY_UNDER / (2 if a.perc[ab[k]] else 1) for k in range(max(i1 - b0, 0) + xb, length))
     pen += _P_B_SOLO * max(0, i1 - (b0 + length - xb))
     pen += _P_A_HALF_PHRASE * (a.level(a0) < 16)
-    pen += _P_B_HALF_PHRASE * (b0 not in (0, _first_cue(b)) and b.level(b0) < 16)
+    pen += _P_B_HALF_PHRASE * (b0 not in (0, first_cue(b)) and b.level(b0) < 16)
     pen += sum(_P_LOOP * (x + max(0, x - PHRASE)) for x in (xa, xb))
 
     clash, soft, tonal = [], 0.0, 0
     for k in range(length):
         va, vb = a.vocal[ab[k]], b.vocal[bb[k]]
         soft += max(0.0, min(va, vb) - _VOCAL_FLOOR) / (1 - _VOCAL_FLOOR)
-        if va >= _VOCAL_ON and vb >= _VOCAL_ON:
+        if va >= VOCAL_ON and vb >= VOCAL_ON:
             clash.append(k)
         tonal += not (a.perc[ab[k]] or b.perc[bb[k]])
     pen += _P_VOCAL * soft + (_P_TONAL_KEY_CLASH * tonal if key_clash else 0.0)
@@ -359,10 +367,10 @@ def _window(
     clean_b = b.intro_drums and b0 + length - xb <= i1
     both, one, neither = _LENGTH_BONUS.get(pref, _LENGTH_BONUS["normal"])[length]
     bonus = both if clean_a and clean_b else one if clean_a or clean_b else neither
-    return _Plan("phrase blend", a0, b0, length, 100.0 - pen + bonus, clash, tonal, a_loop, b_loop)
+    return Plan("phrase blend", a0, b0, length, 100.0 - pen + bonus, clash, tonal, a_loop, b_loop)
 
 
-def _windows(a: _Grid, b: _Grid, length: int, key_clash: bool, pref: str = "normal") -> Iterator[_Plan]:
+def blend_windows(a: Grid, b: Grid, length: int, key_clash: bool, pref: str = "normal") -> Iterator[Plan]:
     """Every phrase-aligned overlap of `length` bars of A's ending with B's beginning, scored: B cued on a phrase up
     to 8 bars before its intro ends, the blend running past A's music when A can loop the difference, and each one
     also with B looping a phrase of a too-short intro."""
@@ -371,32 +379,32 @@ def _windows(a: _Grid, b: _Grid, length: int, key_clash: bool, pref: str = "norm
     for a0 in a.phrases:
         if a0 < a.end // 2 or a0 + length < a.end - _MAX_CUT_BARS:
             continue
-        if a0 + length > a.end and _a_loop(a, a0, length) is None:
+        if a0 + length > a.end and outro_loop(a, a0, length) is None:
             continue
         for b0 in b_cues:
             if b0 + length <= b.n:
                 yield _window(a, b, a0, b0, length, key_clash, pref)
-                if (lp := _b_loop(b, b0, length)) is not None:
+                if (lp := intro_loop(b, b0, length)) is not None:
                     yield _window(a, b, a0, b0, length, key_clash, pref, lp)
 
 
-def _best_blend(a: _Grid, b: _Grid, key_clash: bool, pref: str = "normal") -> _Plan | None:
+def _best_blend(a: Grid, b: Grid, key_clash: bool, pref: str = "normal") -> Plan | None:
     """Best phrase-aligned overlap of A's ending with B's beginning (ties keep the earlier, longer, unlooped
     candidate)."""
-    best: _Plan | None = None
+    best: Plan | None = None
     for length in _LENGTHS:
-        for plan in _windows(a, b, length, key_clash, pref):
+        for plan in blend_windows(a, b, length, key_clash, pref):
             if best is None or plan.fit > best.fit + 1e-9:
                 best = plan
     return best
 
 
-def _first_cue(b: _Grid) -> int:
+def first_cue(b: Grid) -> int:
     """B's first phrase start (bar 0 unless it has a pickup)."""
     return b.phrases[0] if b.phrases else b.intro[0]
 
 
-def _abrupt(a: _Grid) -> bool:
+def _abrupt(a: Grid) -> bool:
     """A stops cold: still at full power within its last few bars (no energy data: under 4 bars of outro).
 
     A real outro of a phrase or more (drums + bass with vocals/leads gone) is loud by nature, so it never counts.
@@ -405,11 +413,11 @@ def _abrupt(a: _Grid) -> bool:
         return a.outro_bars < PHRASE // 2
     if a.outro_bars >= PHRASE:
         return False
-    loud = [k for k in range(max(0, a.end - PHRASE), a.end) if a.energy[k] >= _LOUD]
+    loud = [k for k in range(max(0, a.end - PHRASE), a.end) if a.energy[k] >= LOUD]
     return bool(loud) and a.end - 1 - loud[-1] <= _COLD_END_BARS
 
 
-def _cut_bar(a: _Grid) -> int:
+def cut_bar(a: Grid) -> int:
     """Where to leave A without a blend: its last phrase start, unless that throws away more than 4 bars."""
     p = max((p for p in a.phrases if p <= a.end), default=a.end)
     return p if a.end - p <= PHRASE // 2 else a.end
@@ -420,7 +428,7 @@ def _max_clash(length: int) -> int:
     return max(_MAX_CLASH_BARS, length // 2)
 
 
-def _plan(a: _Grid, b: _Grid, key_clash: bool, pref: str = "normal") -> _Plan:
+def _plan(a: Grid, b: Grid, key_clash: bool, pref: str = "normal") -> Plan:
     """Pick the technique and its exact bars for A → B."""
     blend = _best_blend(a, b, key_clash, pref)
     if blend is not None and (
@@ -432,7 +440,7 @@ def _plan(a: _Grid, b: _Grid, key_clash: bool, pref: str = "normal") -> _Plan:
 
     if _abrupt(a):
         if blend is None:
-            return _Plan("echo out", _cut_bar(a), _first_cue(b), 0, _CUT_FIT["echo out"], [])
+            return Plan("echo out", cut_bar(a), first_cue(b), 0, _CUT_FIT["echo out"], [])
         if a.end - (blend.a0 + blend.length) < _MIN_SKIP_NOTE:  # the blend runs into A's cold ending
             blend.technique = "echo out"
             return blend
@@ -448,11 +456,11 @@ def _plan(a: _Grid, b: _Grid, key_clash: bool, pref: str = "normal") -> _Plan:
     a_drops = [d for d in a.drops if a.end * 0.4 <= d <= a.end - PHRASE]
     b_drops = [d for d in b.drops if d > b.intro[0]]
     if a_drops and b_drops:
-        return _Plan("drop swap", a_drops[-1], b_drops[0], 0, _CUT_FIT["drop swap"], [])
-    return _Plan("quick cut", _cut_bar(a), _first_cue(b), 0, _CUT_FIT["quick cut"], [])
+        return Plan("drop swap", a_drops[-1], b_drops[0], 0, _CUT_FIT["drop swap"], [])
+    return Plan("quick cut", cut_bar(a), first_cue(b), 0, _CUT_FIT["quick cut"], [])
 
 
-def _swap_offset(a: _Grid, b: _Grid, plan: _Plan) -> int | None:
+def swap_offset(a: Grid, b: Grid, plan: Plan) -> int | None:
     """0-based overlap bar where B's low end replaces A's, always on the 1 of a phrase in both tracks inside the
     overlap: where B's main section arrives if that is one, else the longest phrase (16 over 8 bars) nearest the
     middle. None for cuts, when B brings no bass during the overlap and when no phrase starts inside it (an 8-bar
@@ -482,7 +490,7 @@ def _swap_offset(a: _Grid, b: _Grid, plan: _Plan) -> int | None:
 # --- wording -------------------------------------------------------------------------------------------------------
 
 
-def _edge_clause(g: _Grid, which: str, who: str) -> str:
+def _edge_clause(g: Grid, which: str, who: str) -> str:
     """'A's 16-bar outro is drums-only', 'B starts full-on (no intro)', ..."""
     lo, hi = g.intro if which == "intro" else g.outro
     drums, vocals = (g.intro_drums, g.intro_vocals) if which == "intro" else (g.outro_drums, g.outro_vocals)
@@ -498,8 +506,8 @@ def _edge_clause(g: _Grid, which: str, who: str) -> str:
     return f"{edge} carries {'bass and music' if g.mean(g.low, lo, hi) >= _BASS_ON else 'music'}"
 
 
-def _headline(a: _Grid, b: _Grid, plan: _Plan) -> str:
-    at = _mmss(a.t(plan.a0))
+def _headline(a: Grid, b: Grid, plan: Plan) -> str:
+    at = mmss(a.t(plan.a0))
     b_edge = _edge_clause(b, "intro", "B")
     if plan.technique == "echo out":
         edges = f"A stops cold (full power to the end); {b_edge}"
@@ -511,40 +519,40 @@ def _headline(a: _Grid, b: _Grid, plan: _Plan) -> str:
     if plan.length:
         what = f"{plan.length}-bar {plan.technique} starting at A {at}"
     elif plan.technique == "drop swap":
-        what = f"drop swap at A {at} into B's drop at {_mmss(b.t(plan.b0))}"
+        what = f"drop swap at A {at} into B's drop at {mmss(b.t(plan.b0))}"
     else:
         what = f"quick cut on the 1 at A {at}"
     return f"{_edge_clause(a, 'outro', 'A')}; {b_edge} → {what}."
 
 
-def _cue_words(b: _Grid, b0: int) -> str:
+def _cue_words(b: Grid, b0: int) -> str:
     i0, i1 = b.intro
     if b0 == i0:
         return "its first downbeat" if b0 == 0 else f"the start of its intro, bar {b0 + 1}"
     if b.drops and b0 == b.drops[0]:
         return f"its first drop, bar {b0 + 1}"
     if i0 < b0 < i1:
-        return f"bar {b0 + 1}, {_plural(b0 - i0, 'bar')} into its intro"
+        return f"bar {b0 + 1}, {plural(b0 - i0, 'bar')} into its intro"
     return f"bar {b0 + 1}"
 
 
-def _plan_notes(a: _Grid, b: _Grid, plan: _Plan) -> list[str]:
+def _plan_notes(a: Grid, b: Grid, plan: Plan) -> list[str]:
     a0, b0, length = plan.a0, plan.b0, plan.length
-    t_in, t_b = _mmss(a.t(a0)), _mmss(b.t(b0))
+    t_in, t_b = mmss(a.t(a0)), mmss(b.t(b0))
     notes = [_headline(a, b, plan)]
     if plan.technique == "drop swap":
         notes.append(
             f"Cue B at {t_b} ({_cue_words(b, b0)}). Let A's build run and on the 1 where A would drop "
             f"(A {t_in}, bar {a0 + 1}) hard-cut to B."
         )
-        notes.append(f"Skips A's last {a.end - a0} bars and B's first {_plural(b0, 'bar')} — a quick-mixing move.")
+        notes.append(f"Skips A's last {a.end - a0} bars and B's first {plural(b0, 'bar')} — a quick-mixing move.")
         return notes
     if not length:
         lead = "Hit an echo/delay on A's last beat and drop" if plan.technique == "echo out" else "Cut to"
         where = f"bar {a0 + 1}" if a0 < a.end else "its end"
         notes.append(f"Cue B at {t_b} ({_cue_words(b, b0)}). {lead} B on the 1 at A {t_in} ({where}).")
         if a.end - a0 >= _MIN_SKIP_NOTE:
-            notes.append(f"Skips A's last {a.end - a0} bars ({t_in}–{_mmss(a.t(a.end))}).")
+            notes.append(f"Skips A's last {a.end - a0} bars ({t_in}–{mmss(a.t(a.end))}).")
         return notes
 
     e, i1 = a0 + length, b.intro[1]
@@ -553,58 +561,58 @@ def _plan_notes(a: _Grid, b: _Grid, plan: _Plan) -> list[str]:
     if (lp := plan.b_loop) is not None:
         notes.append(
             f"B's intro is short for a {length}-bar blend: loop its bars {lp.src + 1}–{lp.src + lp.size} "
-            f"({lp.size} bars) as it comes in and release the loop on the 1 at A {_mmss(a.t(a0 + xb))} "
+            f"({lp.size} bars) as it comes in and release the loop on the 1 at A {mmss(a.t(a0 + xb))} "
             f"(bar {xb + 1} of the blend, a phrase) — its intro then runs from B {t_b}."
         )
     if (lp := plan.a_loop) is not None:
         notes.append(
-            f"A's music runs out {_plural(xa, 'bar')} before the blend ends: from A {_mmss(a.t(a0 + lp.at))} "
+            f"A's music runs out {plural(xa, 'bar')} before the blend ends: from A {mmss(a.t(a0 + lp.at))} "
             f"(bar {lp.at + 1} of the blend) loop its bars {lp.src + 1}–{lp.src + lp.size} ({lp.size} bars) "
             "until it leaves on the phrase."
         )
     if b0 == b.off > 0 and a0 >= b.off:
         notes.append(
             f"B has a {b.off}-bar pickup before its first phrase — you can also play it from its first downbeat, "
-            f"starting {b.off} bars earlier at A {_mmss(a.t(a0 - b.off))}."
+            f"starting {b.off} bars earlier at A {mmss(a.t(a0 - b.off))}."
         )
-    k = _swap_offset(a, b, plan)
+    k = swap_offset(a, b, plan)
     if k is None:
         notes.append("B brings no bass in this stretch — let A's bass carry the blend, then cut it on the 1.")
     else:
         notes.append(
-            f"Keep B's lows cut, swap the bass on the 1 at A {_mmss(a.t(a0 + k))} "
-            f"(bar {k + 1} of the blend, B {_mmss(b.t(b0 + k))})."
+            f"Keep B's lows cut, swap the bass on the 1 at A {mmss(a.t(a0 + k))} "
+            f"(bar {k + 1} of the blend, B {mmss(b.t(b0 + k))})."
         )
     if plan.technique == "echo out":
-        notes.append(f"Hit an echo/delay on A's last beat at {_mmss(a.t(e))} so its cold stop isn't heard.")
+        notes.append(f"Hit an echo/delay on A's last beat at {mmss(a.t(e))} so its cold stop isn't heard.")
     else:
         if xa:
-            when = f"the end of the blend, {_plural(xa, 'bar')} into its loop"
+            when = f"the end of the blend, {plural(xa, 'bar')} into its loop"
         else:
-            when = f"its end ({_mmss(a.t(e))})" if e >= a.end else f"A {_mmss(a.t(e))} (bar {e + 1})"
+            when = f"its end ({mmss(a.t(e))})" if e >= a.end else f"A {mmss(a.t(e))} (bar {e + 1})"
         notes.append(f"Have A faded out by {when}.")
     e -= xa
     b_end = b0 + length - xb
     if b_end == i1:
-        notes.append(f"B's intro ends exactly as A leaves → B's main section takes over at B {_mmss(b.t(i1))}.")
+        notes.append(f"B's intro ends exactly as A leaves → B's main section takes over at B {mmss(b.t(i1))}.")
     elif b_end < i1:
-        notes.append(f"B's intro runs {_plural(i1 - b_end, 'more bar')} on its own after A is out.")
+        notes.append(f"B's intro runs {plural(i1 - b_end, 'more bar')} on its own after A is out.")
     else:
         start = max(i1, b0)
         bass = " — get A's bass out by then" if b.mean(b.low, start, b_end) >= _BASS_ON else ""
-        notes.append(f"B's main section starts {b_end - start} bars before A is out (B {_mmss(b.t(start))}){bass}.")
+        notes.append(f"B's main section starts {b_end - start} bars before A is out (B {mmss(b.t(start))}){bass}.")
     if a.end - e >= _MIN_SKIP_NOTE:
-        notes.append(f"Skips A's last {a.end - e} bars ({_mmss(a.t(e))}–{_mmss(a.t(a.end))}).")
+        notes.append(f"Skips A's last {a.end - e} bars ({mmss(a.t(e))}–{mmss(a.t(a.end))}).")
     return notes
 
 
-def _plan_warnings(a: _Grid, b: _Grid, plan: _Plan) -> list[str]:
+def _plan_warnings(a: Grid, b: Grid, plan: Plan) -> list[str]:
     warnings = []
     if plan.clash:
         k0, k1 = plan.clash[0], plan.clash[-1] + 1
         warnings.append(
-            f"Vocals overlap for {_plural(len(plan.clash), 'bar')} "
-            f"(A {_mmss(a.t(plan.a0 + k0))}–{_mmss(a.t(plan.a0 + k1))}) — duck one deck's mids through them."
+            f"Vocals overlap for {plural(len(plan.clash), 'bar')} "
+            f"(A {mmss(a.t(plan.a0 + k0))}–{mmss(a.t(plan.a0 + k1))}) — duck one deck's mids through them."
         )
     if not plan.length and plan.technique != "echo out":
         if a.outro_vocals and b.intro_vocals:
@@ -614,18 +622,18 @@ def _plan_warnings(a: _Grid, b: _Grid, plan: _Plan) -> list[str]:
     if plan.technique != "drop swap" and not b.intro_bars:
         warnings.append("B has no intro — it starts full-on.")
     elif plan.technique != "drop swap" and b.intro_bars < PHRASE:
-        warnings.append(f"B's intro is only {_plural(b.intro_bars, 'bar')} — its main section hits almost at once.")
+        warnings.append(f"B's intro is only {plural(b.intro_bars, 'bar')} — its main section hits almost at once.")
     elif plan.length - plan.loop_bars[1] > b.intro_bars and not (a.outro_drums and plan.a0 >= a.outro[0]):
         warnings.append(
             f"B's intro ({b.intro_bars} bars) is shorter than the {plan.length}-bar blend — "
             "its main section comes in over A's music."
         )
     if plan.technique not in ("echo out", "drop swap") and a.outro_bars < PHRASE:
-        warnings.append(f"A's outro is only {_plural(a.outro_bars, 'bar')}." if a.outro_bars else "A has no outro.")
+        warnings.append(f"A's outro is only {plural(a.outro_bars, 'bar')}." if a.outro_bars else "A has no outro.")
     return warnings
 
 
-def _key_text(a: Track, b: Track, move: str, plan: _Plan | None) -> tuple[list[str], list[str]]:
+def _key_text(a: Track, b: Track, move: str, plan: Plan | None) -> tuple[list[str], list[str]]:
     key = f"{a.camelot or '?'} → {b.camelot or '?'}"
     if move == "?":
         return [], [f"Key unknown ({key})."]
@@ -667,16 +675,16 @@ def _suggest(
     mix_length: str = "normal",
 ) -> tuple[dict, float]:
     """(Transition dict, structural fit 0-100) — the fit also feeds order_set."""
-    move = mixing._camelot_move(a.camelot, b.camelot)
-    (a_bpm, a_wrong), (b_bpm, b_wrong) = _tempo(a, a_an), _tempo(b, b_an)
+    move = mixing.camelot_move(a.camelot, b.camelot)
+    (a_bpm, a_wrong), (b_bpm, b_wrong) = track_tempo(a, a_an), track_tempo(b, b_an)
     pitch = _pitch_on_b(a_bpm, b_bpm)
 
-    def grid(t: Track, an: dict | None, scale: float) -> _Grid | None:
+    def grid(t: Track, an: dict | None, scale: float) -> Grid | None:
         if cache is None:
-            return _grid(an, scale)
+            return make_grid(an, scale)
         k = (t.id, scale)
         if k not in cache:
-            cache[k] = _grid(an, scale)
+            cache[k] = make_grid(an, scale)
         return cache[k]
 
     ga, gb = grid(a, a_an, 1.0), grid(b, b_an, pitch[1] if pitch else 1.0)
@@ -703,7 +711,7 @@ def _suggest(
         out_s, in_s = ga.t(plan.a0), gb.t(plan.b0)
         if in_s < 0:  # B's grid starts before its file (clipped first beat): start it from 0, that much later
             out_s, in_s = round(out_s - in_s * ga.bar_s / gb.bar_s, 3), 0.0
-        swap = _swap_offset(ga, gb, plan)
+        swap = swap_offset(ga, gb, plan)
         out.update(
             out_start_s=out_s, in_start_s=in_s, overlap_bars=plan.length,
             swap_bar=None if swap is None else swap + 1, technique=plan.technique, ready=True,
@@ -783,7 +791,7 @@ def order_set(
     """
     base = mixing.order_set(seed, tracks)
     n = len(base)
-    if n < 3 or sum(_grid(analyses.get(t.id)) is not None for t in base) < 2:
+    if n < 3 or sum(make_grid(analyses.get(t.id)) is not None for t in base) < 2:
         return base
 
     cache: dict = {}
@@ -796,17 +804,17 @@ def order_set(
     known = sorted(c for row in struct for c in row if c is not None)
     neutral = known[len(known) // 2] if known else 0.0
 
-    levels = mixing._energy_levels(base)
+    levels = mixing.energy_levels(base)
     raw_en = [levels[t.id] for t in base]
     lo, hi = min(raw_en), max(raw_en)
-    en = [(v - lo) / (hi - lo) if hi - lo > mixing._EPS else 0.5 for v in raw_en]
+    en = [(v - lo) / (hi - lo) if hi - lo > mixing.EPS else 0.5 for v in raw_en]
     start = max(0.2, min(0.6, en[0]))
-    target = [mixing._energy_target(p / (n - 1), start) for p in range(n)]
-    shape = [[mixing._SHAPE_COST * abs(en[j] - target[p]) for p in range(n)] for j in range(n)]
+    target = [mixing.energy_target(p / (n - 1), start) for p in range(n)]
+    shape = [[mixing.SHAPE_COST * abs(en[j] - target[p]) for p in range(n)] for j in range(n)]
     step = [
         [
-            mixing._pair_cost(base[i], base[j])
-            + mixing._JUMP_COST * abs(en[i] - en[j])
+            mixing.pair_cost(base[i], base[j])
+            + mixing.JUMP_COST * abs(en[i] - en[j])
             + (neutral if struct[i][j] is None else struct[i][j])
             for j in range(n)
         ]

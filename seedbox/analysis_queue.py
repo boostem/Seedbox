@@ -14,7 +14,8 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import engine
+from musicreco import structure
+
 from .events import EventBus
 
 log = logging.getLogger(__name__)
@@ -61,10 +62,6 @@ class AnalysisQueue:
         for t in self._threads:
             t.start()
 
-    @staticmethod
-    def available() -> bool:
-        return engine.optional("structure") is not None
-
     def state(self, folder: str, track_id: str) -> str:
         """missing | queued | running | ready | error."""
         with self._cond:
@@ -83,7 +80,7 @@ class AnalysisQueue:
 
     def enqueue(self, tasks: list[AnalysisTask], front: bool = False) -> None:
         """Queue tasks not already ready/running/failed; `front` moves them (in order) ahead of everything else."""
-        if not tasks or not self.available():
+        if not tasks:
             return
         queued: list[AnalysisTask] = []
         with self._cond:
@@ -109,10 +106,7 @@ class AnalysisQueue:
 
     def load_now(self, task: AnalysisTask) -> dict:
         """Analyse (or load from the disk cache) on the calling thread; records the result like a worker would."""
-        structure = engine.optional("structure")
-        if structure is None:
-            raise RuntimeError("analysis module not available")
-        return self._analyse(structure, task)
+        return self._analyse(task)
 
     def forget(self, folder: str | None = None) -> None:
         """Drop remembered states/results (all, or one folder's); queued work for them is dropped too."""
@@ -147,17 +141,12 @@ class AnalysisQueue:
                 if self._closed:
                     return
                 task = self._queue.pop(0)
-            structure = engine.optional("structure")
-            if structure is None:
-                with self._cond:
-                    self._states.pop(task.key, None)
-                continue
             try:
-                self._analyse(structure, task)
+                self._analyse(task)
             except Exception:  # noqa: BLE001 - recorded as an error state by _analyse
                 pass
 
-    def _analyse(self, structure, task: AnalysisTask) -> dict:  # noqa: ANN001
+    def _analyse(self, task: AnalysisTask) -> dict:
         with self._cond:
             self._states[task.key] = "running"
         self._publish(task, "running")

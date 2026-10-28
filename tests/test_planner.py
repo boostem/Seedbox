@@ -49,14 +49,14 @@ IDS = [name for name, _, _ in PAIRS]
 
 
 def _factor(a: Spec, b: Spec) -> float:
-    return mixplan._mix(track(a), analysis(a), track(b), analysis(b), None).factor
+    return mixplan.make_mix(track(a), analysis(a), track(b), analysis(b), None).factor
 
 
-def _grids(a: Spec, b: Spec) -> tuple[transitions._Grid, transitions._Grid]:
-    return transitions._grid(analysis(a)), transitions._grid(analysis(b), _factor(a, b))
+def _grids(a: Spec, b: Spec) -> tuple[transitions.Grid, transitions.Grid]:
+    return transitions.make_grid(analysis(a)), transitions.make_grid(analysis(b), _factor(a, b))
 
 
-def _bar(g: transitions._Grid, t: float) -> float:
+def _bar(g: transitions.Grid, t: float) -> float:
     return (t - g.fd) / g.bar_s
 
 
@@ -169,11 +169,11 @@ def test_phrase_grid_reanchors_after_a_4_bar_insert() -> None:
 
 
 def test_grid_reanchors_after_a_4_bar_insert() -> None:
-    g = transitions._grid(analysis(INSERT))
+    g = transitions.make_grid(analysis(INSERT))
     after = [p for p in g.phrases if p > INSERT.insert]
     assert after and all(p % PHRASE == 4 for p in after), g.phrases
     assert g.level(g.outro[0]) == 32 and g.level(g.outro[0] + 8) == 8
-    p = transitions._plan(g, transitions._grid(analysis(STANDARD)), key_clash=False)
+    p = transitions._plan(g, transitions.make_grid(analysis(STANDARD)), key_clash=False)
     assert p.a0 == g.outro[0] == 116, "the blend starts on the outro's re-anchored phrase, not the old grid's 112"
 
 
@@ -193,7 +193,7 @@ def test_blend_cues_b_on_its_first_downbeat_or_a_16_bar_phrase(monkeypatch: pyte
     for a, b in ((VOCAL_OUTRO, VOCAL_INTRO), (LONG_OUTRO, STANDARD), (STANDARD, PICKUP)):
         ga, gb = _grids(a, b)
         b0 = transitions._plan(ga, gb, key_clash=False).b0
-        assert b0 in (0, transitions._first_cue(gb)) or gb.level(b0) >= 16
+        assert b0 in (0, transitions.first_cue(gb)) or gb.level(b0) >= 16
     # cueing B 8 bars into one of its 16-bar phrases costs extra; its first downbeat or a 16-bar phrase doesn't
     ga, gb = _grids(LONG_OUTRO, LONG_OUTRO)
     assert (gb.level(0), gb.level(8), gb.level(16)) == (32, 8, 16)
@@ -206,26 +206,26 @@ def test_blend_cues_b_on_its_first_downbeat_or_a_16_bar_phrase(monkeypatch: pyte
 
 @pytest.mark.parametrize(("length", "swap"), [(8, None), (16, 8), (32, 16)])
 def test_swap_lands_on_a_phrase_inside_the_overlap(length: int, swap: int | None) -> None:
-    g = transitions._grid(analysis(Spec("bassy", intro_bars=0, outro_bars=0)))
-    plan = transitions._Plan("bass swap", 32, 32, length, 90.0, [])
-    assert transitions._swap_offset(g, g, plan) == swap  # 8 bars: no phrase inside, swap on the 1 as A leaves
+    g = transitions.make_grid(analysis(Spec("bassy", intro_bars=0, outro_bars=0)))
+    plan = transitions.Plan("bass swap", 32, 32, length, 90.0, [])
+    assert transitions.swap_offset(g, g, plan) == swap  # 8 bars: no phrase inside, swap on the 1 as A leaves
 
 
 def test_swap_prefers_where_b_main_section_arrives() -> None:
     ga, gb = _grids(STANDARD, LONG_OUTRO)  # B's 32-bar intro
     assert gb.intro == (0, 32)
     # cued 8 bars in, B's main section arrives 24 bars into a 32-bar overlap, on a phrase of both: swap there
-    assert transitions._swap_offset(ga, gb, transitions._Plan("long blend", 96, 8, 32, 90.0, [])) == 24
+    assert transitions.swap_offset(ga, gb, transitions.Plan("long blend", 96, 8, 32, 90.0, [])) == 24
     # cued at 0 it arrives as A leaves: the 16-bar phrase point in the middle (A bar 112 opens A's outro)
-    assert transitions._swap_offset(ga, gb, transitions._Plan("long blend", 96, 0, 32, 90.0, [])) == 16
+    assert transitions.swap_offset(ga, gb, transitions.Plan("long blend", 96, 0, 32, 90.0, [])) == 16
 
 
 def test_swap_follows_a_after_its_4_bar_insert() -> None:
     ga, gb = _grids(INSERT, STANDARD)
     # A's phrases sit on bars = 4 (mod 8) after the insert; B's on 0 (mod 8): a 16-bar overlap from A 112 / B 0 has
     # no bar where both start a phrase inside it, so the lows change hands at its end instead of mid-phrase in A
-    assert transitions._swap_offset(ga, gb, transitions._Plan("bass swap", 112, 0, 16, 90.0, [])) is None
-    assert transitions._swap_offset(ga, gb, transitions._Plan("bass swap", 116, 0, 16, 90.0, [])) == 8
+    assert transitions.swap_offset(ga, gb, transitions.Plan("bass swap", 112, 0, 16, 90.0, [])) is None
+    assert transitions.swap_offset(ga, gb, transitions.Plan("bass swap", 116, 0, 16, 90.0, [])) == 8
 
 
 def test_analysis_reports_phrase_levels() -> None:
@@ -603,7 +603,7 @@ def test_blend_lanes_are_phrased() -> None:
 # --- loop extension --------------------------------------------------------------------------------------------------
 
 
-def _bar_at(g: transitions._Grid, deck: dict, beat: float) -> float:
+def _bar_at(g: transitions.Grid, deck: dict, beat: float) -> float:
     """Track bar a plan's deck plays at master beat `beat`, through its loops."""
     return _bar(g, float(mixplan.deck_time(deck, beat)))
 
@@ -672,7 +672,7 @@ def test_loops_release_on_a_phrase(name: str, a: Spec, b: Spec) -> None:
 def test_no_loop_of_a_sung_outro() -> None:
     sung = Spec("sung_outro_8", outro_bars=8, vocals=[(120, 128)])
     ga, _ = _grids(sung, STANDARD)
-    assert transitions._a_loop(ga, 120, 16) is None
+    assert transitions.outro_loop(ga, 120, 16) is None
     tr = transitions.suggest(track(sung), analysis(sung), track(STANDARD), analysis(STANDARD))
     assert tr["a_loop_bars"] == 0
     assert _on_bar(_bar(ga, tr["out_start_s"])) + tr["overlap_bars"] <= ga.end
@@ -687,7 +687,7 @@ def test_extend_with_loop_picks_the_cleanest_phrase() -> None:
     assert transitions._extend_with_loop(g, "outro", 128, 6) is None  # not on the 4-bar grid
     # loops never run more than half the blend
     ga, _ = _grids(OUTRO_8, STANDARD)
-    assert transitions._a_loop(ga, 120, 32) is None and transitions._a_loop(ga, 120, 16).bars == 8
+    assert transitions.outro_loop(ga, 120, 32) is None and transitions.outro_loop(ga, 120, 16).bars == 8
 
 
 def test_looped_bars_cost_more_past_one_phrase() -> None:
@@ -736,7 +736,7 @@ def test_blend_echo_throw_at_the_end_of_a_vocal_phrase() -> None:
 def test_mid_throws_on_breakdown_exits_and_spaced() -> None:
     a = Spec("a_drops", vocals=[(96, 104), (106, 109)], drops=[104])
     b = Spec("b_drop", intro_bars=4, drops=[12])
-    m = mixplan._mix(track(a), analysis(a), track(b), analysis(b), None)
+    m = mixplan.make_mix(track(a), analysis(a), track(b), analysis(b), None)
     # A's vocal phrase ends where it drops (overlap bar 4: one throw) and B drops on bar 12 (drops go first); the
     # vocal phrase ending on bar 9 would be a third, over the cap
     assert mixplan._mid_throws(m, mixplan._Place(100, 0, 16, None)) == [16.0, 48.0]

@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.plan:
             args.plan.write_text(json.dumps(plan, indent=1))
         print("rendering ...", file=sys.stderr)
-        r = mixrender._render_audio(plan, args.a, args.b)
+        r = mixrender.render_audio(plan, args.a, args.b)
         if args.out.suffix.lower() == ".m4a":
             mixrender.encode_m4a(r["mix"], r["sr"], args.out)
         else:

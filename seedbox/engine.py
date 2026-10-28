@@ -1,41 +1,15 @@
-"""The server's single doorway into musicreco: thin wrappers, plus lazy imports of the optional modules
-(previews / structure / transitions) so the API still boots if one of them is missing or broken.
-"""
+"""Thin wrappers between the server and musicreco's settings, ranking, crate and download-batch code."""
 
 from __future__ import annotations
 
-import importlib
-import inspect
-import logging
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 from musicreco import library, mixing, paths, pipeline
 from musicreco import settings as msettings
 from musicreco.models import DownloadResult, Score, Track
-
-log = logging.getLogger(__name__)
-
-
-def optional(name: str) -> ModuleType | None:
-    """musicreco.<name> if it imports, else None."""
-    try:
-        return importlib.import_module(f"musicreco.{name}")
-    except ImportError as e:
-        if e.name not in (f"musicreco.{name}", None):
-            log.warning("musicreco.%s failed to import: %s", name, e)
-        return None
-
-
-def accepts(fn: Callable, param: str) -> bool:
-    """True if `fn` takes a parameter called `param`."""
-    try:
-        return param in inspect.signature(fn).parameters
-    except (TypeError, ValueError):
-        return False
 
 
 # --- settings + binaries ------------------------------------------------------------------------------------------

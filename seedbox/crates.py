@@ -13,7 +13,7 @@ from urllib.parse import quote
 
 from mutagen.id3 import ID3
 
-from musicreco import library, mixing, tagging, transitions
+from musicreco import library, mixing, setplan, tagging, transitions
 from musicreco.models import Track
 
 from . import engine, serializers
@@ -318,7 +318,6 @@ class CrateService:
         """
         folder = seed_dir.name
         aq = self.analysis
-        available = aq.available()
         deadline = time.monotonic() + budget_s
         analyses: dict[str, dict | None] = {}
         states: dict[str, str] = {}
@@ -327,7 +326,7 @@ class CrateService:
             tid = f.track.id
             an = aq.cached(folder, tid)
             st = aq.state(folder, tid)
-            if an is None and available and st == "missing":
+            if an is None and st == "missing":
                 task = self.task(seed_dir, f)
                 if disk_cache_path(seed_dir, tid).is_file() and time.monotonic() < deadline:
                     try:
@@ -351,8 +350,7 @@ class CrateService:
         analyses, states = self._analyses(seed_dir, files)
         tracks = [f.track for f in files]
         trs = transitions.suggest_set(tracks, analyses, bpm_tol=self.bpm_tol, mix_length=self.mix_length)
-        if (setplan := engine.optional("setplan")) is not None:
-            trs = setplan.annotate(tracks, analyses, trs, mix_length=self.mix_length)
+        trs = setplan.annotate(tracks, analyses, trs, mix_length=self.mix_length)
         return {
             "folder": seed_dir.name,
             "path": str(seed_dir),
@@ -374,11 +372,10 @@ class CrateService:
 
     def set_technique(self, seed_dir: Path, from_id: str, to_id: str) -> str | None:
         """The technique the set plan (musicreco.setplan) gives A → B when B follows A in the running order; None
-        when it doesn't, before both are analysed, or without the planner."""
-        setplan = engine.optional("setplan")
+        when it doesn't or before both are analysed."""
         files = self.files(seed_dir)
         ids = [f.track.id for f in files]
-        if setplan is None or not any(x == from_id and y == to_id for x, y in zip(ids, ids[1:])):
+        if not any(x == from_id and y == to_id for x, y in zip(ids, ids[1:])):
             return None
         analyses, _ = self._analyses(seed_dir, files)
         tracks = [f.track for f in files]
@@ -476,11 +473,9 @@ class CrateService:
         """The track's analysis now: memory, disk cache, or analysed at the front of the queue within `wait_s`.
 
         Conflict (409 "analysis pending") if it takes longer (it keeps running; an `analysis` event follows),
-        422 if analysing the file failed, 503 without the analysis module.
+        422 if analysing the file failed.
         """
         aq = self.analysis
-        if not aq.available():
-            raise ApiError("audio analysis isn't available in this build", 503)
         folder, tid = seed_dir.name, f.track.id
         task = self.task(seed_dir, f)
         deadline = time.monotonic() + (ANALYSIS_WAIT_S if wait_s is None else wait_s)
@@ -505,7 +500,7 @@ class CrateService:
             time.sleep(0.05)
 
     def track_analysis(self, folder: str, track_id: str) -> dict:
-        """TrackAnalysis; 404 until it's ready, 422 if it failed, 503 without the analysis module."""
+        """TrackAnalysis; 404 until it's ready, 422 if it failed."""
         seed_dir = resolve_crate(self.root, folder)
         aq = self.analysis
         if hit := aq.cached(seed_dir.name, track_id):
@@ -518,8 +513,6 @@ class CrateService:
             raise ApiError(f"analysis failed: {aq.error(seed_dir.name, track_id)}", 422)
         if state in ("queued", "running"):
             raise NotFound(f"analysis {state}")
-        if not aq.available():
-            raise ApiError("audio analysis isn't available in this build", 503)
         task = self.task(seed_dir, mine)
         if disk_cache_path(seed_dir, track_id).is_file():
             try:
