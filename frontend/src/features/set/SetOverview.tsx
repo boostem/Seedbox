@@ -96,23 +96,23 @@ export function SetOverview({ set, stats, selection, onSelect }: SetOverviewProp
         {width > 0 && n > 0 && (
           <svg width={width} height={H} className="block overflow-visible" role="img" aria-label="Energy and BPM across the set">
             {/* energy lane */}
-            <text x={0} y={E_H / 2 + 3} className="fill-fg-subtle text-[9px] font-semibold tracking-wide">ENERGY</text>
+            <text x={0} y={E_H / 2 + 3} className="fill-fg-subtle text-2xs font-semibold tracking-wide">ENERGY</text>
             {[0, 50, 100].map((v) => (
               <g key={v}>
                 <line x1={PAD_L} x2={width - PAD_R} y1={yE(v)} y2={yE(v)} stroke="var(--color-line)" strokeWidth={1} />
-                <text x={width - PAD_R + 6} y={yE(v) + 3} className="fill-fg-faint text-[9px] num">{v}</text>
+                <text x={width - PAD_R + 6} y={yE(v) + 3} className="fill-fg-faint text-2xs num">{v}</text>
               </g>
             ))}
             <path d={`${ePath} L${x(n - 1)},${yE(0)} L${x(0)},${yE(0)} Z`} fill="var(--color-accent)" fillOpacity={0.1} />
             <path d={ePath} fill="none" stroke="var(--color-accent)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
             {/* bpm lane */}
-            <text x={0} y={E_H + GAP + B_H / 2 + 3} className="fill-fg-subtle text-[9px] font-semibold tracking-wide">BPM</text>
+            <text x={0} y={E_H + GAP + B_H / 2 + 3} className="fill-fg-subtle text-2xs font-semibold tracking-wide">BPM</text>
             <line x1={PAD_L} x2={width - PAD_R} y1={yB(bHi)} y2={yB(bHi)} stroke="var(--color-line)" />
             <line x1={PAD_L} x2={width - PAD_R} y1={yB(bLo)} y2={yB(bLo)} stroke="var(--color-line)" />
-            <text x={width - PAD_R + 6} y={yB(bHi) + 3} className="fill-fg-faint text-[9px] num">{bHi}</text>
-            <text x={width - PAD_R + 6} y={yB(bLo) + 3} className="fill-fg-faint text-[9px] num">{bLo}</text>
+            <text x={width - PAD_R + 6} y={yB(bHi) + 3} className="fill-fg-faint text-2xs num">{bHi}</text>
+            <text x={width - PAD_R + 6} y={yB(bLo) + 3} className="fill-fg-faint text-2xs num">{bLo}</text>
             <path d={bPath} fill="none" stroke="var(--color-fg-muted)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-            <text x={0} y={yS + 9} className="fill-fg-subtle text-[9px] font-semibold tracking-wide">MIXES</text>
+            <text x={0} y={yS + 9} className="fill-fg-subtle text-2xs font-semibold tracking-wide">MIXES</text>
             {/* transition score strip */}
             {(set.transitions as SetTransition[]).map((t, i) => {
               const key = `${t.from_id}>${t.to_id}`;
@@ -139,7 +139,7 @@ export function SetOverview({ set, stats, selection, onSelect }: SetOverviewProp
                 <g key={st.track.id}>
                   <circle cx={x(i)} cy={yE(energies[i])} r={sel ? 5.5 : 4} fill={c} stroke="var(--color-panel)" strokeWidth={2} />
                   <circle cx={x(i)} cy={yB(bpms[i])} r={sel ? 4.5 : 3} fill="var(--color-fg-muted)" stroke="var(--color-panel)" strokeWidth={2} />
-                  <text x={x(i)} y={H - 2} textAnchor="middle" className={cn("text-[9px] num", sel ? "fill-accent-hover font-bold" : "fill-fg-subtle")}>{i + 1}</text>
+                  <text x={x(i)} y={H - 2} textAnchor="middle" className={cn("text-2xs num", sel ? "fill-accent-hover font-bold" : "fill-fg-subtle")}>{i + 1}</text>
                 </g>
               );
             })}
@@ -177,7 +177,7 @@ export function SetOverview({ set, stats, selection, onSelect }: SetOverviewProp
       </div>
 
       <div className="flex shrink-0 flex-col items-center justify-center">
-        <CamelotWheel size={118} path={keys} counts={counts} active={selTrack?.track.camelot ?? null} center={selTrack ? undefined : <tspan className="fill-fg-subtle text-[9px]">KEY PATH</tspan>} />
+        <CamelotWheel size={118} path={keys} counts={counts} active={selTrack?.track.camelot ?? null} center={selTrack ? undefined : <tspan className="fill-fg-subtle text-2xs">KEY PATH</tspan>} />
       </div>
     </div>
   );
