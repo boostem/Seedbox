@@ -123,6 +123,14 @@ INSERT = Spec("insert", bars=132, insert=56, drops=[68])
 OUTRO_24 = Spec("outro_24", outro_bars=24)  # a 16 + 8-bar outro: blends start on its 16-bar phrase
 SHORT_INTRO_DROP = Spec("short_intro_drop", intro_bars=8, drops=[16])  # 8-bar intro, 8-bar build, drop at bar 16
 BUILD_END = Spec("build_end", outro_bars=8, outro_drums=False, drops=[112])  # last build ends 16 bars from the end
+# typical club tracks: vocal house with 16-bar drum edges (B's outro 32), peak-time techno with 32-bar drum edges,
+# a house track whose outro keeps its bass and pads, and an edit with 8-bar edges on both sides
+HOUSE = Spec("house", bars=144, vocals=[(32, 64), (80, 112)])
+HOUSE_B = Spec("house_b", bpm=123.0, camelot="9A", outro_bars=32, vocals=[(24, 56)])
+TECHNO = Spec("techno", bpm=130.0, bars=192, intro_bars=32, outro_bars=32)
+TECHNO_B = Spec("techno_b", bpm=131.0, bars=192, intro_bars=32, outro_bars=32, camelot="8B")
+MUSIC_OUTRO = Spec("music_outro", outro_drums=False)
+SHORT_EDGES = Spec("short_edges", intro_bars=8, outro_bars=8)
 
 # (name, A, B): every pair has an expected planner outcome in test_planner.py and a line in the snapshot
 PAIRS = [
@@ -144,7 +152,13 @@ PAIRS = [
     ("build end -> short intro drop", BUILD_END, SHORT_INTRO_DROP),
     ("build end -> fast", BUILD_END, FAST),
     ("build end -> standard", BUILD_END, STANDARD),
+    ("house -> house", HOUSE, HOUSE_B),
+    ("techno -> techno", TECHNO, TECHNO_B),
+    ("music outro -> house", MUSIC_OUTRO, HOUSE_B),
+    ("short edges -> short edges", SHORT_EDGES, SHORT_EDGES),
 ]
+# the club pairs whose blends should run 16 bars or more at the default mix length
+CLUB_PAIRS = [p for p in PAIRS if p[0] in ("house -> house", "techno -> techno", "music outro -> house")]
 
 
 # --- click-track audio ----------------------------------------------------------------------------------------------

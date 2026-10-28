@@ -225,6 +225,11 @@ class CrateService:
     def bpm_tol(self) -> float:
         return float(self.get_settings().bpm_tolerance)
 
+    @property
+    def mix_length(self) -> str:
+        """Preferred blend length (settings.mix_length): short / normal / long."""
+        return str(getattr(self.get_settings(), "mix_length", "normal"))
+
     def files(self, seed_dir: Path) -> list[SetFile]:
         sig = _signature(seed_dir)
         key = str(seed_dir)
@@ -361,7 +366,7 @@ class CrateService:
                 }
                 for n, f in enumerate(files, 1)
             ],
-            "transitions": transitions.suggest_set(tracks, analyses, bpm_tol=self.bpm_tol),
+            "transitions": transitions.suggest_set(tracks, analyses, bpm_tol=self.bpm_tol, mix_length=self.mix_length),
         }
 
     def _apply(self, seed_dir: Path, ordered_ids: list[str]) -> None:
@@ -408,7 +413,7 @@ class CrateService:
         analyses, _ = self._analyses(seed_dir, files)
         others = [(f.track, analyses.get(f.track.id)) for f in files if f.track.id != track_id]
         found = transitions.partners(mine.track, analyses.get(track_id), others, direction=direction,
-                                     limit=PARTNER_LIMIT, bpm_tol=self.bpm_tol)  # fmt: skip
+                                     limit=PARTNER_LIMIT, bpm_tol=self.bpm_tol, mix_length=self.mix_length)  # fmt: skip
         paths = {f.track.id: f.path for f in files}
         out = []
         for p in found:

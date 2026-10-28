@@ -33,6 +33,7 @@ LIMITS: dict[str, tuple[type, float, float]] = {
     "preview_concurrency": (int, 1, 8),
     "preview_cache_mb": (int, 0, 100_000),
 }
+MIX_LENGTHS = ("short", "normal", "long")  # preferred blend length: 8 / 16 / 32 bars (musicreco.transitions)
 
 _lock = threading.RLock()
 
@@ -46,6 +47,7 @@ class Settings:
     preview_concurrency: int = 3
     preview_cache_mb: int = 500
     pretick_all: bool = True  # tick every tunebat "r" rec; False = only key/BPM rule matches
+    mix_length: str = "normal"  # preferred blend length of mix plans: short / normal / long = 8 / 16 / 32 bars
 
 
 def _env_dir(var: str, default: Path) -> Path:
@@ -106,6 +108,11 @@ def from_json(d: dict, *, strict: bool = False) -> Settings:
             s.pretick_all = d["pretick_all"]
         elif strict:
             raise ValueError("pretick_all must be true or false")
+    if "mix_length" in d:
+        if d["mix_length"] in MIX_LENGTHS:
+            s.mix_length = d["mix_length"]
+        elif strict:
+            raise ValueError(f"mix_length must be one of {', '.join(MIX_LENGTHS)}")
     return s
 
 

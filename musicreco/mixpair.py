@@ -1,6 +1,6 @@
 """Plan and render one A → B transition from two audio files, for listening to planner changes:
 
-    python -m musicreco.mixpair A.mp3 B.mp3 [--technique "bass swap"] [--bars 16] -o out.wav
+    python -m musicreco.mixpair A.mp3 B.mp3 [--technique "bass swap"] [--bars 16] [--mix-length long] -o out.wav
 
 Analyses both files (structure.analyze, no cache), builds the plan with mixplan.generate, prints its summary, notes and
 render stats, and writes the mix (.wav as is, .m4a encoded like the app). The Camelot keys come from the files' TKEY
@@ -47,6 +47,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("-o", "--out", type=Path, required=True, help="output .wav or .m4a")
     p.add_argument("--technique", choices=mixplan.TECHNIQUES, help="force a technique (default: the planner's)")
     p.add_argument("--bars", type=int, choices=mixplan.BARS, help="force the blend / lead-in length")
+    p.add_argument("--mix-length", choices=("short", "normal", "long"), default="normal",
+                   help="preferred blend length, like the app's Mix length setting (default: normal = 16 bars)")
     p.add_argument("--key-a", help="A's Camelot key (default: its TKEY tag)")
     p.add_argument("--key-b", help="B's Camelot key (default: its TKEY tag)")
     p.add_argument("--plan", type=Path, help="also write the plan JSON here")
@@ -58,7 +60,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"analysing {path.name} ...", file=sys.stderr)
             ans.append(structure.analyze(path, track_id=path.stem))
         a, b = _track(args.a, ans[0], args.key_a), _track(args.b, ans[1], args.key_b)
-        plan = mixplan.generate(a, ans[0], b, ans[1], str(args.a.parent), technique=args.technique, bars=args.bars)
+        plan = mixplan.generate(a, ans[0], b, ans[1], str(args.a.parent), technique=args.technique, bars=args.bars,
+                                mix_length=args.mix_length)  # fmt: skip
         print(f"A: {args.a.name} — {ans[0]['bpm']:g} BPM, {a.camelot or 'key ?'}, {ans[0]['bar_count']} bars")
         print(f"B: {args.b.name} — {ans[1]['bpm']:g} BPM, {b.camelot or 'key ?'}, {ans[1]['bar_count']} bars")
         print(mixplan.summary(plan, ans[0], ans[1]))

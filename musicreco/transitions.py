@@ -25,7 +25,8 @@ _VOCAL_ON = 0.5  # vocal_per_bar at/above this counts as a sung bar
 _VOCAL_FLOOR = 0.3  # the soft clash only counts likelihood above this (hats/synths read as weak "vocals")
 _BASS_ON = 0.5  # mean low_per_bar at/above this = kick/bass weight on that deck
 _NO_BASS = 0.25  # below this B has no real low end in the overlap
-_MAX_CLASH_BARS = 2  # a blend with more overlapping vocal bars than this is not offered
+_MAX_CLASH_BARS = 2  # a blend with more overlapping vocal bars than this and than half its length is not offered
+# (the mixer ducks one deck's mids through a clash, which saves part of a blend, not all of it)
 _MAX_TONAL_CLASH_BARS = 4  # with clashing keys, at most this many bars with music (not just drums) on both decks
 _MIN_BLEND_FIT = 50.0
 _LOUD = 0.85  # energy_per_bar of a full-power bar
@@ -43,17 +44,21 @@ _MIN_SKIP_NOTE = 4  # bars of A left unplayed before it's worth mentioning
 _P_BODY_CUT = 2.5  # A's main section cut off before its outro
 _P_OUTRO_SKIP = 0.4  # A outro bars never played
 _P_INTRO_SKIP = 0.35  # B intro bars skipped by cueing later
-_P_A_BODY_UNDER = 0.5  # overlap starts in A's main section
-_P_B_BODY_UNDER = 0.8  # B's main section already running while A is still in
+_P_A_BODY_UNDER = 0.25  # overlap starts in A's main section (B's intro under A's last body bars is a classic ride)
+_P_B_BODY_UNDER = 0.5  # B's main section already running while A is still in (half that under A's drums-only outro)
 _P_B_SOLO = 0.4  # B's intro keeps running alone after A is out
 _P_A_HALF_PHRASE = 4.0  # B comes in on the second 8 bars of one of A's 16-bar phrases
 _P_B_HALF_PHRASE = 2.0  # B cued past its first downbeat/phrase start and not on one of its 16-bar phrases
-_P_VOCAL = 6.0  # per bar of (soft) vocal clash
+_P_VOCAL = 2.0  # per bar of (soft) vocal clash: the mixer ducks one deck's mids, so a clash rarely shortens a blend
 _P_TONAL_KEY_CLASH = 2.0  # per bar with music on both decks when the keys clash
-_LENGTH_BONUS = {  # (both sides drums-only, one side, neither) — long blends only pay off when clean
-    32: (6.0, -4.0, -10.0),
-    16: (4.0, 2.0, -2.0),
-    8: (0.0, 0.0, 0.0),
+# Mix length preference (settings.mix_length) -> {length: (both edges drums-only, one, neither)}. Normal: 16 bars
+# whenever an edge has room, 32 when both edges are long and drums-only, 8 only when both edges are short or a
+# clash forces it. Short keeps the old 8-bar habit, Long reaches for 32 whenever one side is clean.
+MIX_LENGTHS = {"short": 8, "normal": 16, "long": 32}
+_LENGTH_BONUS = {
+    "short": {32: (-8.0, -14.0, -20.0), 16: (0.0, -2.0, -6.0), 8: (8.0, 8.0, 8.0)},
+    "normal": {32: (10.0, -2.0, -8.0), 16: (9.0, 7.0, 1.0), 8: (0.0, 0.0, 0.0)},
+    "long": {32: (16.0, 10.0, 0.0), 16: (9.0, 7.0, 1.0), 8: (-2.0, -2.0, -2.0)},
 }
 
 # order_set: weight of a poor outro→intro fit, on the scale of mixing's key/BPM costs (1 = one Camelot step)
@@ -240,8 +245,8 @@ class _Plan:
     tonal: int = 0  # overlap bars with music (not just drums) on both decks
 
 
-def _window(a: _Grid, b: _Grid, a0: int, b0: int, length: int, key_clash: bool) -> _Plan:
-    """Score one phrase-aligned overlap: A bars [a0, a0+L) under B bars [b0, b0+L)."""
+def _window(a: _Grid, b: _Grid, a0: int, b0: int, length: int, key_clash: bool, pref: str = "normal") -> _Plan:
+    """Score one phrase-aligned overlap: A bars [a0, a0+L) under B bars [b0, b0+L), under a mix length preference."""
     e = a0 + length
     o0, end = a.outro
     i0, i1 = b.intro
@@ -249,7 +254,7 @@ def _window(a: _Grid, b: _Grid, a0: int, b0: int, length: int, key_clash: bool) 
     pen += _P_OUTRO_SKIP * (end - max(e, o0))
     pen += _P_INTRO_SKIP * (b0 - i0)
     pen += _P_A_BODY_UNDER * max(0, min(o0, e) - a0)
-    pen += _P_B_BODY_UNDER * max(0, b0 + length - max(i1, b0))
+    pen += sum(_P_B_BODY_UNDER / (2 if a.perc[a0 + k] else 1) for k in range(max(i1, b0) - b0, length))
     pen += _P_B_SOLO * max(0, i1 - (b0 + length))
     pen += _P_A_HALF_PHRASE * (a.level(a0) < 16)
     pen += _P_B_HALF_PHRASE * (b0 not in (0, _first_cue(b)) and b.level(b0) < 16)
@@ -265,12 +270,12 @@ def _window(a: _Grid, b: _Grid, a0: int, b0: int, length: int, key_clash: bool) 
 
     clean_a = a.outro_drums and a0 >= o0
     clean_b = b.intro_drums and b0 + length <= i1
-    both, one, neither = _LENGTH_BONUS[length]
+    both, one, neither = _LENGTH_BONUS.get(pref, _LENGTH_BONUS["normal"])[length]
     bonus = both if clean_a and clean_b else one if clean_a or clean_b else neither
     return _Plan("phrase blend", a0, b0, length, 100.0 - pen + bonus, clash, tonal)
 
 
-def _best_blend(a: _Grid, b: _Grid, key_clash: bool) -> _Plan | None:
+def _best_blend(a: _Grid, b: _Grid, key_clash: bool, pref: str = "normal") -> _Plan | None:
     """Best phrase-aligned overlap of A's ending with B's beginning (ties keep the earlier, longer candidate)."""
     i0, i1 = b.intro
     b_cues = [p for p in b.phrases if p <= max(b.phrases[0], i1 - PHRASE)] if b.phrases else [i0]
@@ -281,7 +286,7 @@ def _best_blend(a: _Grid, b: _Grid, key_clash: bool) -> _Plan | None:
                 continue
             for b0 in b_cues:
                 if b0 + length <= b.n:
-                    plan = _window(a, b, a0, b0, length, key_clash)
+                    plan = _window(a, b, a0, b0, length, key_clash, pref)
                     if best is None or plan.fit > best.fit + 1e-9:
                         best = plan
     return best
@@ -311,12 +316,17 @@ def _cut_bar(a: _Grid) -> int:
     return p if a.end - p <= PHRASE // 2 else a.end
 
 
-def _plan(a: _Grid, b: _Grid, key_clash: bool) -> _Plan:
+def _max_clash(length: int) -> int:
+    """Most bars with vocals on both decks a blend of `length` bars may have."""
+    return max(_MAX_CLASH_BARS, length // 2)
+
+
+def _plan(a: _Grid, b: _Grid, key_clash: bool, pref: str = "normal") -> _Plan:
     """Pick the technique and its exact bars for A → B."""
-    blend = _best_blend(a, b, key_clash)
+    blend = _best_blend(a, b, key_clash, pref)
     if blend is not None and (
         blend.fit < _MIN_BLEND_FIT
-        or len(blend.clash) > _MAX_CLASH_BARS
+        or len(blend.clash) > _max_clash(blend.length)
         or (key_clash and blend.tonal > _MAX_TONAL_CLASH_BARS)
     ):
         blend = None
@@ -468,7 +478,7 @@ def _plan_warnings(a: _Grid, b: _Grid, plan: _Plan) -> list[str]:
         k0, k1 = plan.clash[0], plan.clash[-1] + 1
         warnings.append(
             f"Vocals overlap for {_plural(len(plan.clash), 'bar')} "
-            f"(A {_mmss(a.t(plan.a0 + k0))}–{_mmss(a.t(plan.a0 + k1))}) — ride the mids or shorten the blend."
+            f"(A {_mmss(a.t(plan.a0 + k0))}–{_mmss(a.t(plan.a0 + k1))}) — duck one deck's mids through them."
         )
     if not plan.length and plan.technique != "echo out":
         if a.outro_vocals and b.intro_vocals:
@@ -527,7 +537,8 @@ def _tempo_text(
 
 
 def _suggest(
-    a: Track, a_an: dict | None, b: Track, b_an: dict | None, bpm_tol: float, cache: dict | None
+    a: Track, a_an: dict | None, b: Track, b_an: dict | None, bpm_tol: float, cache: dict | None,
+    mix_length: str = "normal",
 ) -> tuple[dict, float]:
     """(Transition dict, structural fit 0-100) — the fit also feeds order_set."""
     move = mixing._camelot_move(a.camelot, b.camelot)
@@ -559,7 +570,7 @@ def _suggest(
         out["notes"] = [*key_notes, *tempo_notes, wait]
         out["warnings"] = [*wrong, *key_warnings, *tempo_warnings]
     else:
-        plan = _plan(ga, gb, key_clash=move == "clash")
+        plan = _plan(ga, gb, key_clash=move == "clash", pref=mix_length)
         fit = max(0.0, min(100.0, plan.fit - _WRONG_FILE_FIT * len(wrong)))
         key_notes, key_warnings = _key_text(a, b, move, plan)
         out_s, in_s = ga.t(plan.a0), gb.t(plan.b0)
@@ -577,16 +588,22 @@ def _suggest(
     return out, fit
 
 
-def suggest(a: Track, a_an: dict | None, b: Track, b_an: dict | None, bpm_tol: float = 0.10) -> dict:
-    """Transition dict (types.ts) for playing B after A; ready=False (key/BPM only) until both analyses exist."""
-    return _suggest(a, a_an, b, b_an, bpm_tol, None)[0]
+def suggest(
+    a: Track, a_an: dict | None, b: Track, b_an: dict | None, bpm_tol: float = 0.10, mix_length: str = "normal"
+) -> dict:
+    """Transition dict (types.ts) for playing B after A; ready=False (key/BPM only) until both analyses exist.
+    mix_length (short/normal/long, settings.mix_length) is the preferred blend length: 8, 16 or 32 bars."""
+    return _suggest(a, a_an, b, b_an, bpm_tol, None, mix_length)[0]
 
 
-def suggest_set(tracks: list[Track], analyses: dict[str, dict | None], bpm_tol: float = 0.10) -> list[dict]:
+def suggest_set(
+    tracks: list[Track], analyses: dict[str, dict | None], bpm_tol: float = 0.10, mix_length: str = "normal"
+) -> list[dict]:
     """Transitions for each consecutive pair: tracks[i] → tracks[i+1]."""
     cache: dict = {}
     return [
-        _suggest(a, analyses.get(a.id), b, analyses.get(b.id), bpm_tol, cache)[0] for a, b in zip(tracks, tracks[1:])
+        _suggest(a, analyses.get(a.id), b, analyses.get(b.id), bpm_tol, cache, mix_length)[0]
+        for a, b in zip(tracks, tracks[1:])
     ]
 
 
@@ -607,6 +624,7 @@ def partners(
     direction: str = "out",
     limit: int = 8,
     bpm_tol: float = 0.10,
+    mix_length: str = "normal",
 ) -> list[dict]:
     """Best tracks to play after `track` (direction "out") or before it ("in"), as Partner dicts, best first."""
     if direction not in ("out", "in"):
@@ -619,9 +637,9 @@ def partners(
             continue
         seen.add(other.id)
         if direction == "out":
-            tr = _suggest(track, analysis, other, an, bpm_tol, cache)[0]
+            tr = _suggest(track, analysis, other, an, bpm_tol, cache, mix_length)[0]
         else:
-            tr = _suggest(other, an, track, analysis, bpm_tol, cache)[0]
+            tr = _suggest(other, an, track, analysis, bpm_tol, cache, mix_length)[0]
         ranked.append(((-tr["score"], not tr["ready"], other.display_name.lower(), other.id), other, tr))
     ranked.sort(key=lambda r: r[0])
     return [{"track": track_dict(t), "transition": tr, "direction": direction} for _, t, tr in ranked[: max(0, limit)]]

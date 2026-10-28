@@ -89,7 +89,10 @@ export interface Settings {
   preview_concurrency: number; // default 3
   preview_cache_mb: number; // default 500
   pretick_all: boolean; // default true: every "r" rec starts ticked; false = only key/BPM rule matches
+  mix_length: MixLength; // preferred blend length of mix plans, default "normal" (16 bars)
 }
+
+export type MixLength = "short" | "normal" | "long"; // 8 / 16 / 32-bar blends
 
 export interface SystemStatus {
   version: string;
