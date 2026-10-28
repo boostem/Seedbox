@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from . import mixing, mixplan
+from . import mixing, mixplan, transitions
 from .models import Track
 
 BLENDS = ("long blend", "phrase blend", "bass swap")
@@ -56,26 +56,26 @@ class Pick:
     reason: str | None  # why the set picked something else, for the notes
 
 
-def _candidates(m: mixplan._Mix) -> tuple[str, dict[str, float]]:
+def _candidates(m: mixplan.Mix) -> tuple[str, dict[str, float]]:
     """(the pair's own technique, {technique: fit cost}) for one analysed pair."""
-    e_tech, e = mixplan._engine(m)
-    own = mixplan._auto_technique(m, e_tech, e)
+    e_tech, e = mixplan.engine_place(m)
+    own = mixplan.auto_technique(m, e_tech, e)
     out = {own: 0.0}
     if not (m.real_a and m.real_b):
         return own, out
     gap = abs(m.b_bpm / m.a_bpm - 1)
-    good_key = m.move in mixplan._GOOD_KEYS
-    blendable = e.overlap > 0 and e_tech not in mixplan._CUTS and gap <= mixplan._MAX_BLEND_GAP
+    good_key = m.move in mixplan.GOOD_KEYS
+    blendable = e.overlap > 0 and e_tech not in mixplan.CUTS and gap <= mixplan.MAX_BLEND_GAP
     alts: list[str] = ["echo out"]  # a blend then echo out, or (no blend) echo A out and B in on the 1
     if blendable:
-        if e.overlap >= 16 and good_key and gap <= mixplan._SMALL_GAP:
+        if e.overlap >= 16 and good_key and gap <= mixplan.SMALL_GAP:
             alts.append("long blend")
         if good_key:
             alts += ["phrase blend", "bass swap"]
         alts.append("filter sweep")
-    if mixplan._b_slam_drop(m) is not None or mixplan._a_build_end(m) is not None:
+    if mixplan.b_slam_drop(m) is not None or mixplan.a_build_end(m) is not None:
         alts.append("slam")
-    a_drops = [d for d in m.ga.drops if m.ga.end * 0.4 <= d <= m.ga.end - mixplan._PHRASE]
+    a_drops = [d for d in m.ga.drops if m.ga.end * 0.4 <= d <= m.ga.end - transitions.PHRASE]
     if a_drops and any(d > m.gb.intro[0] for d in m.gb.drops):
         alts.append("drop swap")
     alts += ["reverb wash", "quick cut"]
@@ -107,7 +107,7 @@ def _step(prev: str | None, since: int, tech: str | None, energy: float) -> tupl
 
 def _energies(tracks: list[Track]) -> list[float]:
     """Per pair: the mean energy of its two tracks, scaled to the set's range (0.5 everywhere for a flat set)."""
-    levels = mixing._energy_levels(tracks)
+    levels = mixing.energy_levels(tracks)
     raw = [levels.get(t.id, 5.0) for t in tracks]
     lo, hi = min(raw, default=0.0), max(raw, default=0.0)
     norm = [(v - lo) / (hi - lo) if hi - lo > 1e-9 else 0.5 for v in raw]
@@ -170,7 +170,7 @@ def plan_set(
             owns.append(None)
             continue
         tr = transitions[i] if transitions is not None and i < len(transitions) else None
-        own, opts = _candidates(mixplan._mix(a, a_an, b, b_an, tr, mix_length))
+        own, opts = _candidates(mixplan.make_mix(a, a_an, b, b_an, tr, mix_length))
         options.append(dict(opts))
         owns.append(own)
     energies = _energies(tracks)

@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from .models import Score, Track
 
 _CAMELOT_RE = re.compile(r"\s*(\d{1,2})\s*([AB])\s*", re.IGNORECASE)
-_EPS = 1e-9  # float slack so exact boundaries (e.g. 117 vs 130 at 10%) count as inside
+EPS = 1e-9  # float slack so exact boundaries (e.g. 117 vs 130 at 10%) count as inside
 
 
 def _parse_camelot(code: object) -> tuple[int, str] | None:
@@ -43,7 +43,7 @@ def _bpm_factor(seed_bpm: float, other_bpm: float, tol: float) -> float | None:
     """Multiplier (1, 2 or 0.5) that brings other_bpm within tol of seed_bpm, else None."""
     if not (_valid_bpm(seed_bpm) and _valid_bpm(other_bpm)):
         return None
-    limit = seed_bpm * tol + _EPS
+    limit = seed_bpm * tol + EPS
     for factor in (1, 2, 0.5):
         if abs(other_bpm * factor - seed_bpm) <= limit:
             return factor
@@ -99,7 +99,7 @@ _PASS_FLOOR = 48  # passing tracks are always >= this (key points alone) ...
 _FAIL_SCALE = 0.6  # ... and failing ones are scaled so they stay below it (max raw 75 -> 45)
 
 
-def _camelot_move(seed: str, other: str) -> str:
+def camelot_move(seed: str, other: str) -> str:
     """Camelot relationship seed -> other: same, +1, -1, relative, +2 boost, +7 boost, diagonal, clash or '?'."""
     a, b = _parse_camelot(seed), _parse_camelot(other)
     if a is None or b is None:
@@ -113,7 +113,7 @@ def _camelot_move(seed: str, other: str) -> str:
     return "diagonal" if d in (1, 11) else "clash"
 
 
-def _pitch(seed_bpm: float, other_bpm: float) -> tuple[float, float] | None:
+def pitch_factor(seed_bpm: float, other_bpm: float) -> tuple[float, float] | None:
     """(signed pitch %, factor): the tempo change of other (x1, x2 or x0.5) vs the seed with the smallest gap."""
     if not (_valid_bpm(seed_bpm) and _valid_bpm(other_bpm)):
         return None
@@ -136,16 +136,16 @@ def score(seed: Track, other: Track, tol: float = 0.10) -> Score:
     Within each group key move > BPM > energy > danceability. Passing tracks land in 48-100, failing ones in 0-45.
     """
     passed = passes_rule(seed, other, tol)[0]
-    move = _camelot_move(seed.camelot, other.camelot)
+    move = camelot_move(seed.camelot, other.camelot)
     raw = float(_KEY_POINTS[move])
     chips = [_MOVE_CHIPS.get(move, move)]
 
-    pitch = _pitch(seed.bpm, other.bpm)
+    pitch = pitch_factor(seed.bpm, other.bpm)
     if pitch is None:
         chips.append("no BPM")
     else:
         pct, factor = pitch
-        raw += _BPM_POINTS * max(0.0, 1 - abs(pct) / max(tol * 100, _EPS))
+        raw += _BPM_POINTS * max(0.0, 1 - abs(pct) / max(tol * 100, EPS))
         chips.append(f"{pct:+.1f}% pitch" if round(pct, 1) else "same tempo")
         if factor != 1:
             raw -= _HALF_DOUBLE_PENALTY
@@ -209,7 +209,7 @@ def _energy_z(track: Track) -> float | None:
     return total / weight if weight else None
 
 
-def _energy_levels(tracks: list[Track]) -> dict[str, float]:
+def energy_levels(tracks: list[Track]) -> dict[str, float]:
     """Continuous 1-10 energy per track id: crate rank + min-max blended with an absolute estimate for tiny crates."""
     zs: dict[str, float | None] = {}
     for t in tracks:
@@ -228,10 +228,10 @@ def _energy_levels(tracks: list[Track]) -> dict[str, float]:
         for i, z in known.items():
             level = absolute(z)
             if w:
-                below = sum(1 for v in ordered if v < z - _EPS)
-                ties = sum(1 for v in ordered if abs(v - z) <= _EPS)
+                below = sum(1 for v in ordered if v < z - EPS)
+                ties = sum(1 for v in ordered if abs(v - z) <= EPS)
                 pct = (below + (ties - 1) / 2) / (n - 1)
-                span = (z - lo) / (hi - lo) if hi - lo > _EPS else 0.5
+                span = (z - lo) / (hi - lo) if hi - lo > EPS else 0.5
                 level = w * (1 + 9 * (pct + span) / 2) + (1 - w) * level
             levels[i] = level
     fallback = sorted(levels.values())[len(levels) // 2] if levels else _ENERGY_MID
@@ -240,15 +240,15 @@ def _energy_levels(tracks: list[Track]) -> dict[str, float]:
 
 def energy_ratings(tracks: list[Track]) -> dict[str, int]:
     """1-10 energy per track id, relative to this crate (a lone track gets ~4-7 from its absolute energy)."""
-    return {i: max(1, min(10, math.floor(v + 0.5))) for i, v in _energy_levels(tracks).items()}
+    return {i: max(1, min(10, math.floor(v + 0.5))) for i, v in energy_levels(tracks).items()}
 
 
 # --- set order -----------------------------------------------------------------------------------------------------
 
 _KEY_STEP_COST = {"same": 0.0, "+1": 1.0, "-1": 1.0, "relative": 1.0, "+2 boost": 2.0, "+7 boost": 2.0, "diagonal": 2.0}
 _PITCH_COST = 0.5  # per % of pitch change (2% drift costs about one +/-1 key move)
-_SHAPE_COST = 4.0  # weight of straying from the target energy curve
-_JUMP_COST = 3.0  # weight of the energy step between neighbours (keeps the ease-off gentle)
+SHAPE_COST = 4.0  # weight of straying from the target energy curve
+JUMP_COST = 3.0  # weight of the energy step between neighbours (keeps the ease-off gentle)
 _UNKNOWN_COST = 5.0  # unparseable key / missing BPM
 _PEAK_AT = 2 / 3
 _MAX_BLOCK = 4
@@ -261,16 +261,16 @@ def _key_cost(seed: str, other: str) -> float:
     a, b = _parse_camelot(seed), _parse_camelot(other)
     if a is None or b is None:
         return _UNKNOWN_COST
-    move = _camelot_move(seed, other)
+    move = camelot_move(seed, other)
     if move in _KEY_STEP_COST:
         return _KEY_STEP_COST[move]
     d = (b[0] - a[0]) % 12
     return 3.0 + 0.5 * min(d, 12 - d) + (1.0 if a[1] != b[1] else 0.0)
 
 
-def _pair_cost(a: Track, b: Track) -> float:
+def pair_cost(a: Track, b: Track) -> float:
     """Mixing cost of playing b after a: Camelot distance plus BPM drift (pitch %, half/double aware)."""
-    pitch = _pitch(a.bpm, b.bpm)
+    pitch = pitch_factor(a.bpm, b.bpm)
     if pitch is None:
         bpm_cost = _UNKNOWN_COST
     else:
@@ -278,7 +278,7 @@ def _pair_cost(a: Track, b: Track) -> float:
     return _key_cost(a.camelot, b.camelot) + bpm_cost
 
 
-def _energy_target(t: float, start: float, end: float = 0.55) -> float:
+def energy_target(t: float, start: float, end: float = 0.55) -> float:
     """Desired normalised energy at fraction t of the set: ramps up to 1.0 at 2/3, then eases down to `end`."""
     if t <= _PEAK_AT:
         return start + (1.0 - start) * t / _PEAK_AT
@@ -298,16 +298,16 @@ def order_set(seed: Track, tracks: list[Track]) -> list[Track]:
 
     items = [seed, *pool]
     n = len(items)
-    pair = [[_pair_cost(a, b) if a is not b else 0.0 for b in items] for a in items]
+    pair = [[pair_cost(a, b) if a is not b else 0.0 for b in items] for a in items]
 
-    levels = _energy_levels(items)
+    levels = energy_levels(items)
     raw_en = [levels[t.id] for t in items]
     lo, hi = min(raw_en), max(raw_en)
-    en = [(v - lo) / (hi - lo) if hi - lo > _EPS else 0.5 for v in raw_en]
+    en = [(v - lo) / (hi - lo) if hi - lo > EPS else 0.5 for v in raw_en]
     start = max(0.2, min(0.6, en[0]))
-    target = [_energy_target(p / (n - 1), start) for p in range(n)]
-    shape = [[_SHAPE_COST * abs(en[j] - target[p]) for p in range(n)] for j in range(n)]
-    step = [[pair[a][b] + _JUMP_COST * abs(en[a] - en[b]) for b in range(n)] for a in range(n)]
+    target = [energy_target(p / (n - 1), start) for p in range(n)]
+    shape = [[SHAPE_COST * abs(en[j] - target[p]) for p in range(n)] for j in range(n)]
+    step = [[pair[a][b] + JUMP_COST * abs(en[a] - en[b]) for b in range(n)] for a in range(n)]
 
     def cost(order: list[int]) -> float:
         return sum(step[a][b] for a, b in zip(order, order[1:])) + sum(shape[j][p] for p, j in enumerate(order) if p)

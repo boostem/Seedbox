@@ -19,9 +19,9 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from musicreco import transitions
+from musicreco import mixplan, mixrender, transitions
 
-from . import engine, serializers
+from . import serializers
 from .crates import ApiError, CrateService, NotFound, SetFile, resolve_crate
 from .events import EventBus
 
@@ -35,13 +35,6 @@ TECHNIQUES = ("long blend", "phrase blend", "bass swap", "drop swap", "quick cut
 BARS = (4, 8, 16, 32)
 _ID = re.compile(r"^[A-Za-z0-9]{1,64}$")
 _RENDER_ID = re.compile(r"^[A-Za-z0-9_-]{6,128}$")
-
-
-def _module(name: str) -> Any:
-    mod = engine.optional(name)
-    if mod is None:
-        raise ApiError(f"mix {'rendering' if name == 'mixrender' else 'planning'} isn't available in this build", 503)
-    return mod
 
 
 def _write_json_atomic(path: Path, data: Any) -> None:
@@ -98,7 +91,6 @@ class MixService:
             raise ApiError(f"unknown technique {technique!r}", 422)
         if bars is not None and bars not in BARS:
             raise ApiError("bars must be 4, 8, 16 or 32", 422)
-        mixplan = _module("mixplan")
         self.crates.want_analyses(seed_dir, [a, b])  # both start now, so a 409 retry finds both done
         a_an = self.crates.ready_analysis(seed_dir, a)
         b_an = self.crates.ready_analysis(seed_dir, b)
@@ -124,7 +116,7 @@ class MixService:
             log.warning("ignoring unreadable saved mix plan %s: %s", path, e)
             return None
         try:
-            plan = _module("mixplan").validate(data)
+            plan = mixplan.validate(data)
         except ValueError as e:  # e.g. written by an older PLAN_VERSION
             log.warning("ignoring invalid saved mix plan %s: %s", path.name, e)
             return None
@@ -134,7 +126,7 @@ class MixService:
         if not isinstance(body, dict):
             raise ApiError("a MixPlan JSON object is required", 422)
         try:
-            plan = _module("mixplan").validate(body)
+            plan = mixplan.validate(body)
         except ValueError as e:
             raise ApiError(f"invalid mix plan: {e}", 422) from e
         ids = (plan.get("from_id"), plan.get("to_id"), (plan.get("a") or {}).get("track_id"),
@@ -163,7 +155,6 @@ class MixService:
             plan = self._validated(body, seed_dir.name, from_id, to_id)
         else:
             plan = self.plan(folder, from_id, to_id)
-        mixrender = _module("mixrender")
         render_id = str(mixrender.plan_hash(plan, a.path, b.path))
         if not _RENDER_ID.match(render_id):
             raise ApiError("renderer returned an unusable id", 500)
@@ -174,7 +165,7 @@ class MixService:
             if fut is None:
                 if (hit := self._cached(render_id)) is not None:  # finished between the check above and now
                     return hit
-                fut = self._pool.submit(self._render, mixrender, render_id, plan, a.path, b.path, seed_dir.name,
+                fut = self._pool.submit(self._render, render_id, plan, a.path, b.path, seed_dir.name,
                                         from_id, to_id)  # fmt: skip
                 self._inflight[render_id] = fut
         try:
@@ -213,7 +204,7 @@ class MixService:
             except OSError:
                 pass
 
-    def _render(self, mixrender: Any, render_id: str, plan: dict, a_path: Path, b_path: Path, folder: str,
+    def _render(self, render_id: str, plan: dict, a_path: Path, b_path: Path, folder: str,
                 from_id: str, to_id: str) -> dict:  # fmt: skip
         event = {"render_id": render_id, "folder": folder, "from_id": from_id, "to_id": to_id}
         last = [0.0]
@@ -228,12 +219,7 @@ class MixService:
         out_dir = self.renders_dir
         tmp = out_dir / f".{render_id}.{uuid.uuid4().hex[:8]}.part.m4a"
         try:
-            kwargs = {}
-            for name in ("progress", "on_progress"):
-                if engine.accepts(mixrender.render, name):
-                    kwargs[name] = progress
-                    break
-            result = dict(mixrender.render(plan, a_path, b_path, tmp, **kwargs))
+            result = dict(mixrender.render(plan, a_path, b_path, tmp, progress=progress))
             os.replace(tmp, out_dir / f"{render_id}.m4a")
             result.update(render_id=render_id, audio_url=f"/api/renders/{render_id}.m4a")
             result = serializers.clean(result)
