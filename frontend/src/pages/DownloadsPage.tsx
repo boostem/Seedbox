@@ -2,7 +2,7 @@
 import { JobList } from "@/features/downloads/JobList";
 import { JobView } from "@/features/downloads/JobView";
 
-/** Job ids the list answers to (the router maps a bare #/downloads to the crates page for now). */
+/** Job ids the list answers to (the router maps a bare #/downloads to "" = the job list). */
 const LIST_IDS = new Set(["", "all", "recent", "jobs"]);
 
 export function DownloadsPage({ jobId }: { jobId: string }) {
