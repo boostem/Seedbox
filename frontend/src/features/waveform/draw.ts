@@ -211,10 +211,19 @@ export function drawSections(ctx: CanvasRenderingContext2D, lane: Lane, view: Vi
 
 // ------------------------------------------------------------------------------------------------ intro / outro
 
-/** Intro/outro brackets along the top of the band + a faint tint over the region. */
-export function drawEdges(ctx: CanvasRenderingContext2D, lane: Lane, view: View, y: number, h: number, opts: { labels?: boolean } = {}): void {
+/** A drawn label's box in canvas px, so later layers can keep clear of it. */
+export interface LabelBox {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+
+/** Intro/outro brackets along the top of the band + a faint tint over the region. Returns the label boxes drawn. */
+export function drawEdges(ctx: CanvasRenderingContext2D, lane: Lane, view: View, y: number, h: number, opts: { labels?: boolean } = {}): LabelBox[] {
   const an = lane.an;
-  if (!an) return;
+  const boxes: LabelBox[] = [];
+  if (!an) return boxes;
   const p = wavePalette();
   ctx.save();
   ctx.font = font(p, 9, 650);
@@ -240,10 +249,12 @@ export function drawEdges(ctx: CanvasRenderingContext2D, lane: Lane, view: View,
         ctx.fillRect(lx - 3, y + 3, tw + 6, 12);
         ctx.fillStyle = col;
         ctx.fillText(text, lx, y + 4.5);
+        boxes.push({ x0: lx - 3, x1: lx + tw + 3, y0: y + 3, y1: y + 15 });
       }
     }
   }
   ctx.restore();
+  return boxes;
 }
 
 // ------------------------------------------------------------------------------------------------ cues
@@ -272,8 +283,32 @@ interface CueMark {
   color: string;
 }
 
-/** Cue markers: a line through the band and a labelled flag at the top (merged when they coincide, two rows max). */
-export function drawCues(ctx: CanvasRenderingContext2D, lane: Lane, view: View, y: number, h: number, opts: { labels?: boolean; topOffset?: number } = {}): void {
+const CUE_ROW_H = 14;
+const CUE_LABEL_H = 12;
+
+/**
+ * Row layout for cue labels: `rows[i]` holds the [x0, x1] spans taken in row i. Seeded with the boxes of labels drawn
+ * earlier (e.g. "INTRO 16") so cue labels keep clear of them.
+ */
+export function cueLabelRows(boxes: LabelBox[], top: number, rows = 2): [number, number][][] {
+  return Array.from({ length: rows }, (_, i) => {
+    const y0 = top + 7 + i * CUE_ROW_H;
+    return boxes.filter((b) => b.y0 < y0 + CUE_LABEL_H && b.y1 > y0).map((b): [number, number] => [b.x0, b.x1]);
+  });
+}
+
+/** First row with room for a label over [x0, x1] (2px gap), or -1. Claims the span in that row. */
+export function placeCueLabel(rows: [number, number][][], x0: number, x1: number): number {
+  const row = rows.findIndex((spans) => spans.every(([a, b]) => x1 + 2 <= a || x0 >= b + 2));
+  if (row >= 0) rows[row].push([x0, x1]);
+  return row;
+}
+
+/**
+ * Cue markers: a line through the band and a labelled flag at the top (merged when they coincide, two rows max).
+ * `avoid`: label boxes already drawn (from `drawEdges`) that cue labels must not cover.
+ */
+export function drawCues(ctx: CanvasRenderingContext2D, lane: Lane, view: View, y: number, h: number, opts: { labels?: boolean; topOffset?: number; avoid?: LabelBox[] } = {}): void {
   const an = lane.an;
   if (!an?.cues?.length) return;
   const p = wavePalette();
@@ -291,8 +326,8 @@ export function drawCues(ctx: CanvasRenderingContext2D, lane: Lane, view: View, 
   ctx.save();
   ctx.font = font(p, 9.5, 600);
   ctx.textBaseline = "middle";
-  const rowsEnd = [-Infinity, -Infinity];
   const top = y + (opts.topOffset ?? 0);
+  const rows = cueLabelRows(opts.avoid ?? [], top);
   for (const m of marks) {
     const x = Math.round(m.x) + 0.5;
     ctx.strokeStyle = alpha(m.color, 0.75);
@@ -313,14 +348,13 @@ export function drawCues(ctx: CanvasRenderingContext2D, lane: Lane, view: View, 
     const tw = ctx.measureText(m.label).width + 8;
     const lx = Math.min(x, view.width - tw);
     if (lx < 0) continue;
-    const row = rowsEnd[0] < lx - 2 ? 0 : rowsEnd[1] < lx - 2 ? 1 : -1;
+    const row = placeCueLabel(rows, lx, lx + tw);
     if (row < 0) continue;
-    const ly = top + 7 + row * 14;
-    rowsEnd[row] = lx + tw;
+    const ly = top + 7 + row * CUE_ROW_H;
     ctx.fillStyle = alpha(p.bg, 0.8);
-    ctx.fillRect(lx, ly, tw, 12);
+    ctx.fillRect(lx, ly, tw, CUE_LABEL_H);
     ctx.fillStyle = m.color;
-    ctx.fillRect(lx, ly, 2, 12);
+    ctx.fillRect(lx, ly, 2, CUE_LABEL_H);
     ctx.fillStyle = alpha(p.fg, 0.9);
     ctx.fillText(m.label, lx + 5, ly + 6.5);
   }
