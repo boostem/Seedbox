@@ -110,7 +110,7 @@ export const TransitionCard = memo(function TransitionCard({ t, a, b, folder, se
             ))}
             {t.ready && (
               <div className="flex gap-1.5 pt-1">
-                <Button size="xs" variant={auditioning ? "primary" : "secondary"} icon={Headphones} onClick={onAudition}>
+                <Button size="xs" variant="secondary" icon={Headphones} onClick={onAudition}>
                   {auditioning ? "Stop" : "Play transition"}
                 </Button>
                 {!selected && (
