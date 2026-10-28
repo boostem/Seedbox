@@ -3,10 +3,9 @@
  * with undo/redo (drags update transiently and commit one history step at the end), Save (PUT) / Revert (DELETE).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError } from "@/api/client";
+import { ApiError, api } from "@/api/client";
 import type { MixPlan, MixTechnique } from "@/api/types";
 import { toast } from "@/store/toasts";
-import { mixApi } from "./mixApi";
 
 export interface MixPlanApi {
   plan: MixPlan | null;
@@ -56,8 +55,8 @@ export function useMixPlan(folder: string, from: string, to: string, enabled: bo
     if (!enabled) return;
     const ctrl = new AbortController();
     setLoading(true);
-    mixApi
-      .plan(folder, from, to, {}, { quiet: true, signal: ctrl.signal })
+    api
+      .mixPlan(folder, from, to, {}, { quiet: true, signal: ctrl.signal })
       .then((p) => {
         setPlan(p);
         setBaseline(strip(p));
@@ -108,7 +107,7 @@ export function useMixPlan(folder: string, from: string, to: string, enabled: bo
   const regenerate = useCallback(
     async (technique: MixTechnique, bars: number) => {
       try {
-        const p = await mixApi.plan(folder, from, to, { technique, bars }, { quiet: true });
+        const p = await api.mixPlan(folder, from, to, { technique, bars }, { quiet: true });
         update(p);
       } catch (e) {
         toast.error((e as Error).message, { title: "Couldn't generate that mix", key: "mixplan" });
@@ -122,7 +121,7 @@ export function useMixPlan(folder: string, from: string, to: string, enabled: bo
     if (!p) return;
     setSaving(true);
     try {
-      const saved = await mixApi.save(folder, from, to, p, { quiet: true });
+      const saved = await api.saveMixPlan(folder, from, to, p, { quiet: true });
       planRef.current = saved;
       setPlan(saved);
       setBaseline(strip(saved));
@@ -137,7 +136,7 @@ export function useMixPlan(folder: string, from: string, to: string, enabled: bo
   const revert = useCallback(async () => {
     setSaving(true);
     try {
-      const p = await mixApi.reset(folder, from, to, { quiet: true });
+      const p = await api.resetMixPlan(folder, from, to, { quiet: true });
       if (planRef.current) pushPast(planRef.current);
       planRef.current = p;
       setPlan(p);

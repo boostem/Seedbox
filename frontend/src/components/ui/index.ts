@@ -1,6 +1,6 @@
 // Seedbox design system — import from "@/components/ui". See frontend/DESIGN.md.
 export { CamelotWheel, type CamelotWheelProps } from "./CamelotWheel";
-export { Badge, KeyBadge, MoveChip, ReasonChips, ScoreChip, StatusDot, type BadgeProps, type BadgeTone, type KeyBadgeProps, type ScoreChipProps } from "./Badge";
+export { Badge, KeyBadge, MoveChip, ScoreChip, StatusDot, type BadgeProps, type BadgeTone, type KeyBadgeProps, type ScoreChipProps } from "./Badge";
 export { Button, IconButton, type ButtonProps, type ButtonSize, type ButtonVariant, type IconButtonProps } from "./Button";
 export { Checkbox, type CheckboxProps } from "./Checkbox";
 export { CoverArt, spotifyImage, type CoverArtProps } from "./CoverArt";
@@ -8,7 +8,7 @@ export { EmptyState, type EmptyStateProps } from "./EmptyState";
 export { Field, Input, Select, type FieldProps, type InputProps } from "./Input";
 export { Kbd } from "./Kbd";
 export { Modal, type ModalProps } from "./Modal";
-export { Divider, InfoRow, Page, PageBody, PageHeader, Panel, PanelHeader, Toolbar, type PageHeaderProps } from "./Panel";
+export { InfoRow, Page, PageBody, PageHeader, Panel, PanelHeader, type PageHeaderProps } from "./Panel";
 export { PeaksWaveform, type PeaksWaveformProps } from "./PeaksWaveform";
 export { ProgressBar, type ProgressBarProps, type ProgressTone } from "./ProgressBar";
 export { Slider, type SliderProps } from "./Slider";

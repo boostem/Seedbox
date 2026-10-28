@@ -72,7 +72,7 @@ Opacity modifiers work (`bg-danger/12`). Type: system font (SF Pro), **13 px bas
 `xs` 11 · `sm` 12 · `base` 13 · `md` 14 · `lg` 16 · `xl` 20 · `2xl` 26. Utilities: `num` (tabular numerals —
 use on every BPM/time/score/count), `label-caps` (10 px uppercase section label), `scroll-thin`. Radii `rounded-xs`
 2 · `sm` 3 · `md` 5 · `lg` 8. Shadows `shadow-card`, `shadow-pop`. Animations `animate-pulse-soft`,
-`animate-indeterminate`. For `<canvas>`, read resolved values with `themeColors()` / `cssVar()` (`lib/theme.ts`).
+`animate-indeterminate`. For `<canvas>`, read resolved values with `cssVar()` (`lib/theme.ts`).
 
 ## Camelot & moves (single source: `lib/camelot.ts`, `lib/moves.ts`)
 
@@ -92,7 +92,7 @@ use on every BPM/time/score/count), `label-caps` (10 px uppercase section label)
 | `Badge` | `tone` neutral\|accent\|ok\|warn\|danger\|info\|boost · `variant` soft\|solid\|outline · `size` xs\|sm · `icon` |
 | `KeyBadge` | `camelot`, `keyName` (tooltip), `size` xs\|sm\|md, `variant` soft\|solid\|text, `move` (colour by move instead), `dim` |
 | `ScoreChip` | `value` 0-100, `move`, `passed` (false → outlined/dimmed), `size` |
-| `MoveChip` | `move`, `size`, `showHelp` · `ReasonChips` `chips`, `max` (Score.chips) |
+| `MoveChip` | `move`, `size`, `showHelp` |
 | `StatusDot` | `tone`, `pulse`, `label` |
 | `Table` kit | `TableScroll` (scroll container, sticky header) › `Table` › `THead`/`TBody` › `Tr` (`selected`, `dim`, `active`, `interactive`, `rowHeight`=30) › `Th` (`align`, `width`, `sort`, `onSort`) / `Td` (`align`, `num`, `muted`, `truncate`); `nextSort()` helper |
 | `Checkbox` | `checked`, `onChange(checked, event)` (doesn't bubble to the row; `event.shiftKey` for range ticks), `indeterminate`, `label`, `color` |
@@ -108,7 +108,7 @@ use on every BPM/time/score/count), `label-caps` (10 px uppercase section label)
 | `StarRating` | `rating` 1-10 (→ stars like POPM) or `stars` 0-5 |
 | `PeaksWaveform` | `peaks` (PreviewStatus.peaks), `progress` 0-1, `onSeek(f)`, `height`, `color`, `playedColor`, `loading` — preview clips only |
 | `CamelotWheel` | `size`, `counts` {code: n}, `active`, `path` (set order), `onSelect`, `center` |
-| Layout | `Page` › `PageHeader` (`title`, `subtitle`, `leading`, `actions`, children = toolbar row) › `PageBody` (scrolls; `padded`) · `Toolbar` · `Panel` + `PanelHeader` · `InfoRow` · `Divider` |
+| Layout | `Page` › `PageHeader` (`title`, `subtitle`, `leading`, `actions`, children = toolbar row) › `PageBody` (scrolls; `padded`) · `Panel` + `PanelHeader` · `InfoRow` |
 | Forms | `Input` (`icon`, `suffix`, `size` sm\|md\|lg, `invalid`), `Select`, `Field` (`label`, `hint`, `error`, `aside`) |
 
 ## Data

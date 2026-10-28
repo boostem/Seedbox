@@ -61,7 +61,6 @@ export function laneRange(key: LaneKey, plan: MixPlan): [number, number] {
 }
 
 export const laneId = (key: LaneKey): LaneId => key.slice(2) as LaneId;
-export const deckOf = (key: LaneKey): DeckId | null => (key === "tempo" ? null : (key[0] as DeckId));
 export const metaOf = (key: LaneKey): LaneMeta => (key === "tempo" ? TEMPO_META : LANE_META[laneId(key)]);
 
 export function getLane(plan: MixPlan, key: LaneKey): Keyframe[] {
@@ -106,11 +105,6 @@ export function deckBeat(deck: DeckPlan, beat: number): number {
     }
   }
   return beat;
-}
-
-/** Deck file time (s) at a master beat. */
-export function deckTime(deck: DeckPlan, beat: number): number {
-  return deck.beat0_s + (deckBeat(deck, beat) * 60) / (deck.native_bpm || 120);
 }
 
 /** Render audio time (s) → master beat via beat_times_s (linear between beats, extrapolated at the ends). */

@@ -87,20 +87,3 @@ export function camelotAdjacent(a: string, b: string): boolean {
   const m = camelotMove(a, b);
   return m === "same" || m === "+1" || m === "-1" || m === "relative";
 }
-
-/** Musical key name → Camelot code (e.g. "G♯ minor" → "1A"); null if unknown. */
-export function keyNameToCamelot(name: string): string | null {
-  const m = /^\s*([A-G])\s*([♯#♭b]?)\s*(major|minor|maj|min|m)?\s*$/i.exec(name);
-  if (!m) return null;
-  const pcs: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-  let pc = pcs[m[1].toUpperCase()];
-  if (m[2] === "♯" || m[2] === "#") pc += 1;
-  if (m[2] === "♭" || m[2] === "b") pc -= 1;
-  pc = (pc + 12) % 12;
-  const minor = /^(minor|min|m)$/i.test(m[3] ?? "");
-  // 8B = C major; each +1 = a fifth up (7 semitones). Minor: 8A = A minor.
-  const ref = minor ? 9 : 0;
-  const steps = ((((pc - ref) * 7) % 12) + 12) % 12;
-  const n = ((8 - 1 + steps) % 12) + 1;
-  return `${n}${minor ? "A" : "B"}`;
-}

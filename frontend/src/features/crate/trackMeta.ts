@@ -32,10 +32,6 @@ export function tunebatUrl(t: Pick<Track, "id" | "name" | "artists">): string {
   return `https://tunebat.com/Info/${slug || "track"}/${t.id}`;
 }
 
-export function youtubeMusicSearchUrl(t: Pick<Track, "name" | "artists">): string {
-  return `https://music.youtube.com/search?q=${encodeURIComponent(`${t.artists.join(", ")} - ${t.name}`)}`;
-}
-
 /** True when the text is (or contains) a Spotify/tunebat track link or a bare 22-char Spotify ID. */
 export function looksLikeTrackRef(term: string): boolean {
   const s = term.trim();
@@ -55,17 +51,4 @@ export function fmtReleaseDate(d: string | null | undefined): string {
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const mon = months[Number(m[2]) - 1] ?? m[2];
   return m[3] ? `${Number(m[3])} ${mon} ${m[1]}` : `${mon} ${m[1]}`;
-}
-
-/** Signed seconds: 26 → "+26 s", -4 → "−4 s". */
-export function fmtDeltaS(s: number): string {
-  const r = Math.round(s);
-  return `${r > 0 ? "+" : r < 0 ? "−" : "±"}${Math.abs(r)} s`;
-}
-
-/** "3:41" / "1:02:03" → seconds. */
-export function parseClock(s: string): number | null {
-  const parts = s.split(":").map(Number);
-  if (parts.some((p) => !Number.isFinite(p))) return null;
-  return parts.reduce((acc, p) => acc * 60 + p, 0);
 }

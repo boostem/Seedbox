@@ -5,12 +5,12 @@
  * 600 ms and playback resumes at the same master beat. Optional loop playback restarts at the window start.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api } from "@/api/client";
 import { onServerEvent } from "@/api/events";
 import type { MixPlan, MixRender, SetTrack } from "@/api/types";
 import { player, usePlayer } from "@/audio/player";
 import { toast } from "@/store/toasts";
 import { beatAt, timeAt } from "./lanes";
-import { mixApi } from "./mixApi";
 
 export interface BeatClock {
   /** Current master beat while this transition plays (or null). */
@@ -81,7 +81,7 @@ export function useMixRender(folder: string, plan: MixPlan | null, a: SetTrack, 
     setProgress(0);
     setError(null);
     try {
-      const r = await mixApi.render(folder, a.track.id, b.track.id, p, { quiet: true });
+      const r = await api.renderMix(folder, a.track.id, b.track.id, p, { quiet: true });
       if (my !== seq.current) return null;
       setRender(r);
       renderRef.current = r;

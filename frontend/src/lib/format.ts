@@ -23,15 +23,6 @@ export function fmtPitch(pct: number | null | undefined, digits = 1): string {
   return `${r > 0 ? "+" : r < 0 ? "−" : ""}${Math.abs(r).toFixed(digits)}%`;
 }
 
-/** 0.796 → "80" (energy/danceability as 0-100). */
-export function fmtPct01(x: number | null | undefined): string {
-  return x == null || !Number.isFinite(x) ? "—" : String(Math.round(x * 100));
-}
-
-export function fmtYear(date: string | null | undefined): string {
-  return (date ?? "").slice(0, 4) || "—";
-}
-
 /** ISO date → "just now" / "5 min ago" / "3 h ago" / "yesterday" / "12 Sep" / "12 Sep 2024". */
 export function fmtRelative(iso: string | null | undefined, now: number = Date.now()): string {
   if (!iso) return "—";

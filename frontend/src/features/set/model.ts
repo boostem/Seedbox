@@ -147,11 +147,6 @@ export function setStats(set: CrateSet): SetStats {
   };
 }
 
-/** Score → tone used by chips/markers (independent of the key move). */
-export function scoreTone(score: number): "ok" | "warn" | "danger" {
-  return score >= 75 ? "ok" : score >= 55 ? "warn" : "danger";
-}
-
 type TechniqueFields = Pick<Transition, "technique" | "overlap_bars" | "swap_bar">;
 
 /**

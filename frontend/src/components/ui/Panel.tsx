@@ -53,11 +53,6 @@ export function PageHeader({ title, subtitle, leading, actions, children, classN
   );
 }
 
-/** Horizontal toolbar row (filters, view toggles) — sits under PageHeader or above a table. */
-export function Toolbar({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cn("flex h-11 shrink-0 items-center gap-2 border-b border-line bg-surface px-5", className)}>{children}</div>;
-}
-
 /** Key/value line for info panels ("yt-dlp  2026.09.12"). */
 export function InfoRow({ label, children, className }: { label: ReactNode; children: ReactNode; className?: string }) {
   return (
@@ -66,11 +61,6 @@ export function InfoRow({ label, children, className }: { label: ReactNode; chil
       <div className="flex min-w-0 flex-1 items-center gap-2 text-sm">{children}</div>
     </div>
   );
-}
-
-/** Vertical divider for toolbars. */
-export function Divider({ className }: { className?: string }) {
-  return <span className={cn("mx-1 h-4 w-px shrink-0 bg-line-strong", className)} />;
 }
 
 /** Full-height page column: <Page><PageHeader …/><PageBody>…</PageBody></Page>. */

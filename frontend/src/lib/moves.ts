@@ -1,6 +1,5 @@
 /** Camelot move → colour/label. Colours: same=green, ±1=cyan, relative=yellow, boosts/diagonal=magenta, clash=red. */
 import type { Move } from "@/api/types";
-import { cssVar } from "./theme";
 
 export type MoveTone = "same" | "step" | "relative" | "boost" | "clash" | "unknown";
 
@@ -52,9 +51,4 @@ export const MOVE_HELP: Record<Move, string> = {
 
 export function moveColor(move: Move): string {
   return MOVE_COLOR_VAR[MOVE_TONE[move] ?? "unknown"];
-}
-
-/** Resolved hex/rgb colour of a move (canvas-safe). */
-export function moveColorValue(move: Move): string {
-  return cssVar(`--color-move-${MOVE_TONE[move] ?? "unknown"}`);
 }
