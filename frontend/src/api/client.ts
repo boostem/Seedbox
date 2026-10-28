@@ -12,6 +12,9 @@ import type {
   CrateSet,
   CrateSummary,
   Job,
+  MixPlan,
+  MixRender,
+  MixTechnique,
   Partner,
   PreviewStatus,
   SearchPage,
@@ -123,10 +126,9 @@ const get = <T>(path: string, opts?: RequestOptions) => request<T>("GET", path, 
 const post = <T>(path: string, body?: unknown, opts?: RequestOptions) => request<T>("POST", path, body ?? {}, opts);
 const put = <T>(path: string, body: unknown, opts?: RequestOptions) => request<T>("PUT", path, body, opts);
 const del = <T>(path: string, opts?: RequestOptions) => request<T>("DELETE", path, undefined, opts);
+const mixPath = (folder: string, from: string, to: string) => `/api/crates/${enc(folder)}/mix/${enc(from)}/${enc(to)}`;
 
 export const api = {
-  health: (opts?: RequestOptions) => get<OkResult>("/api/health", { quiet: true, ...opts }),
-
   // system + settings
   system: (opts?: RequestOptions) => get<SystemStatus>("/api/system", opts),
   updateYtdlp: (opts?: RequestOptions) => post<YtdlpUpdateResult>("/api/system/update-ytdlp", undefined, opts),
@@ -145,7 +147,6 @@ export const api = {
   preview: (trackId: string, opts?: RequestOptions) => get<PreviewStatus>(`/api/previews/${enc(trackId)}`, opts),
   prioritizePreview: (trackId: string, opts?: RequestOptions) =>
     post<PreviewStatus>(`/api/previews/${enc(trackId)}/prioritize`, undefined, opts),
-  previewAudioPath: (trackId: string) => `/api/previews/${enc(trackId)}/audio`,
 
   // download jobs
   startJob: (seedId: string, trackIds: string[], opts?: RequestOptions) =>
@@ -176,7 +177,18 @@ export const api = {
       throw e;
     }
   },
-  filePath: (folder: string, filename: string) => `/api/files/${enc(folder)}/${enc(filename)}`,
+
+  // mix plans (v4)
+  /** Saved edits when present (and no technique/bars given), else a freshly generated plan. */
+  mixPlan: (folder: string, from: string, to: string, gen: { technique?: MixTechnique; bars?: number } = {}, opts?: RequestOptions) => {
+    const q = qs({ technique: gen.technique, bars: gen.bars || undefined });
+    return get<MixPlan>(`${mixPath(folder, from, to)}${q ? `?${q}` : ""}`, opts);
+  },
+  saveMixPlan: (folder: string, from: string, to: string, plan: MixPlan, opts?: RequestOptions) => put<MixPlan>(mixPath(folder, from, to), plan, opts),
+  resetMixPlan: (folder: string, from: string, to: string, opts?: RequestOptions) => del<MixPlan>(mixPath(folder, from, to), opts),
+  /** Render (cached server-side by plan hash). Pass the plan to render unsaved edits. */
+  renderMix: (folder: string, from: string, to: string, plan?: MixPlan, opts?: RequestOptions) =>
+    request<MixRender>("POST", `${mixPath(folder, from, to)}/render`, plan, opts),
 
   /** Reveal a file/folder in Finder (must be under the output root). */
   reveal: (path: string, opts?: RequestOptions) => post<OkResult>("/api/reveal", { path }, opts),

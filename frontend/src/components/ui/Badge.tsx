@@ -136,26 +136,6 @@ export function MoveChip({ move, size = "sm", showHelp = true, className }: { mo
   return showHelp ? <Tooltip content={MOVE_HELP[move]}>{chip}</Tooltip> : chip;
 }
 
-/** Plain reason chips (Score.chips): "−1.5% pitch", "energy +0.07". */
-export function ReasonChips({ chips, max = 4, className }: { chips: string[]; max?: number; className?: string }) {
-  const shown = chips.slice(0, max);
-  const more = chips.length - shown.length;
-  return (
-    <span className={cn("inline-flex min-w-0 items-center gap-1 overflow-hidden", className)}>
-      {shown.map((c) => (
-        <span key={c} className="h-4 shrink-0 rounded-xs bg-raised px-1 text-2xs leading-4 whitespace-nowrap text-fg-muted num">
-          {c}
-        </span>
-      ))}
-      {more > 0 && (
-        <Tooltip content={chips.slice(max).join(" · ")}>
-          <span className="text-2xs text-fg-subtle">+{more}</span>
-        </Tooltip>
-      )}
-    </span>
-  );
-}
-
 /** Coloured dot + label for live status (connection, job state). */
 export function StatusDot({ tone = "neutral", pulse, label, className }: { tone?: BadgeTone; pulse?: boolean; label?: ReactNode; className?: string }) {
   const bg: Record<BadgeTone, string> = {

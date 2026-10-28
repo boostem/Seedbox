@@ -69,11 +69,6 @@ function load(folder: string, id: string): Promise<void> {
   return p;
 }
 
-/** Cached analysis (no fetch) — for code that only wants it if it's already here. */
-export function cachedAnalysis(folder: string, id: string): TrackAnalysis | undefined {
-  return cache.get(k(folder, id));
-}
-
 export function useTrackAnalysis(folder: string, trackId: string | null | undefined, fallback?: AnalysisState): AnalysisView {
   const live = useApp((s) => (trackId ? s.analysis[folder]?.[trackId] : undefined)) ?? fallback;
   const [, bump] = useReducer((x: number) => x + 1, 0);

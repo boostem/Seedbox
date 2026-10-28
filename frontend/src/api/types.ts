@@ -51,11 +51,9 @@ export interface Crate {
   recs: Rec[]; // sorted by score desc
 }
 
-export type PreviewState = "idle" | "queued" | "loading" | "ready" | "no_match" | "error";
-
 export interface PreviewStatus {
   track_id: string;
-  state: PreviewState;
+  state: "idle" | "queued" | "loading" | "ready" | "no_match" | "error";
   audio_url: string | null; // "/api/previews/<id>/audio" when ready
   peaks: number[] | null; // clip waveform, ~200 values 0-1, when ready
   youtube_title: string | null; // set for ready / error

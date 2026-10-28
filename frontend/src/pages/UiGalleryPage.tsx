@@ -26,7 +26,6 @@ import {
   PanelHeader,
   PeaksWaveform,
   ProgressBar,
-  ReasonChips,
   ScoreChip,
   Slider,
   Spinner,
@@ -51,10 +50,10 @@ import { toast } from "@/store/toasts";
 const MOVES: Move[] = ["same", "+1", "-1", "relative", "+2 boost", "+7 boost", "diagonal", "clash", "?"];
 const DEMO_PEAKS = Array.from({ length: 200 }, (_, i) => Math.min(1, 0.35 + 0.25 * Math.abs(Math.sin(i / 9)) + (i % 6 === 0 ? 0.3 : 0) + ((i * 7919) % 13) / 60));
 const DEMO = [
-  { id: "a", name: "Favour", artists: "FISHER, Tones And I", camelot: "1A", key: "G♯ minor", bpm: 130, dur: 194.9, score: 100, move: "same" as Move, passed: true, chips: ["same key", "same tempo"], stars: 4 },
-  { id: "b", name: "Don't Stop", artists: "Prospa", camelot: "1B", key: "B major", bpm: 128, dur: 147.7, score: 84, move: "relative" as Move, passed: true, chips: ["relative", "−1.5% pitch", "energy +0.03"], stars: 4 },
-  { id: "c", name: "Midnight Trip", artists: "TOYZZ", camelot: "12A", key: "C♯ minor", bpm: 132, dur: 194.5, score: 79, move: "-1" as Move, passed: true, chips: ["-1", "+1.5% pitch", "energy +0.18"], stars: 5 },
-  { id: "d", name: "Rain", artists: "FISHER", camelot: "7A", key: "D minor", bpm: 130, dur: 208.6, score: 27, move: "clash" as Move, passed: false, chips: ["key clash", "same tempo"], stars: 3 },
+  { id: "a", name: "Favour", artists: "FISHER, Tones And I", camelot: "1A", key: "G♯ minor", bpm: 130, dur: 194.9, score: 100, move: "same" as Move, passed: true, stars: 4 },
+  { id: "b", name: "Don't Stop", artists: "Prospa", camelot: "1B", key: "B major", bpm: 128, dur: 147.7, score: 84, move: "relative" as Move, passed: true, stars: 4 },
+  { id: "c", name: "Midnight Trip", artists: "TOYZZ", camelot: "12A", key: "C♯ minor", bpm: 132, dur: 194.5, score: 79, move: "-1" as Move, passed: true, stars: 5 },
+  { id: "d", name: "Rain", artists: "FISHER", camelot: "7A", key: "D minor", bpm: 130, dur: 208.6, score: 27, move: "clash" as Move, passed: false, stars: 3 },
 ];
 
 function Section({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
@@ -185,7 +184,6 @@ export function UiGalleryPage() {
               <ScoreChip value={27} move="clash" passed={false} />
               <ScoreChip value={88} move="same" size="md" />
             </div>
-            <ReasonChips chips={["relative", "−1.5% pitch", "energy +0.07", "dance −0.12", "half-time"]} max={3} />
           </Section>
 
           <Section title="Camelot wheel">
@@ -265,7 +263,6 @@ export function UiGalleryPage() {
                       Time
                     </Th>
                     <Th width={88}>Energy</Th>
-                    <Th>Why</Th>
                   </Tr>
                 </THead>
                 <TBody>
@@ -294,9 +291,6 @@ export function UiGalleryPage() {
                       </Td>
                       <Td>
                         <StarRating stars={r.stars} />
-                      </Td>
-                      <Td>
-                        <ReasonChips chips={r.chips} />
                       </Td>
                     </Tr>
                   ))}
