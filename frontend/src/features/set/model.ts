@@ -1,5 +1,5 @@
 /** Pure set-builder helpers: optimistic re-ordering, placeholder transitions, set statistics. */
-import type { CrateSet, SetTrack, Track, Transition } from "@/api/types";
+import type { CrateSet, MixTechnique, SetTrack, Track, Transition } from "@/api/types";
 import { camelotMove } from "@/lib/camelot";
 
 /** A transition shown before the server has scored the pair (right after a re-order). */
@@ -147,7 +147,17 @@ export function setStats(set: CrateSet): SetStats {
   };
 }
 
-type TechniqueFields = Pick<Transition, "technique" | "overlap_bars" | "swap_bar">;
+type TechniqueFields = Pick<Transition, "overlap_bars" | "swap_bar"> & { technique: MixTechnique | null };
+
+/**
+ * What a set transition plays: the set plan's technique and blend length when the server sent one (a set varies its
+ * transitions), else the pair's own suggestion. The bass swap bar only holds for the suggestion's own blend length.
+ */
+export function setTechnique(t: Transition): TechniqueFields {
+  if (!t.plan_technique) return t;
+  const bars = t.plan_bars ?? null;
+  return { technique: t.plan_technique, overlap_bars: bars, swap_bar: bars && bars === t.overlap_bars ? t.swap_bar : null };
+}
 
 /**
  * Compact technique label for rows/cards: "16-bar phrase blend", "8-bar bass swap", "8-bar blend → echo out",

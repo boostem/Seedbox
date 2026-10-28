@@ -10,6 +10,7 @@ import {
   placeholderTransition,
   sameOrder,
   setStats,
+  setTechnique,
   techniqueLong,
   techniqueShort,
   tempoMismatch,
@@ -164,6 +165,23 @@ describe("technique labels", () => {
     const fields = t as Parameters<typeof techniqueShort>[0];
     expect(techniqueShort(fields)).toBe(short);
     expect(techniqueLong(fields)).toBe(long);
+  });
+});
+
+describe("setTechnique", () => {
+  const base = { technique: "long blend", overlap_bars: 16, swap_bar: 9 } as const;
+  it("falls back to the pair's own suggestion without a set plan", () => {
+    expect(setTechnique(transition("a", "b", base))).toMatchObject(base);
+  });
+  it("shows the set plan's technique; a cut has no blend and no bass swap", () => {
+    const t = transition("a", "b", { ...base, plan_technique: "reverb wash", plan_bars: 0 });
+    expect(setTechnique(t)).toEqual({ technique: "reverb wash", overlap_bars: 0, swap_bar: null });
+    expect(techniqueShort(setTechnique(t))).toBe("reverb wash");
+  });
+  it("keeps the swap bar for a blend of the suggestion's length", () => {
+    const t = transition("a", "b", { ...base, plan_technique: "echo out", plan_bars: 16 });
+    expect(techniqueShort(setTechnique(t))).toBe("16-bar blend → echo out");
+    expect(techniqueLong(setTechnique(t))).toBe("Blend 16 bars, swap bass at bar 9, then echo A out");
   });
 });
 

@@ -203,6 +203,10 @@ export interface Transition {
   technique: Technique | null;
   a_loop_bars?: number; // overlap bars A loops a phrase of its outro once its music runs out (0 = none)
   b_loop_bars?: number; // overlap bars B loops a phrase of its short intro from its cue (0 = none)
+  // set transitions only (musicreco/setplan.py): the planner technique the set plays here, chosen across the whole set
+  // so it doesn't repeat itself (null until both tracks are analysed), and its blend length (0 for a cut)
+  plan_technique?: MixTechnique | null;
+  plan_bars?: number | null;
   notes: string[]; // human explanations
   warnings: string[]; // e.g. "vocals overlap for 8 bars"
   ready: boolean; // false until both analyses exist (then only key/BPM fields are meaningful)

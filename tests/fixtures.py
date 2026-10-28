@@ -8,7 +8,7 @@ drops are at full power, the 8 bars before a drop are a breakdown.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from musicreco.models import Track
 
@@ -164,6 +164,23 @@ PAIRS = [
 ]
 # the club pairs whose blends should run 16 bars or more at the default mix length
 CLUB_PAIRS = [p for p in PAIRS if p[0] in ("house -> house", "techno -> techno", "music outro -> house")]
+
+
+# a 12-track set (id, spec, tunebat energy): warm-up, a climb to a peak around the slam pair, a cool-down. Most pairs
+# would get a long blend on their own; the set planner has to vary them.
+SET_12 = [
+    ("s01_house", HOUSE, 0.60), ("s02_standard", STANDARD, 0.65), ("s03_long_outro", LONG_OUTRO, 0.70),
+    ("s04_standard", STANDARD, 0.70), ("s05_outro_24", OUTRO_24, 0.75), ("s06_build_end", BUILD_END, 0.85),
+    ("s07_short_intro_drop", SHORT_INTRO_DROP, 0.90), ("s08_standard", STANDARD, 0.90), ("s09_insert", INSERT, 0.85),
+    ("s10_music_outro", MUSIC_OUTRO, 0.80), ("s11_house_b", HOUSE_B, 0.70), ("s12_short_edges", SHORT_EDGES, 0.60),
+]  # fmt: skip
+
+
+def set_tracks(entries: list[tuple[str, Spec, float]]) -> tuple[list[Track], dict[str, dict]]:
+    """Tracks (each spec under its own id, with the given energy) and their analyses for a synthetic set."""
+    specs = [replace(s, id=i) for i, s, _ in entries]
+    tracks = [replace(track(s), energy=e) for s, (_, _, e) in zip(specs, entries)]
+    return tracks, {s.id: analysis(s) for s in specs}
 
 
 # --- click-track audio ----------------------------------------------------------------------------------------------

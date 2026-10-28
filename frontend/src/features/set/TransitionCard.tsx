@@ -6,7 +6,7 @@ import { cn } from "@/lib/cn";
 import { moveColor } from "@/lib/moves";
 import { useApp } from "@/store/app";
 import { PitchChip } from "./bits";
-import { headline, type SetTransition, techniqueShort } from "./model";
+import { headline, type SetTransition, setTechnique, techniqueShort } from "./model";
 
 export interface TransitionCardProps {
   t: SetTransition;
@@ -33,7 +33,7 @@ export const TransitionCard = memo(function TransitionCard({ t, a, b, folder, se
   const color = moveColor(t.key_move);
   const head = t.ready ? headline(t) : null;
   const warn = t.warnings.length;
-  const technique = t.ready ? techniqueShort(t) : null;
+  const technique = t.ready ? techniqueShort(setTechnique(t)) : null;
 
   return (
     <div data-row-id={`x:${t.from_id}>${t.to_id}`} className={cn("relative pl-[30px] transition-opacity", dimmed && "pointer-events-none opacity-25")}>
