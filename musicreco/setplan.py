@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from . import mixing, mixplan
+from . import mixing, mixplan, transitions
 from .models import Track
 
 BLENDS = ("long blend", "phrase blend", "bass swap")
@@ -75,7 +75,7 @@ def _candidates(m: mixplan.Mix) -> tuple[str, dict[str, float]]:
         alts.append("filter sweep")
     if mixplan.b_slam_drop(m) is not None or mixplan.a_build_end(m) is not None:
         alts.append("slam")
-    a_drops = [d for d in m.ga.drops if m.ga.end * 0.4 <= d <= m.ga.end - mixplan._PHRASE]
+    a_drops = [d for d in m.ga.drops if m.ga.end * 0.4 <= d <= m.ga.end - transitions.PHRASE]
     if a_drops and any(d > m.gb.intro[0] for d in m.gb.drops):
         alts.append("drop swap")
     alts += ["reverb wash", "quick cut"]
