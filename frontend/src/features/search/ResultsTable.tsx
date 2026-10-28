@@ -143,7 +143,7 @@ const ResultRowView = memo(function ResultRowView({
           tooltip="Use as seed → recommendations (Enter)"
           size="sm"
           variant={selected ? "secondary" : "ghost"}
-          className={cn(!selected && "opacity-0 group-hover/row:opacity-100")}
+          className={cn(!selected && "opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100")}
           onClick={(e) => {
             e.stopPropagation();
             onOpen(t);

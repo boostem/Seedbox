@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useId } from "react";
 import { cn } from "@/lib/cn";
 
 export interface SwitchProps {
@@ -17,10 +17,12 @@ export function Switch({ checked, onChange, disabled, label, size = "md", classN
   const track = size === "sm" ? "h-4 w-7" : "h-5 w-9";
   const knob = size === "sm" ? "size-3" : "size-4";
   const shift = size === "sm" ? "translate-x-3" : "translate-x-4";
+  const autoId = useId();
+  const switchId = id ?? autoId;
   return (
     <span className={cn("inline-flex items-center gap-2.5", disabled && "opacity-45", className)}>
       <button
-        id={id}
+        id={switchId}
         type="button"
         role="switch"
         aria-checked={checked}
@@ -31,9 +33,9 @@ export function Switch({ checked, onChange, disabled, label, size = "md", classN
         <span className={cn("rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.4)] transition-transform duration-150", knob, checked && shift)} />
       </button>
       {label && (
-        <span className="text-sm text-fg" onClick={() => !disabled && onChange(!checked)}>
+        <label htmlFor={switchId} className={cn("text-sm text-fg", !disabled && "cursor-pointer")}>
           {label}
-        </span>
+        </label>
       )}
     </span>
   );
