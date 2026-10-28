@@ -1,4 +1,4 @@
-"""Track structure for DJ use: beat grid, bars, 8-bar phrases, sections, intro/outro, cues, 3-band waveform.
+"""Track structure for DJ use: beat grid, bars, 8/16/32-bar phrases, sections, intro/outro, cues, 3-band waveform.
 
 numpy/scipy only, ~0.5 s per 3-minute track. Method:
 - tempo: the tunebat BPM (octave-corrected into 90-180) refined ±1.2 % by a phase-coherent comb over the whole
@@ -11,7 +11,9 @@ numpy/scipy only, ~0.5 s per 3-minute track. Method:
 
 Field semantics beyond types.ts: bar 0 starts at first_downbeat_s, the first downbeat at most 3/4 beat before the
 audio starts, so it can be slightly negative when a rip cuts into the first beat. A rip that starts partway into
-a phrase shows up as phrase_offset != 0 (e.g. 7: the first full bar is the 2nd bar of an 8-bar phrase). bar_count
+a phrase shows up as phrase_offset != 0 (e.g. 7: the first full bar is the 2nd bar of an 8-bar phrase). phrases
+lists every phrase start with its level (32/16/8 bars, see phrase_grid): the 8-bar grid is re-anchored at section
+starts half a phrase off it (a 4-bar insert), the 16/32-bar count at section starts and energy changes. bar_count
 ends where the music does (a quiet decay tail is excluded). An intro/outro of 0 bars means the track starts/ends
 full-on; its drums_only/has_vocals then describe the first/last 8 bars. vocal_per_bar is a heuristic (harmonic,
 pitch-fluctuating 300 Hz-3.4 kHz energy): synth leads/arps can read as vocals, spoken or heavily chopped vocals
@@ -38,7 +40,7 @@ from .paths import ffmpeg_path
 
 log = logging.getLogger(__name__)
 
-ANALYSIS_VERSION = 4  # bump whenever the algorithm or output changes: older cache entries are recomputed
+ANALYSIS_VERSION = 5  # bump whenever the algorithm or output changes: older cache entries are recomputed
 SR = 22050
 DECODE_TIMEOUT_S = 300
 MIN_DURATION_S = 8.0
@@ -53,6 +55,7 @@ _LOG_FMIN, _LOG_FMAX, _LOG_PER_OCT = 100.0, 5000.0, 24
 _STFT_CHUNK = 4096
 _SEG_LAMBDA = 6.0  # DP cost of one section boundary (feature units: 6 dB = 1)
 _KICK_ON = 0.35  # per-bar kick presence above which the kick counts as playing
+PHRASE_CHANGE = 0.15  # energy_per_bar step (~2.7 dB) between 8-bar halves that starts a new 16/32-bar phrase
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -470,7 +473,8 @@ def _analyze_samples(x: np.ndarray, sr: int, bpm_hint: float | None, track_id: s
         return round(min(first_db + bar * bar_s, duration), 3)
 
     sec_out = [{"kind": k, "start_bar": a, "end_bar": b, "start_s": t(a), "end_s": t(b)} for k, a, b in sections]
-    intro, outro, cues = _edges_and_cues(sec_out, feats, bar_count, phrase_off, t)
+    phrases = phrase_grid([a for _, a, _ in sections], phrase_off, bar_count, _r(energy_bar))  # as reported
+    intro, outro, cues = _edges_and_cues(sec_out, feats, bar_count, phrases, t)
 
     pps = min(float(WAVEFORM_PPS), WAVEFORM_MAX_POINTS / duration)
     wave = waveform_peaks(x, sr, max(1, int(round(duration * pps))))
@@ -485,6 +489,7 @@ def _analyze_samples(x: np.ndarray, sr: int, bpm_hint: float | None, track_id: s
         "bar_s": round(bar_s, 6),
         "bar_count": int(bar_count),
         "phrase_offset": int(phrase_off),
+        "phrases": [{"bar": int(p), "level": int(lv)} for p, lv in phrases],
         "energy_per_bar": _r(energy_bar),
         "low_per_bar": _r(low_bar),
         "vocal_per_bar": _r(vocal_bar),
@@ -557,6 +562,40 @@ def _grid_cost(r: np.ndarray) -> np.ndarray:
     """Misalignment cost of bar offsets r (mod 8): phrase 0, half-phrase 0.25, even 1, odd 2."""
     r = r % 8
     return np.where(r == 0, 0.0, np.where(r == 4, 0.25, np.where(r % 2 == 0, 1.0, 2.0)))
+
+
+def phrase_grid(starts: list[int], off: int, end: int, energy: list[float] | np.ndarray | None = None,
+                change: float = PHRASE_CHANGE) -> list[tuple[int, int]]:
+    """(bar, level) of every phrase start in [0, end], level 32/16/8 = the bar opens a 32-, 16- or 8-bar phrase.
+
+    The 8-bar grid starts at `off` and is re-anchored at every section start on the current grid or half a phrase
+    off it, so a 4-bar insert shifts the phrasing after it; section starts off that grid are noise. A grid point
+    less than 8 bars before the next anchor is dropped (it would open a short phrase). The 16/32-bar count restarts
+    at each anchor and at an 8-bar point where the mean energy of the 8 bars after it differs from the 8 before by
+    `change` or more. Pure Python: transitions uses it on older analyses' sections too."""
+    off = max(0, min(int(off), end))
+    anchors = [off]
+    for s in sorted(set(int(s) for s in starts)):
+        if anchors[-1] < s < end and (s - anchors[-1]) % 4 == 0:
+            anchors.append(s)
+    e = [float(v) for v in energy] if energy is not None else []
+
+    def jump(p: int) -> bool:
+        lo, hi = e[max(0, p - 8):p], e[p:p + 8]
+        return len(lo) == 8 and len(hi) == 8 and abs(sum(hi) - sum(lo)) / 8 >= change
+
+    out: list[tuple[int, int]] = []
+    for i, a in enumerate(anchors):
+        nxt = anchors[i + 1] if i + 1 < len(anchors) else None
+        count = 0  # 8-bar phrases since the 16/32-bar count last restarted
+        for p in range(a, (nxt if nxt is not None else end + 1), 8):
+            if p > a and nxt is not None and nxt - p < 8:
+                break
+            if p == a or jump(p):
+                count = 0
+            out.append((p, 32 if count % 4 == 0 else 16 if count % 2 == 0 else 8))
+            count += 1
+    return out
 
 
 def _segment(g: np.ndarray, lam: float) -> tuple[int, list[int]]:
@@ -646,11 +685,12 @@ def _fullness(f: dict[str, np.ndarray]) -> np.ndarray:
 
 
 def _stripped_edge(full: np.ndarray, kick_on: np.ndarray, vocal: np.ndarray, sections: list[tuple[str, int, int]],
-                   phrase_off: int, tail: bool) -> int:
+                   phrase_off: int, tail: bool, phrases: set[int]) -> int:
     """Bars of the trailing (leading) stretch, starting on the phrase grid, whose arrangement is clearly thinner
-    than the groove next to it and has no vocals - leads, vocals or bass gone while the beat may well go on (an
-    extended mix's DJ outro/intro). Searched only inside the last (first) run of sections without a real breakdown,
-    8-64 bars; 0 if none."""
+    than the groove next to it - leads, vocals or bass gone while the beat may well go on (an extended mix's DJ
+    outro/intro). An intro also needs to be mostly without vocals; an outro may keep singing (a vocal outro is still
+    where A gets mixed out, the clash with B is EQ'd away). Searched only inside the last (first) run of sections
+    without a real breakdown, 8-64 bars; 0 if none. Splits on a phrase start (`phrases`) score a little higher."""
     n = full.size
     lim = n if tail else 0
     for kind, a, b in (sections[::-1] if tail else sections):
@@ -672,9 +712,9 @@ def _stripped_edge(full: np.ndarray, kick_on: np.ndarray, vocal: np.ndarray, sec
         fullest = float(edge[: edge.size // 4 * 4].reshape(-1, 4).mean(axis=1).max())
         if drop < 0.8 or fullest > groove - 0.5:
             continue  # not thinner, or the full arrangement comes back inside the edge
-        if np.mean((vocal[s:] if tail else vocal[:s]) >= 0.5) >= 0.25:
-            continue  # vocals still running: not an outro/intro to mix over
-        score = drop + 0.5 * (groove - fullest) + 0.2 * ((s - phrase_off) % 8 == 0) + 0.004 * length
+        if not tail and np.mean(vocal[:s] >= 0.5) >= 0.25:
+            continue  # vocals already running: not an intro to mix over
+        score = drop + 0.5 * (groove - fullest) + 0.2 * (s in phrases) + 0.004 * length
         if score > best:
             best, best_len = score, length
     return best_len
@@ -685,7 +725,11 @@ def _refine_edges(sections: list[tuple[str, int, int]], f: dict[str, np.ndarray]
     """Extend the outro/intro over a stripped-down tail/head (see _stripped_edge). A radio edit that stays full to
     the end keeps no outro."""
     full, kick_on, n = _fullness(f), f["kick"] >= _KICK_ON, f["e_db"].size
-    out_len = _stripped_edge(full, kick_on, f["vocal"], sections, phrase_off, tail=True)
+
+    def phrases(secs: list[tuple[str, int, int]]) -> set[int]:
+        return {p for p, _ in phrase_grid([a for _, a, _ in secs], phrase_off, n)}
+
+    out_len = _stripped_edge(full, kick_on, f["vocal"], sections, phrase_off, tail=True, phrases=phrases(sections))
     cur_out = sections[-1][1] if sections[-1][0] == "outro" else n
     if out_len and n - out_len < cur_out:
         s = n - out_len
@@ -693,7 +737,7 @@ def _refine_edges(sections: list[tuple[str, int, int]], f: dict[str, np.ndarray]
         if len(keep) > 1 and keep[-1][2] - keep[-1][1] < 4:  # a sliver before the outro joins its predecessor
             keep = keep[:-2] + [(keep[-2][0], keep[-2][1], s)]
         sections = keep + [("outro", s, n)]
-    in_len = _stripped_edge(full, kick_on, f["vocal"], sections, phrase_off, tail=False)
+    in_len = _stripped_edge(full, kick_on, f["vocal"], sections, phrase_off, tail=False, phrases=phrases(sections))
     cur_in = sections[0][2] if sections[0][0] == "intro" else 0
     out_start = sections[-1][1] if sections[-1][0] == "outro" else n
     if in_len > cur_in and in_len <= out_start - 4:
@@ -786,7 +830,7 @@ def _label(bounds: list[int], f: dict[str, np.ndarray]) -> list[tuple[str, int, 
     return out
 
 
-def _edges_and_cues(sections: list[dict], f: dict[str, np.ndarray], bar_count: int, phrase_off: int,
+def _edges_and_cues(sections: list[dict], f: dict[str, np.ndarray], bar_count: int, phrases: list[tuple[int, int]],
                     t: Callable[[int], float]) -> tuple[dict, dict, list[dict]]:
     """Intro/outro Edges and cue points. A 0-bar edge (track starts/ends full-on) reports drums_only/has_vocals
     for the 8 bars a DJ would mix over instead."""
@@ -823,7 +867,7 @@ def _edges_and_cues(sections: list[dict], f: dict[str, np.ndarray], bar_count: i
         label = f"mix out ({bar_count - outro_start}-bar outro)"
         cues.append({"bar": outro_start, "time_s": t(outro_start), "label": label})
     else:  # cold ending: last phrase start at least 16 bars before the end
-        b = max(0, (bar_count - 16 - phrase_off) // 8 * 8 + phrase_off)
+        b = max((p for p, _ in phrases if p <= bar_count - 16), default=0)
         cues.append({"bar": b, "time_s": t(b), "label": f"mix out (ends cold, {bar_count - b} bars left)"})
     cues.sort(key=lambda c: (c["time_s"], c["label"] != "first downbeat"))
     return intro, outro, cues

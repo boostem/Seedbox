@@ -172,6 +172,7 @@ export interface TrackAnalysis {
   bar_s: number;
   bar_count: number;
   phrase_offset: number; // 0-7: bar index where the 8-bar phrase grid starts (phrases begin at bars phrase_offset + 8k)
+  phrases?: { bar: number; level: 8 | 16 | 32 }[]; // every phrase start and the phrase it opens (8-bar grid re-anchored at sections; analysis v5+)
   energy_per_bar: number[]; // 0-1 overall
   low_per_bar: number[]; // kick/bass presence 0-1
   vocal_per_bar: number[]; // vocal likelihood 0-1 (heuristic)

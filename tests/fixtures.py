@@ -30,6 +30,7 @@ class Spec:
     drops: list[int] = field(default_factory=list)  # drop starts; each drop lasts 16 bars after an 8-bar breakdown
     camelot: str = "8A"
     cold_end: bool = False  # full power up to the last bar (no wind-down)
+    insert: int | None = None  # a 4-bar fill section starts here: the phrasing after it is 4 bars off the grid
 
     @property
     def bar_s(self) -> float:
@@ -44,6 +45,8 @@ def sections(s: Spec) -> list[tuple[str, int, int]]:
     """(kind, start bar, end bar) covering [0, bars): intro, body/breakdown/drop, outro."""
     o0 = s.bars - s.outro_bars
     cuts = [(d - 8, "breakdown") for d in s.drops] + [(d, "drop") for d in s.drops] + [(d + 16, "body") for d in s.drops]
+    if s.insert is not None:
+        cuts += [(s.insert, "body"), (s.insert + 4, "body")]
     out = [("intro", 0, s.intro_bars)] if s.intro_bars else []
     pos, kind = s.intro_bars, "body"
     for at, nxt in sorted(cuts):
@@ -115,6 +118,9 @@ PICKUP = Spec("pickup", first_downbeat_s=0.37, phrase_offset=4, bars=132, intro_
 FAST = Spec("fast", bpm=140.0)  # 12.9 % faster than 124: no blend
 HALF_TIME = Spec("half_time", bpm=64.0, bars=72, intro_bars=8, outro_bars=8)
 CLASH_KEY = Spec("clash_key", camelot="3B")
+# a 4-bar fill at bar 56: the breakdown, drop and 16-bar outro after it start 4 bars off the track's 8-bar grid
+INSERT = Spec("insert", bars=132, insert=56, drops=[68])
+OUTRO_24 = Spec("outro_24", outro_bars=24)  # a 16 + 8-bar outro: blends start on its 16-bar phrase
 
 # (name, A, B): every pair has an expected planner outcome in test_planner.py and a line in the snapshot
 PAIRS = [
@@ -130,6 +136,8 @@ PAIRS = [
     ("standard -> half time", STANDARD, HALF_TIME),
     ("standard -> clash key", STANDARD, CLASH_KEY),
     ("short outro -> clash key", SHORT_OUTRO, CLASH_KEY),
+    ("insert -> standard", INSERT, STANDARD),
+    ("outro 24 -> standard", OUTRO_24, STANDARD),
 ]
 
 
