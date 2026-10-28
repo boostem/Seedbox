@@ -7,11 +7,11 @@ import copy
 import numpy as np
 import pytest
 
-from musicreco import mixplan, transitions
+from musicreco import mixplan, structure, transitions
 
 from .fixtures import (
-    COLD_END, DROP_HEAVY, DROP_HEAVY_B, FAST, HALF_TIME, LONG_OUTRO, PAIRS, PICKUP, SHORT_OUTRO, STANDARD,
-    VOCAL_INTRO, VOCAL_OUTRO, Spec, analysis, track,
+    COLD_END, DROP_HEAVY, DROP_HEAVY_B, FAST, HALF_TIME, INSERT, LONG_OUTRO, OUTRO_24, PAIRS, PICKUP, SHORT_OUTRO,
+    STANDARD, VOCAL_INTRO, VOCAL_OUTRO, Spec, analysis, track,
 )  # fmt: skip
 
 PHRASE = transitions.PHRASE
@@ -23,13 +23,15 @@ EXPECTED = {
     "short outro -> standard": ("phrase blend", 16, "long blend", 16),
     "cold end -> standard": ("echo out", 16, "echo out", 16),
     "vocal outro -> standard": ("phrase blend", 16, "filter sweep", 16),
-    "vocal outro -> vocal intro": ("bass swap", 8, "bass swap", 8),
+    "vocal outro -> vocal intro": ("bass swap", 16, "long blend", 16),
     "drop heavy -> drop heavy": ("drop swap", 0, "drop swap", 4),
     "standard -> pickup": ("long blend", 16, "long blend", 16),
     "standard -> fast": ("long blend", 16, "echo out", 4),
     "standard -> half time": ("long blend", 16, "long blend", 16),
     "standard -> clash key": ("long blend", 16, "long blend", 16),
     "short outro -> clash key": ("phrase blend", 16, "filter sweep", 16),
+    "insert -> standard": ("long blend", 16, "long blend", 16),
+    "outro 24 -> standard": ("long blend", 16, "long blend", 16),
 }
 IDS = [name for name, _, _ in PAIRS]
 
@@ -79,10 +81,9 @@ def test_suggest_points_are_on_phrases(name: str, a: Spec, b: Spec) -> None:
     length = tr["overlap_bars"]
     assert length in (0, 8, 16, 32)
     assert a0 + length <= ga.end, "the overlap runs past A's music"
-    if tr["swap_bar"] is not None:
+    if tr["swap_bar"] is not None:  # on a phrase start in both tracks, never halfway through a phrase
         k = tr["swap_bar"] - 1
-        assert 0 < k < length and k % (PHRASE // 2) == 0
-        assert k % PHRASE == 0 or k == length // 2
+        assert 0 < k < length and a0 + k in ga.phrases and b0 + k in gb.phrases
 
 
 def test_suggest_without_analysis_is_not_ready() -> None:
@@ -127,6 +128,129 @@ def test_half_time_b_is_put_on_a_double_grid() -> None:
     assert gb.n == 2 * HALF_TIME.bars
 
 
+# --- phrase model --------------------------------------------------------------------------------------------------
+
+
+def test_phrase_grid_levels_count_from_each_section_start() -> None:
+    # sections at 0 and 40: 32/8/16/8 from bar 0, the count restarts at 40 (a 32-bar phrase opens with the section)
+    assert structure.phrase_grid([0, 40], 0, 72) == [
+        (0, 32), (8, 8), (16, 16), (24, 8), (32, 32), (40, 32), (48, 8), (56, 16), (64, 8), (72, 32)
+    ]  # fmt: skip
+
+
+def test_phrase_grid_energy_change_restarts_the_count() -> None:
+    energy = [0.5] * 24 + [0.9] * 24  # the energy steps up at bar 24 without a section boundary
+    assert dict(structure.phrase_grid([], 0, 48, energy))[24] == 32
+    assert dict(structure.phrase_grid([], 0, 48, [0.5] * 48))[24] == 8
+
+
+def test_phrase_grid_reanchors_after_a_4_bar_insert() -> None:
+    pts = [p for p, _ in structure.phrase_grid([16, 56, 60, 68], 0, 92)]
+    assert pts == [0, 8, 16, 24, 32, 40, 48, 56, 60, 68, 76, 84, 92]
+    assert all(p % 8 == 4 for p in pts if p > 56), "the old grid (64, 72, ...) is gone after the insert"
+    # a grid point under 8 bars before the next anchor opens no phrase; an off-grid section start is noise
+    assert 52 not in [p for p, _ in structure.phrase_grid([16, 60], 0, 92)]
+    assert [p for p, _ in structure.phrase_grid([16, 43], 0, 48)] == [0, 8, 16, 24, 32, 40, 48]
+
+
+def test_grid_reanchors_after_a_4_bar_insert() -> None:
+    g = transitions._grid(analysis(INSERT))
+    after = [p for p in g.phrases if p > INSERT.insert]
+    assert after and all(p % PHRASE == 4 for p in after), g.phrases
+    assert g.level(g.outro[0]) == 32 and g.level(g.outro[0] + 8) == 8
+    p = transitions._plan(g, transitions._grid(analysis(STANDARD)), key_clash=False)
+    assert p.a0 == g.outro[0] == 116, "the blend starts on the outro's re-anchored phrase, not the old grid's 112"
+
+
+def test_blend_starts_on_a_16_bar_phrase_of_a() -> None:
+    ga, gb = _grids(OUTRO_24, STANDARD)
+    assert ga.outro == (104, 128) and ga.level(104) == 32 and ga.level(112) == 8
+    assert transitions._plan(ga, gb, key_clash=False).a0 == 104
+
+
+def test_blend_start_without_the_16_bar_preference_lands_mid_phrase(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(transitions, "_P_A_HALF_PHRASE", 0.0)
+    ga, gb = _grids(OUTRO_24, STANDARD)
+    assert transitions._plan(ga, gb, key_clash=False).a0 == 112  # the second 8 bars of A's 16-bar phrase at 104
+
+
+def test_blend_cues_b_on_its_first_downbeat_or_a_16_bar_phrase(monkeypatch: pytest.MonkeyPatch) -> None:
+    for a, b in ((VOCAL_OUTRO, VOCAL_INTRO), (LONG_OUTRO, STANDARD), (STANDARD, PICKUP)):
+        ga, gb = _grids(a, b)
+        b0 = transitions._plan(ga, gb, key_clash=False).b0
+        assert b0 in (0, transitions._first_cue(gb)) or gb.level(b0) >= 16
+    # cueing B 8 bars into one of its 16-bar phrases costs extra; its first downbeat or a 16-bar phrase doesn't
+    ga, gb = _grids(LONG_OUTRO, LONG_OUTRO)
+    assert (gb.level(0), gb.level(8), gb.level(16)) == (32, 8, 16)
+    fits = {b0: transitions._window(ga, gb, 112, b0, 8, False).fit for b0 in (0, 8, 16)}
+    pen = transitions._P_B_HALF_PHRASE
+    monkeypatch.setattr(transitions, "_P_B_HALF_PHRASE", 0.0)
+    for b0, cost in ((0, 0.0), (8, pen), (16, 0.0)):
+        assert transitions._window(ga, gb, 112, b0, 8, False).fit - fits[b0] == pytest.approx(cost)
+
+
+@pytest.mark.parametrize(("length", "swap"), [(8, None), (16, 8), (32, 16)])
+def test_swap_lands_on_a_phrase_inside_the_overlap(length: int, swap: int | None) -> None:
+    g = transitions._grid(analysis(Spec("bassy", intro_bars=0, outro_bars=0)))
+    plan = transitions._Plan("bass swap", 32, 32, length, 90.0, [])
+    assert transitions._swap_offset(g, g, plan) == swap  # 8 bars: no phrase inside, swap on the 1 as A leaves
+
+
+def test_swap_prefers_where_b_main_section_arrives() -> None:
+    ga, gb = _grids(STANDARD, LONG_OUTRO)  # B's 32-bar intro
+    assert gb.intro == (0, 32)
+    # cued 8 bars in, B's main section arrives 24 bars into a 32-bar overlap, on a phrase of both: swap there
+    assert transitions._swap_offset(ga, gb, transitions._Plan("long blend", 96, 8, 32, 90.0, [])) == 24
+    # cued at 0 it arrives as A leaves: the 16-bar phrase point in the middle (A bar 112 opens A's outro)
+    assert transitions._swap_offset(ga, gb, transitions._Plan("long blend", 96, 0, 32, 90.0, [])) == 16
+
+
+def test_swap_follows_a_after_its_4_bar_insert() -> None:
+    ga, gb = _grids(INSERT, STANDARD)
+    # A's phrases sit on bars = 4 (mod 8) after the insert; B's on 0 (mod 8): a 16-bar overlap from A 112 / B 0 has
+    # no bar where both start a phrase inside it, so the lows change hands at its end instead of mid-phrase in A
+    assert transitions._swap_offset(ga, gb, transitions._Plan("bass swap", 112, 0, 16, 90.0, [])) is None
+    assert transitions._swap_offset(ga, gb, transitions._Plan("bass swap", 116, 0, 16, 90.0, [])) == 8
+
+
+def test_analysis_reports_phrase_levels() -> None:
+    from .fixtures import click_track
+
+    an = structure._analyze_samples(click_track(STANDARD, structure.SR, 1000.0)[0], structure.SR, STANDARD.bpm)
+    assert an["version"] == structure.ANALYSIS_VERSION
+    starts = [s["start_bar"] for s in an["sections"]]
+    energy = an["energy_per_bar"]
+    assert [(p["bar"], p["level"]) for p in an["phrases"]] == structure.phrase_grid(
+        starts, an["phrase_offset"], an["bar_count"], energy
+    )
+    assert an["phrases"][0] == {"bar": an["phrase_offset"], "level": 32}
+
+
+def _vocal_outro_features(n: int = 96, tail: int = 16, sung_tail: bool = True) -> dict[str, np.ndarray]:
+    """Per-bar features of a track at full groove whose last `tail` bars lose their leads and bass (a DJ outro)."""
+    thin = np.arange(n) >= n - tail
+    f = {k: np.zeros(n) for k in ("e_db", "low_db", "mid_db", "high_db", "harm_db", "bass_db")}
+    f["kick"] = np.ones(n)
+    f["harm_db"][thin] = f["high_db"][thin] = -12.0
+    f["bass_db"][thin] = -16.0
+    f["vocal"] = np.where(thin & sung_tail, 0.8, 0.05)
+    return f
+
+
+@pytest.mark.parametrize("sung", [False, True])
+def test_vocal_outro_is_still_an_outro(sung: bool) -> None:
+    f = _vocal_outro_features(sung_tail=sung)
+    sections = structure._refine_edges([("body", 0, 96)], f, 0)
+    assert sections[-1] == ("outro", 80, 96), "vocals over a stripped-down tail don't stop it being the outro"
+
+
+def test_vocal_head_is_not_an_intro() -> None:
+    f = {k: v[::-1].copy() for k, v in _vocal_outro_features().items()}  # the same, mirrored: a sung, thin head
+    assert structure._refine_edges([("body", 0, 96)], f, 0)[0][0] != "intro"
+    f["vocal"][:] = 0.05
+    assert structure._refine_edges([("body", 0, 96)], f, 0)[0] == ("intro", 0, 16)
+
+
 # --- mixplan -------------------------------------------------------------------------------------------------------
 
 
@@ -156,7 +280,8 @@ def test_generate_cues_and_swap_on_phrases(name: str, a: Spec, b: Spec) -> None:
     for m in plan["markers"]:
         if m["label"] == "bass swap":
             k = m["beat"] / 4
-            assert k == int(k) and int(k) % (PHRASE // 2) == 0 and 0 < k <= plan["bars"]
+            assert k == int(k) and 0 < k <= plan["bars"]
+            assert k == plan["bars"] or (a0 + int(k) in ga.phrases and b0 + int(k) in gb.phrases)
     # the decks' beat grids: master beat 0 is a downbeat of both
     assert plan["a"]["native_bpm"] == pytest.approx(a.bpm)
     assert plan["b"]["native_bpm"] == pytest.approx(b.bpm * _factor(a, b))

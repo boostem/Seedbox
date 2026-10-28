@@ -22,6 +22,7 @@ import numpy as np
 
 from . import mixing, transitions
 from .models import Track
+from .structure import phrase_grid
 
 PLAN_VERSION = 2
 
@@ -295,10 +296,11 @@ def _fake_grid(bpm: float, duration_s: float) -> _Grid:
     """Bar grid from the BPM alone (no analysis): bar 0 at 0 s, 8-bar phrases, no known structure."""
     bar_s = 240.0 / bpm
     n = max(24, int(duration_s / bar_s)) if duration_s > 0 else 128
+    pts = phrase_grid([], 0, n)
     return _Grid(
         fd=0.0, bar_s=bar_s, n=n, vocal=(0.0,) * n, low=(0.6,) * n, energy=(0.7,) * n, perc=(False,) * n,
         intro=(0, 0), outro=(n, n), intro_drums=False, intro_vocals=False, outro_drums=False, outro_vocals=False,
-        phrases=tuple(range(0, n + 1, _PHRASE)), drops=(), end=n, off=0,
+        phrases=tuple(p for p, _ in pts), levels=tuple(lv for _, lv in pts), drops=(), end=n, off=0,
     )  # fmt: skip
 
 
@@ -331,10 +333,10 @@ def _mean(arr: tuple[float, ...], lo: int, hi: int) -> float:
     return sum(vals) / len(vals) if vals else 0.0
 
 
-def _swap(gb: _Grid, b0: int, length: int) -> int | None:
+def _swap(ga: _Grid, gb: _Grid, a0: int, b0: int, length: int) -> int | None:
     if length <= 0:
         return None
-    return transitions._swap_offset(gb, transitions._Plan("", 0, b0, length, 0.0, []))
+    return transitions._swap_offset(ga, gb, transitions._Plan("", a0, b0, length, 0.0, []))
 
 
 # --- planning: placement -------------------------------------------------------------------------------------------
@@ -358,9 +360,10 @@ def _fallback_place(m: _Mix, length: int) -> _Place:
     ga, gb = m.ga, m.gb
     end = ga.end if m.real_a else max(length, ga.end - _PHRASE)
     fits = [p for p in ga.phrases if p + length <= end]
-    a0 = fits[-1] if fits else max(0, end - length)
+    strong = [p for p in fits if ga.level(p) >= 16 and p >= fits[-1] - _PHRASE]  # a 16-bar phrase start if close
+    a0 = (strong or fits)[-1] if fits else max(0, end - length)
     b0 = transitions._first_cue(gb) if m.real_b else 0
-    return _Place(a0, b0, length, _swap(gb, b0, length))
+    return _Place(a0, b0, length, _swap(ga, gb, a0, b0, length))
 
 
 def _best_of_length(m: _Mix, length: int) -> _Place | None:
@@ -377,14 +380,14 @@ def _best_of_length(m: _Mix, length: int) -> _Place | None:
                 w = transitions._window(ga, gb, a0, b0, length, m.move == "clash")
                 if best is None or w.fit > best.fit + 1e-9:
                     best = w
-    return None if best is None else _Place(best.a0, best.b0, length, _swap(gb, best.b0, length))
+    return None if best is None else _Place(best.a0, best.b0, length, _swap(ga, gb, best.a0, best.b0, length))
 
 
 def _blend_place(m: _Mix, length: int, eng: tuple[str, _Place]) -> _Place:
     e_tech, e = eng
     if length == 4:
         base = _blend_place(m, 8, eng)
-        return _Place(base.a0 + 4, base.b0 + 4, 4, _swap(m.gb, base.b0 + 4, 4))
+        return _Place(base.a0 + 4, base.b0 + 4, 4, _swap(m.ga, m.gb, base.a0 + 4, base.b0 + 4, 4))
     if e.overlap == length and e_tech not in _CUTS:
         return e
     if m.real_a and m.real_b:

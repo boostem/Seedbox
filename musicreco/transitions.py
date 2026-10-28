@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from . import mixing
 from .models import Track
+from .structure import phrase_grid
 
 TECHNIQUES = ("long blend", "phrase blend", "bass swap", "drop swap", "quick cut", "echo out")
 
@@ -45,6 +46,8 @@ _P_INTRO_SKIP = 0.35  # B intro bars skipped by cueing later
 _P_A_BODY_UNDER = 0.5  # overlap starts in A's main section
 _P_B_BODY_UNDER = 0.8  # B's main section already running while A is still in
 _P_B_SOLO = 0.4  # B's intro keeps running alone after A is out
+_P_A_HALF_PHRASE = 4.0  # B comes in on the second 8 bars of one of A's 16-bar phrases
+_P_B_HALF_PHRASE = 2.0  # B cued past its first downbeat/phrase start and not on one of its 16-bar phrases
 _P_VOCAL = 6.0  # per bar of (soft) vocal clash
 _P_TONAL_KEY_CLASH = 2.0  # per bar with music on both decks when the keys clash
 _LENGTH_BONUS = {  # (both sides drums-only, one side, neither) — long blends only pay off when clean
@@ -101,13 +104,18 @@ class _Grid:
     intro_vocals: bool
     outro_drums: bool
     outro_vocals: bool
-    phrases: tuple[int, ...]  # bars where a phrase starts (8-bar grid + on-grid section starts)
+    phrases: tuple[int, ...]  # bars where a phrase starts (8-bar grid re-anchored at section starts)
+    levels: tuple[int, ...]  # per phrase start: 32/16/8 = it opens a 32-, 16- or 8-bar phrase
     drops: tuple[int, ...]  # starts of drop sections
     end: int  # bar where the music ends (end of the outro)
     off: int  # phrase-grid offset: bars of pickup before the first phrase
 
     def t(self, bar: float) -> float:
         return round(self.fd + bar * self.bar_s, 3)
+
+    def level(self, bar: int) -> int:
+        """32/16/8 when a phrase of that many bars starts at `bar`, 0 when no phrase starts there."""
+        return dict(zip(self.phrases, self.levels)).get(bar, 0)
 
     def mean(self, arr: tuple[float, ...], lo: int, hi: int) -> float:
         vals = arr[max(0, lo) : max(0, hi)]
@@ -160,7 +168,8 @@ def _grid(an: dict | None, scale: float = 1.0) -> _Grid | None:
 
     # 8-bar phrase grid from the analysis' phrase_offset; older analyses: the section starts' common bar mod 8 when
     # most agree, else bar 0. Boundaries within a bar of the grid are snapped onto it (older segmentations are +-1
-    # bar noisy); section starts on the grid or half a phrase off it start phrases too, anything else is noise.
+    # bar noisy). Then structure.phrase_grid: section starts on the grid or half a phrase off it re-anchor it (a
+    # 4-bar insert), section starts and energy changes restart the 16/32-bar count, anything else is noise.
     given = an.get("phrase_offset")
     if isinstance(given, int) and not isinstance(given, bool) and 0 <= given < PHRASE:
         off = round(given * scale) % PHRASE
@@ -178,19 +187,17 @@ def _grid(an: dict | None, scale: float = 1.0) -> _Grid | None:
     end = bar(outro_d.get("end_s"), n)
     o0 = min(end, max(i1, snap(bar(outro_d.get("start_s"), end - round(_num(outro_d.get("bars")) * scale)))))
     sections = [(kind, snap(s0) if s0 else 0, snap(s1)) for kind, s0, s1 in raw_sections]
-    pts = set(range(off, end + 1, PHRASE))
-    for _, s0, s1 in sections:
-        if s0 > 0 and (s0 - off) % (PHRASE // 2) == 0:
-            pts.update(range(s0, s1, PHRASE))
+    energy = per_bar("energy_per_bar")
+    pts = [(p, lv) for p, lv in phrase_grid([s0 for _, s0, _ in sections], off, end, energy) if 0 <= p <= end]
 
     return _Grid(
         fd=fd, bar_s=bar_s, n=n,
-        vocal=per_bar("vocal_per_bar"), low=per_bar("low_per_bar"), energy=per_bar("energy_per_bar"),
+        vocal=per_bar("vocal_per_bar"), low=per_bar("low_per_bar"), energy=energy,
         perc=tuple((intro_drums and i0 <= k < i1) or (outro_drums and o0 <= k < end) for k in range(n)),
         intro=(i0, i1), outro=(o0, end),
         intro_drums=intro_drums, intro_vocals=bool(intro_d.get("has_vocals")),
         outro_drums=outro_drums, outro_vocals=bool(outro_d.get("has_vocals")),
-        phrases=tuple(sorted(p for p in pts if 0 <= p <= end)),
+        phrases=tuple(p for p, _ in pts), levels=tuple(lv for _, lv in pts),
         drops=tuple(sorted({s0 for kind, s0, _ in sections if kind == "drop"})),
         end=end, off=off,
     )  # fmt: skip
@@ -244,6 +251,8 @@ def _window(a: _Grid, b: _Grid, a0: int, b0: int, length: int, key_clash: bool) 
     pen += _P_A_BODY_UNDER * max(0, min(o0, e) - a0)
     pen += _P_B_BODY_UNDER * max(0, b0 + length - max(i1, b0))
     pen += _P_B_SOLO * max(0, i1 - (b0 + length))
+    pen += _P_A_HALF_PHRASE * (a.level(a0) < 16)
+    pen += _P_B_HALF_PHRASE * (b0 not in (0, _first_cue(b)) and b.level(b0) < 16)
 
     clash, soft, tonal = [], 0.0, 0
     for k in range(length):
@@ -333,14 +342,22 @@ def _plan(a: _Grid, b: _Grid, key_clash: bool) -> _Plan:
     return _Plan("quick cut", _cut_bar(a), _first_cue(b), 0, _CUT_FIT["quick cut"], [])
 
 
-def _swap_offset(b: _Grid, plan: _Plan) -> int | None:
-    """0-based overlap bar where B's low end replaces A's: where B's main section arrives if that's inside the
-    overlap on a phrase, else halfway; None for cuts and when B brings no bass during the overlap."""
-    b0, length = plan.b0, plan.length
+def _swap_offset(a: _Grid, b: _Grid, plan: _Plan) -> int | None:
+    """0-based overlap bar where B's low end replaces A's, always on the 1 of a phrase in both tracks inside the
+    overlap: where B's main section arrives if that is one, else the longest phrase (16 over 8 bars) nearest the
+    middle. None for cuts, when B brings no bass during the overlap and when no phrase starts inside it (an 8-bar
+    blend): the lows then change hands on the 1 as A leaves, never mid-phrase."""
+    a0, b0, length = plan.a0, plan.b0, plan.length
     if not length or b.mean(b.low, b0, b0 + length) < _NO_BASS:
         return None
-    k = b.intro[1] - b0
-    return k if 0 < k < length and k % PHRASE == 0 else length // 2
+    on_a, on_b = dict(zip(a.phrases, a.levels)), dict(zip(b.phrases, b.levels))
+    ks = [k for k in range(1, length) if a0 + k in on_a and b0 + k in on_b]
+    if not ks:
+        return None
+    main = b.intro[1] - b0
+    if main in ks:
+        return main
+    return max(ks, key=lambda k: (min(on_a[a0 + k], on_b[b0 + k]), -abs(2 * k - length), -k))
 
 
 # --- wording -------------------------------------------------------------------------------------------------------
@@ -418,7 +435,7 @@ def _plan_notes(a: _Grid, b: _Grid, plan: _Plan) -> list[str]:
             f"B has a {b.off}-bar pickup before its first phrase — you can also play it from its first downbeat, "
             f"starting {b.off} bars earlier at A {_mmss(a.t(a0 - b.off))}."
         )
-    k = _swap_offset(b, plan)
+    k = _swap_offset(a, b, plan)
     if k is None:
         notes.append("B brings no bass in this stretch — let A's bass carry the blend, then cut it on the 1.")
     else:
@@ -548,7 +565,7 @@ def _suggest(
         out_s, in_s = ga.t(plan.a0), gb.t(plan.b0)
         if in_s < 0:  # B's grid starts before its file (clipped first beat): start it from 0, that much later
             out_s, in_s = round(out_s - in_s * ga.bar_s / gb.bar_s, 3), 0.0
-        swap = _swap_offset(gb, plan)
+        swap = _swap_offset(ga, gb, plan)
         out.update(
             out_start_s=out_s, in_start_s=in_s, overlap_bars=plan.length,
             swap_bar=None if swap is None else swap + 1, technique=plan.technique, ready=True,
