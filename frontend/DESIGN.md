@@ -15,8 +15,11 @@ React 19 + TypeScript (strict) + Vite 8 + Tailwind 4, built with **Deno 2.9** (n
 | `deno task lint` | `deno lint` (recommended + react/jsx rules; the Deno-runtime `no-window*` and `no-sloppy-imports` rules are off) — must be clean |
 | `deno task test` / `test:watch` | vitest unit tests (`src/**/*.test.ts`, next to the module they test; node environment, `@/` alias from `vite.config.ts`) |
 | `deno task screenshot` | build mock mode and screenshot `#/crates`, a crate, the set builder and the mix view at 1440×900 and 1180×760 → `screenshots/` (git-ignored); `--no-build` reuses `dist-mock/`, `--out=DIR` writes elsewhere, `CHROME=…` picks the browser |
-| `deno task fixtures` | regenerate `src/mock/fixtures/tunebat.json` from `../tracks.txt` + `../search.txt` |
 | `deno task fixtures:engine` | regenerate `src/mock/fixtures/engine.json` by running the Python engine (needs numpy + scipy): after a change to scoring, ordering, transitions, the set plan or mix plans |
+
+`src/mock/fixtures/tunebat.json` (the tunebat tracks and search page behind mock mode) is hand-maintained: it was
+generated once from captured tunebat responses that are no longer in the repo, so edit it directly; run
+`deno task fixtures:engine` afterwards so `engine.json` follows.
 
 Real backend for dev: `.venv/bin/python -m seedbox.server --port 8765 --dev` (from the project root).
 Deno enforces a 24 h minimum npm package age — use caret ranges, don't pin brand-new versions.

@@ -1,7 +1,6 @@
 /**
- * Mock library: real tunebat tracks (fixtures/tunebat.json, generated from ../tracks.txt + ../search.txt by
- * `deno task fixtures`). The crates themselves, their order and everything scored come from the engine fixtures
- * (mock/engine.ts).
+ * Mock library: real tunebat tracks (fixtures/tunebat.json, hand-maintained; see DESIGN.md). The crates themselves,
+ * their order and everything scored come from the engine fixtures (mock/engine.ts).
  */
 import type { CrateSummary, SearchPage, Track } from "@/api/types";
 import fixtures from "./fixtures/tunebat.json" with { type: "json" };

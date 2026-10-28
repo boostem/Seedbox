@@ -14,7 +14,7 @@ Personal archival / DJ-practice tool. Interactive terminal app:
 6. Tag each MP3 (ID3v2.3) from tunebat data + genre, write `tracks.csv` + `skipped.txt`, then back to step 1.
    Empty search or Ctrl-C quits.
 
-Captured sample responses: `search.txt`, `tracks.txt` (HTTP request headers on top, JSON body starts at `{"data"`).
+Sample responses (parsed): `frontend/src/mock/fixtures/tunebat.json`.
 Reference cloudscraper usage: `example_cloudscraper.py`.
 
 ## Environment

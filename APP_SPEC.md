@@ -169,7 +169,7 @@ event loop never blocks. Crate `{folder}` path params are URL-encoded folder nam
 ## Frontend
 - React 19 + TS strict + Vite + Tailwind 4, built with Deno 2.9 (`deno task dev` → Vite on :5173 proxying `/api` to
   :8765; `deno task build` → `frontend/dist`). Hash routing (`#/search`, `#/crate/<seed_id>`, `#/crates`,
-  `#/set/<folder>`, `#/settings`). `VITE_MOCK=1` serves fixtures (from tracks.txt/search.txt) so screens can be built
+  `#/set/<folder>`, `#/settings`). `VITE_MOCK=1` serves fixtures (`frontend/src/mock/fixtures`) so screens can be built
   and screenshotted without the backend.
 - One global audio player service (single `<audio>`), SSE hook, typed API client, toast system, keyboard shortcuts.
 - Screens: Search (version picker) → Crate (recs table: score/colour/move chips, instant preview play with clip
