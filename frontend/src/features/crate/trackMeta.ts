@@ -12,16 +12,6 @@ export function pitchVsSeed(seedBpm: number, bpm: number): { pct: number; factor
   return { pct: ((bpm * factor - seedBpm) / seedBpm) * 100, factor };
 }
 
-/** Text colour class for a pitch change (how hard the deck has to be pushed). */
-export function pitchTone(pct: number | null | undefined): string {
-  if (pct == null) return "text-fg-faint";
-  const a = Math.abs(pct);
-  if (a < 0.05) return "text-fg-subtle";
-  if (a <= 4) return "text-fg-muted";
-  if (a <= 8) return "text-warn";
-  return "text-danger";
-}
-
 /** tunebat track page (their slug format is cosmetic — the ID at the end is what resolves). */
 export function tunebatUrl(t: Pick<Track, "id" | "name" | "artists">): string {
   const slug = `${t.name} ${t.artists.join(" ")}`

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import type { SetTrack } from "@/api/types";
 import { Spinner, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { fmtPitch } from "@/lib/format";
+import { fmtPitch, pitchTone } from "@/lib/format";
 
 type State = SetTrack["analysis_state"];
 
@@ -43,19 +43,21 @@ export function analysisStateText(state: State | undefined): string {
   return STATE_TEXT[state ?? "missing"];
 }
 
-/** Signed pitch % in a muted chip; warns past ±6 %. */
+const CHIP_BG: Record<string, string> = { "text-warn": "bg-warn/12", "text-danger": "bg-danger/12" };
+
+/** Signed pitch % in a chip tinted by `pitchTone`. */
 export function PitchChip({ pct, className }: { pct: number; className?: string }) {
-  const big = Math.abs(pct) > 6;
-  const mid = Math.abs(pct) > 4;
+  const tone = pitchTone(pct);
   return (
     <span
       className={cn(
         "inline-flex h-[18px] shrink-0 items-center rounded-xs px-1 text-xs font-medium num",
-        big ? "bg-danger/12 text-danger" : mid ? "bg-warn/12 text-warn" : "bg-raised text-fg-muted",
+        tone,
+        CHIP_BG[tone] ?? "bg-raised",
         className,
       )}
     >
-      {Math.abs(pct) < 0.05 ? "±0%" : fmtPitch(pct)}
+      {fmtPitch(pct)}
     </span>
   );
 }

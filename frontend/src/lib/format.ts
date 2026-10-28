@@ -16,11 +16,21 @@ export function fmtBpm(bpm: number | null | undefined): string {
   return Math.abs(bpm - Math.round(bpm)) < 0.05 ? String(Math.round(bpm)) : bpm.toFixed(1);
 }
 
-/** Signed percent: 1.53 → "+1.5%", -0.04 → "0.0%". */
+/** Pitch change, always signed: 1.53 → "+1.5%", -2.26 → "−2.3%", -0.04 → "±0.0%". */
 export function fmtPitch(pct: number | null | undefined, digits = 1): string {
   if (pct == null || !Number.isFinite(pct)) return "—";
   const r = Number(pct.toFixed(digits));
-  return `${r > 0 ? "+" : r < 0 ? "−" : ""}${Math.abs(r).toFixed(digits)}%`;
+  return `${r > 0 ? "+" : r < 0 ? "−" : "±"}${Math.abs(r).toFixed(digits)}%`;
+}
+
+/** Text colour class for a pitch change (how hard the deck has to be pushed): warns past ±4 %, danger past ±6 %. */
+export function pitchTone(pct: number | null | undefined): string {
+  if (pct == null || !Number.isFinite(pct)) return "text-fg-faint";
+  const a = Math.abs(pct);
+  if (a < 0.05) return "text-fg-subtle";
+  if (a <= 4) return "text-fg-muted";
+  if (a <= 6) return "text-warn";
+  return "text-danger";
 }
 
 /** ISO date → "just now" / "5 min ago" / "3 h ago" / "yesterday" / "12 Sep" / "12 Sep 2024". */
