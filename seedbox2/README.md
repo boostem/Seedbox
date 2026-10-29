@@ -28,7 +28,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -70,6 +70,17 @@ again (or failed, for types registered `resumable=False`). A job that ignores a 
 costs only that worker; the supervisor starts another. `/api/jobs` lists, submits and cancels; `/api/events` carries
 `job.queued`, `job.started`, `job.progress` (coalesced: a slow client only gets the latest per job) and the terminal
 `job.done`, `job.failed` and `job.cancelled`, which are never dropped.
+
+**Waveforms** (#49, `seedbox2/analysis/waveform.py`): the `waveform` job (light pool, so it never waits behind
+stems) decodes a track to mono at 22,050 Hz, a second at a time, and splits it with 4th-order Bessel filters
+(low-pass 600 Hz, band-pass 600-4,000 Hz, high-pass 4,000 Hz, as Mixxx). Each band keeps its peak and RMS at 150
+points/s, plus a 1,200-column overview (as Rekordbox) and, once the track has stems, one full-band overview row per
+stem. Values are bytes on a 48 dB log scale in 56 steps (`amplitude = 10 ** ((byte / 255 - 1) * 48 / 20)`). The file
+is a 32-byte header (`SBWF`, version, points/s, bands, counts, duration) and planar Uint8 rows, gzipped in the cache
+folder's `waveforms/`: about 0.2 s and at most 187 KB per 6 minutes of music (measured on 20 tracks). `GET
+/api/tracks/{hash}/waveform` serves it as `application/octet-stream` (gzip-encoded when accepted) with an ETag from
+the content hash, so an unchanged waveform is a 304; before it is computed it answers 202 and queues the job at the
+front. Importers call `waveform.submit(jobs, hash)` first; the stems job (#44) calls it again to add the stem rows.
 
 ## Evaluating the analysis
 
