@@ -11,12 +11,12 @@ export function Toaster() {
   const toasts = useToasts((s) => s.toasts);
   const dismiss = useToasts((s) => s.dismiss);
   return (
-    <div className="pointer-events-none fixed right-3 bottom-[68px] z-[900] flex w-[360px] flex-col gap-2" aria-live="polite">
+    <div className="pointer-events-none fixed right-3 bottom-17 z-toast flex w-toast flex-col gap-2" aria-live="polite">
       {toasts.map((t) => {
         const Icon = ICON[t.level];
         return (
           <div key={t.id} role={t.level === "error" ? "alert" : "status"} className="pointer-events-auto relative flex animate-toast-in gap-2.5 overflow-hidden rounded-md bg-overlay py-2.5 pr-2 pl-3 shadow-pop">
-            <span className={cn("absolute inset-y-0 left-0 w-[3px]", BAR[t.level])} />
+            <span className={cn("absolute inset-y-0 left-0 w-0.75", BAR[t.level])} />
             <Icon size={16} className={cn("mt-px shrink-0", COLOR[t.level])} />
             <div className="min-w-0 flex-1 select-text">
               {t.title && <div className="truncate text-sm font-semibold">{t.title}</div>}

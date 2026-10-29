@@ -22,54 +22,59 @@ export interface WavePalette {
   mid: string;
   high: string;
   playhead: string;
+  /** music colours (DESIGN2.md "Colour roles"): what is in the track, never good or bad */
+  section: Record<SectionKind, string>;
+  phrase: string;
+  cueMix: string;
+  stem: { drums: string; bass: string; vocals: string; other: string };
   font: string;
 }
 
 let cached: WavePalette | null = null;
 
+/** The design tokens as canvas colours. No fallbacks: the tokens live in src/index.css only. */
 export function wavePalette(): WavePalette {
   if (cached) return cached;
-  const v = (n: string, fallback: string) => cssVar(`--color-${n}`) || fallback;
+  const v = (n: string) => cssVar(`--color-${n}`);
   cached = {
-    bg: v("bg", "#08090b"),
-    panel: v("panel", "#0e0f12"),
-    surface: v("surface", "#121418"),
-    raised: v("raised", "#191c21"),
-    line: v("line", "#22252b"),
-    lineStrong: v("line-strong", "#30343c"),
-    fg: v("fg", "#eceef2"),
-    fgMuted: v("fg-muted", "#a4aab5"),
-    fgSubtle: v("fg-subtle", "#6f7682"),
-    fgFaint: v("fg-faint", "#474d57"),
-    accent: v("accent", "#6f7dff"),
-    ok: v("ok", "#3ddc97"),
-    warn: v("warn", "#f5b841"),
-    danger: v("danger", "#ff4d6a"),
-    info: v("info", "#4cc9f0"),
-    low: v("wave-low", "#2f6bff"),
-    mid: v("wave-mid", "#ff9f1c"),
-    high: v("wave-high", "#f4f6fa"),
-    playhead: v("playhead", "#ffffff"),
+    bg: v("bg"),
+    panel: v("panel"),
+    surface: v("surface"),
+    raised: v("raised"),
+    line: v("line"),
+    lineStrong: v("line-strong"),
+    fg: v("fg"),
+    fgMuted: v("fg-muted"),
+    fgSubtle: v("fg-subtle"),
+    fgFaint: v("fg-faint"),
+    accent: v("accent"),
+    ok: v("ok"),
+    warn: v("warn"),
+    danger: v("danger"),
+    info: v("info"),
+    low: v("wave-low"),
+    mid: v("wave-mid"),
+    high: v("wave-high"),
+    playhead: v("playhead"),
+    section: {
+      intro: v("section-intro"),
+      build: v("section-build"),
+      drop: v("section-drop"),
+      breakdown: v("section-breakdown"),
+      body: v("section-body"),
+      outro: v("section-outro"),
+    },
+    phrase: v("phrase"),
+    cueMix: v("cue-mix"),
+    stem: { drums: v("stem-drums"), bass: v("stem-bass"), vocals: v("stem-vocals"), other: v("stem-other") },
     font: cssVar("--font-sans") || "-apple-system, BlinkMacSystemFont, sans-serif",
   };
   return cached;
 }
 
-/** Section colours (bands under the waveform). Token-based; CSS strings usable in canvas and style={}. */
+/** Section colours (bands under the waveform). Music colours, not status: a drop is not an error. */
 export function sectionColor(kind: SectionKind, p: WavePalette = wavePalette()): string {
-  switch (kind) {
-    case "intro":
-    case "outro":
-      return p.info;
-    case "build":
-      return p.warn;
-    case "drop":
-      return p.danger;
-    case "breakdown":
-      return p.accent;
-    default:
-      return p.fgSubtle;
-  }
+  return p.section[kind] ?? p.section.body;
 }
 
 export const SECTION_LABEL: Record<SectionKind, string> = {
@@ -81,23 +86,21 @@ export const SECTION_LABEL: Record<SectionKind, string> = {
   outro: "Outro",
 };
 
-/** Intro/outro edge colour: drums-only = clean to blend (ok), vocals = careful (warn), else music (info). */
+/** Intro/outro edge colour, by what plays in it: drums only, vocals, or other music (the stem colours). */
 export function edgeColor(e: Edge, p: WavePalette = wavePalette()): string {
-  return e.drums_only ? p.ok : e.has_vocals ? p.warn : p.info;
+  return e.drums_only ? p.stem.drums : e.has_vocals ? p.stem.vocals : p.stem.other;
 }
 
 export function edgeWords(e: Edge): string {
   return e.drums_only ? "drums only" : e.has_vocals ? "vocals" : "music";
 }
 
-/** Cue colour by label ("mix in (16-bar intro)", "drop 2", "breakdown", "first downbeat", "mix out …"). */
+/** Cue colour by label ("mix in (16-bar intro)", "drop 2", "breakdown", "first downbeat", "mix out …"): mix cues
+ * have their own colour, the others take the colour of the section they start. */
 export function cueColor(label: string, p: WavePalette = wavePalette()): string {
   const l = label.toLowerCase();
-  if (l.startsWith("mix")) return p.ok;
-  if (l.startsWith("drop")) return p.danger;
-  if (l.startsWith("breakdown")) return p.accent;
-  if (l.startsWith("build")) return p.warn;
-  if (l.startsWith("outro") || l.startsWith("intro")) return p.info;
+  if (l.startsWith("mix")) return p.cueMix;
+  for (const kind of ["drop", "breakdown", "build", "intro", "outro"] as const) if (l.startsWith(kind)) return p.section[kind];
   return p.fgMuted;
 }
 

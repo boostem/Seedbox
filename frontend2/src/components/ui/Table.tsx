@@ -55,7 +55,7 @@ export function Tr({ selected, dim, active, interactive = true, rowHeight = 30, 
         "group/row",
         interactive && "hover:[&>td]:bg-hover",
         active && "[&>td]:bg-accent/[0.06]",
-        selected && "[&>td]:!bg-selected [&>td:first-child]:shadow-[inset_2px_0_0_var(--color-accent)]",
+        selected && "[&>td]:!bg-selected [&>td:first-child]:shadow-selected-edge",
         dim && "[&>td]:text-fg-subtle",
         className,
       )}
@@ -85,7 +85,7 @@ export function Th({ align = "left", sort, onSort, width, className, children, s
       style={{ width, ...style }}
       aria-sort={sort === "asc" ? "ascending" : sort === "desc" ? "descending" : undefined}
       className={cn(
-        "group/th sticky top-0 z-10 h-7 border-b border-line bg-panel px-2 text-2xs font-semibold tracking-[0.06em] whitespace-nowrap text-fg-subtle uppercase",
+        "group/th sticky top-0 z-sticky h-7 border-b border-line bg-panel px-2 text-2xs font-semibold tracking-caps whitespace-nowrap text-fg-subtle uppercase",
         align === "right" && "text-right",
         align === "center" && "text-center",
         align === "left" && "text-left",
@@ -117,7 +117,7 @@ export function Td({ align = "left", num, muted, truncate, className, children, 
   return (
     <td
       className={cn(
-        "border-b border-line/60 bg-surface px-2 align-middle transition-colors duration-75",
+        "border-b border-line/60 bg-surface px-2 align-middle transition-colors duration-fast",
         align === "right" && "text-right",
         align === "center" && "text-center",
         num && "num",

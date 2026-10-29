@@ -268,7 +268,7 @@ export function TrackWaveform({ analysis, trackId, onSeek, height = 132, overvie
             <>
               <div className="pointer-events-none absolute top-0 bottom-0 w-px bg-white/35" style={{ left: hover }} />
               <div
-                className="pointer-events-none absolute bottom-[18px] rounded-xs bg-overlay/95 px-1.5 py-0.5 text-2xs whitespace-nowrap text-fg shadow-pop num"
+                className="pointer-events-none absolute bottom-4.5 rounded-xs bg-overlay/95 px-1.5 py-0.5 text-2xs whitespace-nowrap text-fg shadow-pop num"
                 style={hover > width - 110 ? { right: width - hover + 6 } : { left: hover + 6 }}
               >
                 {fmtPrecise(hoverT)}

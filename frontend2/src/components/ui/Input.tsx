@@ -19,9 +19,9 @@ export function Input({ icon: Icon, suffix, size = "sm", invalid, className, wra
       className={cn(
         "flex items-center gap-2 rounded-sm border bg-raised text-fg transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/25",
         invalid ? "border-danger/70" : "border-line-strong hover:border-fg-faint",
-        size === "sm" && "h-7 px-2 text-sm",
-        size === "md" && "h-8 px-2.5 text-base",
-        size === "lg" && "h-10 rounded-md px-3 text-md",
+        size === "sm" && "h-control-md px-2 text-sm",
+        size === "md" && "h-control-lg px-2.5 text-base",
+        size === "lg" && "h-control-xl rounded-md px-3 text-md",
         wrapperClassName,
       )}
     >
@@ -35,7 +35,7 @@ export function Input({ icon: Icon, suffix, size = "sm", invalid, className, wra
 export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
-      className={cn("h-7 rounded-sm border border-line-strong bg-raised px-2 text-sm text-fg outline-none hover:border-fg-faint focus:border-accent", className)}
+      className={cn("h-control-md rounded-sm border border-line-strong bg-raised px-2 text-sm text-fg outline-none hover:border-fg-faint focus:border-accent", className)}
       {...rest}
     >
       {children}

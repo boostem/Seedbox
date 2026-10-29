@@ -63,7 +63,7 @@ export function Tooltip({ content, children, side = "top", delay = 350, classNam
             ref={tipRef}
             role="tooltip"
             style={{ left: pos?.x ?? -9999, top: pos?.y ?? -9999 }}
-            className="pointer-events-none fixed z-[1000] max-w-[320px] rounded-sm bg-overlay px-2 py-1 text-xs text-fg shadow-pop"
+            className="pointer-events-none fixed z-tooltip max-w-xs rounded-sm bg-overlay px-2 py-1 text-xs text-fg shadow-pop"
           >
             {content}
           </div>,

@@ -28,9 +28,9 @@ export function Switch({ checked, onChange, disabled, label, size = "md", classN
         aria-checked={checked}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={cn("relative inline-flex shrink-0 items-center rounded-full p-0.5 transition-colors duration-150", track, checked ? "bg-accent" : "bg-line-strong hover:bg-fg-faint")}
+        className={cn("relative inline-flex shrink-0 items-center rounded-full p-0.5 transition-colors", track, checked ? "bg-accent" : "bg-line-strong hover:bg-fg-faint")}
       >
-        <span className={cn("rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.4)] transition-transform duration-150", knob, checked && shift)} />
+        <span className={cn("rounded-full bg-white shadow-knob transition-transform", knob, checked && shift)} />
       </button>
       {label && (
         <label htmlFor={switchId} className={cn("text-sm text-fg", !disabled && "cursor-pointer")}>

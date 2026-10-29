@@ -12,7 +12,7 @@ export function SystemPage() {
     <Page>
       <PageHeader title="System" subtitle="What the Seedbox 2 engine is running on" />
       <PageBody>
-        <Panel className="max-w-[720px]">
+        <Panel className="max-w-3xl">
           <PanelHeader title="Engine" />
           <InfoRow label="Connection">
             <StatusDot tone={connection === "live" ? "ok" : connection === "offline" ? "danger" : "warn"} label={connection} />

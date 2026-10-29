@@ -35,7 +35,13 @@ export interface KeyColor {
   solidFg: string; // text on a `base` filled background
 }
 
-const UNKNOWN: KeyColor = { base: "#8a909b", bg: "rgba(138,144,155,0.12)", border: "rgba(138,144,155,0.28)", solidFg: "#0b0c0e" };
+// the neutral and the text-on-key colours are design tokens (src/index.css); the 24 key colours are computed below
+const UNKNOWN: KeyColor = {
+  base: "var(--color-key-unknown)",
+  bg: "color-mix(in srgb, var(--color-key-unknown) 12%, transparent)",
+  border: "color-mix(in srgb, var(--color-key-unknown) 28%, transparent)",
+  solidFg: "var(--color-on-key)",
+};
 
 function hsl(h: number, s: number, l: number, a = 1): string {
   return a === 1 ? `hsl(${h}, ${s}%, ${l}%)` : `hsla(${h}, ${s}%, ${l}%, ${a})`;
@@ -46,7 +52,7 @@ function build(n: number, letter: CamelotLetter): KeyColor {
   // yellows/greens look heavier at the same lightness: lift less, desaturate slightly
   const warm = h > 40 && h < 110;
   const [s, l] = letter === "A" ? [warm ? 78 : 72, warm ? 52 : 60] : [warm ? 90 : 88, warm ? 68 : 75];
-  return { base: hsl(h, s, l), bg: hsl(h, s, l, 0.14), border: hsl(h, s, l, 0.35), solidFg: "#0b0c0e" };
+  return { base: hsl(h, s, l), bg: hsl(h, s, l, 0.14), border: hsl(h, s, l, 0.35), solidFg: "var(--color-on-key)" };
 }
 
 export const CAMELOT_CODES: string[] = Array.from({ length: 12 }, (_, i) => i + 1).flatMap((n) => [`${n}A`, `${n}B`]);

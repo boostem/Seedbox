@@ -7,7 +7,7 @@ export function Kbd({ combo, children, className, subtle }: { combo?: string; ch
   return (
     <kbd
       className={cn(
-        "inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-xs border px-1 font-sans text-2xs font-medium num",
+        "inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-xs border px-1 font-sans text-2xs font-medium num",
         subtle ? "border-line-strong bg-bg/40 text-fg-subtle" : "border-white/25 bg-white/10 text-current",
         className,
       )}

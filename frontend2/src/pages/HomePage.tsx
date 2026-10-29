@@ -22,7 +22,7 @@ export function HomePage() {
     <Page>
       <PageHeader title="Seedbox 2" subtitle={system ? `v${system.version} · ${system.platform} ${system.machine}` : "Starting…"} />
       <PageBody>
-        <div className="grid max-w-[880px] grid-cols-3 gap-3">
+        <div className="grid max-w-4xl grid-cols-3 gap-3">
           <AreaCard to={{ name: "library" }} icon={Library} title="Library" text="Your tracks, analysed once and kept by content hash." />
           <AreaCard to={{ name: "sets" }} icon={ListMusic} title="Sets" text="Order tracks along an energy arc." />
           <AreaCard to={{ name: "mixes" }} icon={Disc3} title="Mixes" text="Stem-aware transitions you can play, edit and render." />

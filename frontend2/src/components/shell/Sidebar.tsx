@@ -15,7 +15,7 @@ function NavItem({ entry, active }: { entry: NavEntry; active: boolean }) {
         active ? "bg-raised text-fg" : "text-fg-muted hover:bg-raised/60 hover:text-fg",
       )}
     >
-      {active && <span className="absolute top-1.5 bottom-1.5 left-0 w-[2px] rounded-full bg-accent" />}
+      {active && <span className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-accent" />}
       <Icon size={16} strokeWidth={active ? 2.2 : 1.9} className={active ? "text-accent-hover" : "text-fg-subtle group-hover:text-fg-muted"} />
       <span className="flex-1 truncate">{label}</span>
       {combo && <span className="text-2xs text-fg-faint opacity-0 transition-opacity group-hover:opacity-100">{comboLabel(combo)}</span>}
@@ -27,7 +27,7 @@ export function Sidebar() {
   const route = useRoute();
   const version = useApp((s) => s.system?.version);
   return (
-    <aside className="flex w-[212px] shrink-0 flex-col border-r border-line bg-panel">
+    <aside className="flex w-sidebar shrink-0 flex-col border-r border-line bg-panel">
       <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-line px-3.5">
         <Logo />
         <span className="text-md font-semibold tracking-tight">Seedbox 2</span>

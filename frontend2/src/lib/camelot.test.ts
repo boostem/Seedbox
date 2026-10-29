@@ -20,7 +20,7 @@ describe("colours", () => {
   it("looks codes up leniently and falls back to grey", () => {
     expect(keyColor("05a")).toBe(CAMELOT_COLORS["5A"]);
     expect(keyColor("5A")).not.toEqual(keyColor("5B"));
-    expect(keyColor("??").base).toBe("#8a909b");
+    expect(keyColor("??").base).toBe("var(--color-key-unknown)");
   });
 });
 

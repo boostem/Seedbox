@@ -49,8 +49,8 @@ export function Checkbox({ checked, onChange, indeterminate, disabled, label, co
       }}
       style={on && color ? { background: color, borderColor: color } : undefined}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-xs border transition-colors duration-75",
-        size === "sm" ? "size-[14px]" : "size-4",
+        "inline-flex shrink-0 items-center justify-center rounded-xs border transition-colors duration-fast",
+        size === "sm" ? "size-3.5" : "size-4",
         on ? "border-accent bg-accent text-bg" : "border-fg-faint bg-bg/40 hover:border-fg-subtle",
         disabled && "opacity-40",
         !label && className,

@@ -202,7 +202,7 @@ export function MixWaveform({ a, b, aId, bId, aBpm, transition, clock, onSeek, l
           <>
             <div className="pointer-events-none absolute top-0 bottom-0 w-px bg-white/35" style={{ left: hover }} />
             <div
-              className="pointer-events-none absolute rounded-xs bg-overlay/95 px-1.5 py-1 text-2xs leading-[13px] whitespace-nowrap text-fg shadow-pop num"
+              className="pointer-events-none absolute rounded-xs bg-overlay/95 px-1.5 py-1 text-2xs whitespace-nowrap text-fg shadow-pop num"
               style={{ top: yMid + 2, ...(hover > width - 150 ? { right: width - hover + 6 } : { left: hover + 6 }) }}
             >
               <div>
@@ -282,7 +282,7 @@ function paint(ctx: CanvasRenderingContext2D, dpr: number, g: MixGeometry, view:
   const j0 = Math.floor((view.start - g.out) / g.barA) - 1;
   const j1 = Math.ceil((view.start + view.width / view.pxPerSec - g.out) / g.barA) + 1;
   const every = [1, 2, 4, 8, 16, 32].find((n) => barPx * n >= 26) ?? 64;
-  ctx.font = `600 9px ${p.font}`;
+  ctx.font = `600 10px ${p.font}`;
   ctx.textBaseline = "middle";
   // overlap band in the ruler
   if (g.bars > 0) {
@@ -316,7 +316,7 @@ function paint(ctx: CanvasRenderingContext2D, dpr: number, g: MixGeometry, view:
   // flags: B in / A out / swap
   const flag = (x: number, text: string, color: string, align: "left" | "right") => {
     if (x < -40 || x > view.width + 40) return;
-    ctx.font = `700 9px ${p.font}`;
+    ctx.font = `700 10px ${p.font}`;
     const tw = ctx.measureText(text).width + 8;
     const fx = align === "left" ? x + 1 : x - tw - 1;
     ctx.fillStyle = color;
@@ -334,7 +334,7 @@ function paint(ctx: CanvasRenderingContext2D, dpr: number, g: MixGeometry, view:
     vline(xo1, alpha(p.accent, 0.6));
     const echo = t.technique === "echo out"; // a blend that ends with A echoing out, not an N-bar echo
     const inOverlapLabel = echo ? `${g.bars}-BAR BLEND → ECHO OUT` : `${g.bars}-BAR ${(t.technique ?? "blend").toUpperCase()}`;
-    ctx.font = `700 9.5px ${p.font}`;
+    ctx.font = `700 10px ${p.font}`;
     const tw = ctx.measureText(inOverlapLabel).width;
     if (xo1 - xo0 > tw + 70) {
       ctx.fillStyle = p.fg;
@@ -354,7 +354,7 @@ function paint(ctx: CanvasRenderingContext2D, dpr: number, g: MixGeometry, view:
       ctx.lineTo(xs - 4, yMid + 6);
       ctx.closePath();
       ctx.fill();
-      ctx.font = `700 9px ${p.font}`;
+      ctx.font = `700 10px ${p.font}`;
       const label = "BASS SWAP";
       const lw = ctx.measureText(label).width;
       ctx.fillStyle = alpha(p.bg, 0.8);
