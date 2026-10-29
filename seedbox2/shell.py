@@ -122,7 +122,8 @@ def start_api(args: argparse.Namespace) -> Any:
     if static is None and not args.dev:
         log.warning("no built frontend found (frontend2/dist); the window will only show the API")
     t0 = time.monotonic()
-    handle = start_server(static, port=port, dev=args.dev, log_level="debug" if args.debug else "warning")
+    handle = start_server(static, port=port, dev=args.dev, log_level="debug" if args.debug else "warning",
+                          start_jobs=True)
     wait_healthy(handle.url, alive=lambda: handle.running)
     log.info("Seedbox 2 %s API on %s (%.2fs, static=%s)", __version__, handle.url, time.monotonic() - t0, static)
     return handle

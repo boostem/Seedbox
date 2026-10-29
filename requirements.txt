@@ -10,3 +10,4 @@ pywebview
 platformdirs
 imageio-ffmpeg
 pedalboard
+psutil

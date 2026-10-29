@@ -1,4 +1,3 @@
 -r requirements.txt
 pytest
 mir_eval
-psutil

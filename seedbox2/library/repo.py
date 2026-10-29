@@ -20,7 +20,7 @@ from seedbox2.library.db import Database
 TRACK_COLUMNS = ("title", "artist", "album", "tags", "source", "source_id")
 ARTIFACT_KINDS = ("stems", "waveform", "embedding")
 JOB_STATES = ("queued", "running", "done", "failed", "cancelled")
-_JSON = ("tags", "data", "plan", "payload")
+_JSON = ("tags", "data", "plan", "payload", "result")
 _NOW = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
 
 
@@ -295,10 +295,12 @@ class Library:
             return self.job(job_id)  # type: ignore[return-value]
 
     def update_job(self, job_id: str, *, state: str | None = None, progress: float | None = None,
-                   error: str | None = None) -> dict | None:
+                   error: str | None = None, priority: int | None = None, result: Any = None) -> dict | None:
+        """Change the given fields (None leaves a field as it is)."""
         if state is not None and state not in JOB_STATES:
             raise ValueError(f"job state must be one of {JOB_STATES}")
-        sets = {k: v for k, v in (("state", state), ("progress", progress), ("error", error)) if v is not None}
+        sets = {k: v for k, v in (("state", state), ("progress", progress), ("error", error), ("priority", priority),
+                                  ("result", None if result is None else _dumps(result))) if v is not None}  # fmt: skip
         with self.db.write() as c:
             c.execute(f"UPDATE jobs SET {''.join(f'{k} = ?, ' for k in sets)}updated_at = {_NOW} WHERE id = ?",
                       (*sets.values(), job_id))  # fmt: skip
@@ -312,6 +314,11 @@ class Library:
         if state is not None:
             sql, args = sql + " WHERE state = ?", [state]
         return _rows(self.db.read().execute(sql + " ORDER BY priority DESC, created_at, rowid", args))
+
+    def set_jobs_priority(self, job_ids: Iterable[str], priority: int) -> None:
+        with self.db.write() as c:
+            c.executemany(f"UPDATE jobs SET priority = ?, updated_at = {_NOW} WHERE id = ?",
+                          [(priority, i) for i in job_ids])  # fmt: skip
 
     def claim_job(self, kinds: Iterable[str] | None = None) -> dict | None:
         """Mark the most urgent queued job (of these kinds) running and return it; None if there is none."""

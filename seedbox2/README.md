@@ -28,7 +28,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -56,6 +56,19 @@ connections: one writer shared by all threads behind a lock, a read-only connect
 open their own. `repo.Library` is the only way in (no SQL in the routers). `POST /api/library/import/seedbox1`
 (optionally `{"root": "<crates folder>"}`) imports Seedbox 1's crates, their running order as sets and its edited
 mix plans, without writing to Seedbox 1's files; importing again updates them and keeps plans edited here since.
+
+**Jobs** (#39, `seedbox2/jobs/`): analysis and render work runs in spawned worker processes, never on the server's
+threads. A job type is a module-level function `fn(payload, ctx)` registered with a pool
+(`@register("beats", pool="light")`); `ctx.progress(f)` reports progress and stops a cancelled job,
+`ctx.cached(key, factory)` keeps an ONNX session per worker across jobs, `ctx.library` is the worker's own library
+connection. The `heavy` pool has one worker (stems, full renders) and starts no job while less than 1.5 GB of RAM is
+available; the `light` pool has cores - 2. The queue runs the highest priority first (`PRIORITY`: the open set, the
+open crate, the library, background); `POST /api/jobs/bump` with `{"hashes": [...]}` moves the jobs about what the UI
+just opened to the front. Every job is a row in the `jobs` table: after a restart, jobs that were running are queued
+again (or failed, for types registered `resumable=False`). A job that ignores a cancel, or a worker that crashes,
+costs only that worker; the supervisor starts another. `/api/jobs` lists, submits and cancels; `/api/events` carries
+`job.queued`, `job.started`, `job.progress` (coalesced: a slow client only gets the latest per job) and the terminal
+`job.done`, `job.failed` and `job.cancelled`, which are never dropped.
 
 ## Evaluating the analysis
 
