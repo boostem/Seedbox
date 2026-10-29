@@ -1,28 +1,30 @@
-import { Disc3, House, Library, ListMusic, type LucideIcon, Settings } from "lucide-react";
+import { Boxes, Compass, Library, ListMusic, type LucideIcon, Settings } from "lucide-react";
 import type { RouteName } from "@/lib/router";
 
 export interface NavEntry {
   route: Exclude<RouteName, "notFound">;
   label: string;
   icon: LucideIcon;
-  combo?: string;
+  combo: string;
 }
 
-/** The areas of the app, in sidebar order (System sits at the bottom). */
-export const NAV: NavEntry[] = [
-  { route: "home", label: "Home", icon: House },
+/** The icon rail, top to bottom (Settings sits at the bottom). Home is the logo; Mixes and the rest are in ⌘K. */
+export const RAIL: NavEntry[] = [
   { route: "library", label: "Library", icon: Library, combo: "Mod+1" },
-  { route: "sets", label: "Sets", icon: ListMusic, combo: "Mod+2" },
-  { route: "mixes", label: "Mixes", icon: Disc3, combo: "Mod+3" },
+  { route: "crates", label: "Crates", icon: Boxes, combo: "Mod+2" },
+  { route: "sets", label: "Sets", icon: ListMusic, combo: "Mod+3" },
+  { route: "discover", label: "Discover", icon: Compass, combo: "Mod+4" },
 ];
-export const SYSTEM_NAV: NavEntry = { route: "system", label: "System", icon: Settings, combo: "Mod+," };
+export const SETTINGS_NAV: NavEntry = { route: "settings", label: "Settings", icon: Settings, combo: "Mod+," };
 
 export const TITLES: Record<RouteName, string> = {
   home: "Home",
   library: "Library",
+  crates: "Crates",
   sets: "Sets",
+  discover: "Discover",
   mixes: "Mixes",
-  system: "System",
+  settings: "Settings",
   ui: "Design system",
   bench: "Benchmark",
   notFound: "Not found",

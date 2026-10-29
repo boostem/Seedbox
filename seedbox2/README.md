@@ -40,14 +40,15 @@ Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`s
 | Logs (`$SEEDBOX_LOG_DIR`) | `~/Library/Logs/Seedbox 2` | `%LOCALAPPDATA%\Seedbox 2\Logs` | `~/.local/state/seedbox2/log` |
 | Music library (`$MUSICRECO_OUTPUT_ROOT`), shared with Seedbox 1 | `~/Music/MusicReco` | `Music\MusicReco` | `$XDG_MUSIC_DIR/MusicReco` |
 
-The environment variables override each folder; `#/system` shows the folders in use, each with a Show in
+The environment variables override each folder; `#/settings` shows the folders in use, each with a Show in
 Finder/Explorer/file manager button. The window is Cocoa on macOS, WebView2 on Windows (the Edge WebView2 runtime
 ships with Windows 10 and 11) and WebKitGTK or Qt on Linux, with a dark title bar where the platform allows it.
 ffmpeg and deno are found on the PATH or in the usual package manager folders of each OS (`musicreco/paths.py`).
 
 **What's there so far** (#36): the server (`seedbox2/server/`: `/api/health`, `/api/system`, the `/api/events`
-stream and one empty router per area) and the `frontend2/` app shell (sidebar, hash router, a placeholder page per
-area, `#/system`, and `#/ui` with the design tokens and the waveform). The other tickets fill in the areas.
+stream and one empty router per area) and the `frontend2/` app shell (#72: an icon rail, a top bar, a transport strip,
+the ⌘K command palette and the `?` shortcuts sheet, a placeholder page per area, `#/settings`, and `#/ui` with the
+design tokens and the waveform). The other tickets fill in the areas.
 
 **The library** (#38, `seedbox2/library/`): `library.sqlite3` in the support folder (WAL), keyed by a SHA-1 of
 the decoded audio (duration and the first and last 30 s of PCM), so retagging, renaming or moving a file keeps its

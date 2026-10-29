@@ -41,7 +41,7 @@ export function SystemPage() {
   const connection = useApp((s) => s.connection);
   return (
     <Page>
-      <PageHeader title="System" subtitle="What the Seedbox 2 engine is running on, and where it keeps its files" />
+      <PageHeader title="Settings" subtitle="What the Seedbox 2 engine is running on, and where it keeps its files" />
       <PageBody className="flex flex-col gap-4">
         <Panel className="max-w-3xl">
           <PanelHeader title="Engine" />

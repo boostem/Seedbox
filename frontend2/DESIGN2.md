@@ -62,9 +62,11 @@ System font (SF Pro in the macOS webview, Segoe UI on Windows), `font-mono` for 
 
   `size-control-*` gives square icon buttons of the same heights. Chips sit below the scale on purpose: badges and
   `Kbd` are 16 or 18 px (`h-4`, `h-4.5`), dense in-row icon buttons 20 px (`size-5`).
-- **Layout widths**: `w-sidebar` (212 px), `w-toast` (360 px), and Tailwind's container scale for the rest:
+- **Layout sizes**: `w-rail` (56 px, the icon rail), `h-transport` (56 px, the transport strip), `w-toast` (360 px), and Tailwind's container scale for the rest:
   `max-w-xs` tooltips (320), `max-w-md` empty-state text (448), `max-w-3xl` settings panels (768), `max-w-4xl`
-  dashboards (896); modals `w-sm` / `w-lg` / `w-3xl` / `w-5xl`.
+  dashboards (896); modals `w-sm` / `w-lg` / `w-3xl` / `w-5xl`; the command palette `w-xl`, the shortcuts sheet
+  `w-md`.
+- **Window sizes**: from 1280×720 to 2560×1440. Nothing in the shell clips at 1280×720; pages scroll inside `main`.
 
 ## Radii
 
@@ -104,6 +106,19 @@ of a filled button), `shadow-knob` (switch knob), `shadow-selected-edge` (the ac
 - Animate `transform` and `opacity`; `width` only for progress bars. Never animate the waveform canvas itself:
   it redraws at frame rate.
 - Exits are faster than entrances. Nothing animates on first paint of a page.
+- The animations, from `index.css`:
+
+| Utility | What |
+|---|---|
+| `animate-route-in` | the page after a route change rises 4 px and fades in (`base`, `enter`); not on launch |
+| `animate-pop-in` / `animate-pop-out` | the command palette drops in from above (`base`, `enter`) and leaves (`fast`, `exit`) |
+| `animate-panel-in` / `animate-panel-out` | a side panel (the shortcuts sheet) slides in from its edge (`slow`, `spring`) and out (`fast`, `exit`) |
+| `animate-fade-in` / `animate-fade-out` | backdrops of those dialogs, small markers |
+| `animate-toast-in` | a toast rises from the corner |
+
+  The rail's accent bar slides to the active area with `transition-transform duration-slow ease-spring`.
+- To animate something out, keep it mounted until its exit animation ends: `usePresence(open)` (`lib/usePresence.ts`)
+  gives `mounted`, a `data-state` of `open`/`closed` for the CSS and the `onAnimationEnd` handler.
 - `prefers-reduced-motion: reduce` makes every transition and animation instant (`index.css`).
 
 ## Colour roles
@@ -117,7 +132,7 @@ Tailwind's own palette is removed: only these exist, plus `white` and `black`. O
 | Token | Use |
 |---|---|
 | `bg` | window, gaps between panels, behind waveforms |
-| `panel` | sidebar, top bar, mini player, table header |
+| `panel` | icon rail, top bar, transport strip, table header |
 | `surface` | page content, cards, table body |
 | `raised` | inputs, secondary buttons, hovered controls |
 | `overlay` | menus, dialogs, tooltips, toasts |

@@ -213,3 +213,30 @@ orders and energy ratings, transitions, the set plan and mix plans. The mock nev
 
 - Resolved in types.ts: `job_state` event, `/api/covers/...` cover URLs, `PickFolderResult`, `UpdateResult`,
   `OkResponse`, `Settings.pretick_all`. The client still exports `YtdlpUpdateResult`/`OkResult` as aliases.
+
+## Seedbox 2 shell and commands
+
+The window is the icon rail (`Rail`: Library ⌘1, Crates ⌘2, Sets ⌘3, Discover ⌘4, Settings ⌘, at the bottom; the
+logo goes home), the top bar (`TopBar`: back/forward, where you are, the ⌘K button, the engine connection, the
+shortcuts button), the page in `main`, and the transport strip along the bottom (`TransportStrip`: play/pause,
+stop, what plays with a seek bar, volume, from `usePlayer`; pass `title`/`subtitle` to `player.play`). Routes:
+`#/`, `#/library`, `#/crates`, `#/sets`, `#/discover`, `#/mixes`, `#/settings` (`#/system` still works), `#/ui`,
+`#/bench`.
+
+**Every action is a command** (`lib/commands.ts`): the palette (⌘K, `CommandPalette`) runs it, `GlobalHotkeys`
+binds its `combo`, and the shortcuts sheet (`?`, `ShortcutsSheet`) lists it. Don't bind an action with a bare
+`useHotkey`; register it:
+
+```tsx
+useRegisterCommands([
+  { id: "set.save", title: "Save set", group: "Actions", icon: Save, combo: "Mod+S", run: save },
+], [save]);
+```
+
+Groups: Go to, Actions, Playback, View, App. `keywords` are extra words the palette matches by prefix, `hint`
+shows a note ("Soon"), `enabled()` hides it while it can't run, `allowInInputs`/`allowInModal` let the shortcut
+fire while typing or over a dialog, `altCombos` binds more keys without listing them. The shell's commands are in
+`components/shell/appCommands.ts`. Things to go to (tracks, crates, sets) come from palette sources, registered by
+the area that owns them: `registerPaletteSource({ id: "tracks", group: "Tracks", search: (q) => items })`; the
+palette ranks what `search` returns with `lib/fuzzy.ts` (words in any order, word starts and runs score high).
+
