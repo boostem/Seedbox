@@ -158,6 +158,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     rb.add_argument("xml")
     rb.add_argument("--verified", action="store_true", help="mark the updated annotations as checked")
     rb.set_defaults(fn=cmd_import_rekordbox)
+
+    sub.add_parser("mixes", help="objective mix metrics of rendered transitions (#54); --help after it", add_help=False)
     return p.parse_args(argv)
 
 
