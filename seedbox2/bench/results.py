@@ -14,6 +14,7 @@ METRICS: dict[str, tuple[bool, float]] = {
     "frame_p95_ms": (False, 1.0),
     "long_tasks": (False, 0.5),
     "long_task_ms_max": (False, 10.0),
+    "react_commits_per_s": (False, 2.0),
 }
 
 
@@ -99,8 +100,13 @@ def report_markdown(r: dict) -> str:
                      f"{cell('per_4min_s_max')} | {cell('peak_rss_mb')} | {cell('py_peak_mb')} |")  # fmt: skip
     fe = r.get("frontend", {}).get("scenarios")
     if fe:
-        lines += ["", "| UI scenario | fps | p95 frame ms | Long tasks | Longest task ms |", "|---|---:|---:|---:|---:|"]
+        lines += ["", "| UI scenario | fps | p95 frame ms | Long tasks | Longest task ms | React commits/s |",
+                  "|---|---:|---:|---:|---:|---:|"]  # fmt: skip
         for name, sc in fe.items():
+            if "error" in sc:
+                lines.append(f"| {name} | error: {sc['error']} | | | | |")
+                continue
+            commits = _num(sc["react_commits_per_s"]) if "react_commits_per_s" in sc else ""
             lines.append(f"| {name} | {_num(sc['fps'])} | {_num(sc['frame_p95_ms'])} | {sc['long_tasks']} | "
-                         f"{_num(sc['long_task_ms_max'])} |")  # fmt: skip
+                         f"{_num(sc['long_task_ms_max'])} | {commits} |")  # fmt: skip
     return "\n".join(lines) + "\n"

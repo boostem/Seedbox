@@ -3,6 +3,7 @@ import { player, usePlayer } from "@/audio/player";
 import { Page, PageBody, PageHeader, Panel, PanelHeader } from "@/components/ui";
 import { TrackWaveform } from "@/features/waveform";
 import { demoAnalysis } from "@/lib/demo/analysis";
+import { DemoTrackTable } from "@/lib/demo/tracks";
 
 /** `window.__seedboxBench`: what `python -m seedbox2.bench frontend` drives over the DevTools protocol. */
 export interface BenchHooks {
@@ -41,8 +42,8 @@ function toneWav(seconds: number, sr = 8000): Blob {
   return new Blob([buf], { type: "audio/wav" });
 }
 
-/** #/bench: the waveform alone, for the frontend benchmark (not in the sidebar). The whole-set timeline (#75) and the
- * stem lanes (#78) join this page when they land. */
+/** #/bench: the waveform and a 10,000-row virtualised table, for the frontend benchmark (not in the sidebar). The
+ * whole-set timeline (#75) and the stem lanes (#78) join this page when they land. */
 export function BenchPage() {
   const analysis = useMemo(demoAnalysis, []);
   useEffect(() => {
@@ -70,6 +71,12 @@ export function BenchPage() {
           <PanelHeader title="Waveform" />
           <div className="p-4" data-bench="waveform">
             <TrackWaveform analysis={analysis} trackId="demo" height={160} />
+          </div>
+        </Panel>
+        <Panel className="mt-4">
+          <PanelHeader title="Library" />
+          <div data-bench="table">
+            <DemoTrackTable count={10000} className="h-80" />
           </div>
         </Panel>
       </PageBody>

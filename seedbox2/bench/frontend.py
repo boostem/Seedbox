@@ -1,10 +1,12 @@
 """`python -m seedbox2.bench frontend`: frame rate and long tasks of frontend2 in headless Chrome.
 
 Serves frontend2/dist with Seedbox 2's own server, opens `#/bench` (pages/BenchPage.tsx) in headless Chrome and drives
-it over the DevTools protocol: ⌘/ctrl-wheel zooming, horizontal scrolling, and playback with the zoomed waveform
-following the playhead. During each scenario the page counts requestAnimationFrame callbacks (fps, frame times) and
-long tasks (PerformanceObserver, > 50 ms). `--cpu-throttle 4` slows the CPU down like DevTools does, to approximate a
-slow laptop on a fast machine.
+it over the DevTools protocol: ⌘/ctrl-wheel zooming, horizontal scrolling, moving the mouse over the waveform (its
+time readout), playback with the zoomed waveform following the playhead, and scrolling a 10,000-row virtualised table.
+During each scenario the page counts requestAnimationFrame callbacks (fps, frame times), long tasks
+(PerformanceObserver, > 50 ms) and React commits (a stub of React DevTools' hook, installed before the page loads:
+frontend2/PERFORMANCE.md's rule is that the waveform scenarios cause next to none). `--cpu-throttle 4` slows the CPU
+down like DevTools does, to approximate a slow laptop on a fast machine.
 """
 
 from __future__ import annotations
@@ -23,31 +25,45 @@ from typing import BinaryIO
 ROOT = Path(__file__).resolve().parents[2]
 DIST = ROOT / "frontend2" / "dist"
 
-# Runs in the page: rAF timestamps and long tasks between start() and stop().
+# Installed before the page's scripts run: React DOM reports every commit to DevTools' global hook when one exists.
+COMMITS_JS = """
+window.__benchCommits = 0;
+window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+  supportsFiber: true, isDisabled: false, renderers: new Map(),
+  inject(renderer) { this.renderers.set(this.renderers.size + 1, renderer); return this.renderers.size; },
+  onCommitFiberRoot() { window.__benchCommits++; },
+  onCommitFiberUnmount() {}, onPostCommitFiberRoot() {}, onScheduleFiberRoot() {}, setStrictMode() {}, checkDCE() {},
+};
+"""
+
+# Runs in the page: rAF timestamps, long tasks and React commits between start() and stop().
 METER_JS = """
 window.__benchMeter ??= (() => {
-  const s = { frames: [], tasks: [], on: false, t0: 0 };
+  const s = { frames: [], tasks: [], on: false, t0: 0, c0: 0 };
   new PerformanceObserver((list) => {
     if (s.on) for (const e of list.getEntries()) s.tasks.push(e.duration);
   }).observe({ type: "longtask" });
   const tick = (t) => { if (s.on) s.frames.push(t); requestAnimationFrame(tick); };
   requestAnimationFrame(tick);
   return {
-    start() { s.frames = []; s.tasks = []; s.on = true; s.t0 = performance.now(); },
+    start() { s.frames = []; s.tasks = []; s.on = true; s.t0 = performance.now(); s.c0 = window.__benchCommits ?? 0; },
     stop() {
       s.on = false;
+      const seconds = (performance.now() - s.t0) / 1000, commits = (window.__benchCommits ?? 0) - s.c0;
       const f = s.frames, d = [];
       for (let i = 1; i < f.length; i++) d.push(f[i] - f[i - 1]);
       d.sort((a, b) => a - b);
       const span = f.length > 1 ? (f[f.length - 1] - f[0]) / 1000 : 0;
       return {
-        seconds: (performance.now() - s.t0) / 1000,
+        seconds,
         frames: f.length,
         fps: span ? (f.length - 1) / span : 0,
         frame_p95_ms: d.length ? d[Math.floor(0.95 * (d.length - 1))] : 0,
         frame_max_ms: d.length ? d[d.length - 1] : 0,
         long_tasks: s.tasks.length,
         long_task_ms_max: s.tasks.length ? Math.max(...s.tasks) : 0,
+        react_commits: commits,
+        react_commits_per_s: seconds ? commits / seconds : 0,
       };
     },
   };
@@ -147,6 +163,11 @@ def _wheel(cdp: Cdp, x: float, y: float, dx: float = 0.0, dy: float = 0.0, ctrl:
     cdp.call("Input.dispatchMouseEvent", type="mouseWheel", x=x, y=y, deltaX=dx, deltaY=dy, modifiers=2 if ctrl else 0)
 
 
+def _rect(cdp: Cdp, selector: str) -> list[float]:
+    return cdp.eval(f"(() => {{ const r = document.querySelector({json.dumps(selector)}).getBoundingClientRect();"
+                    " return [r.left, r.top, r.width, r.height]; })()")  # fmt: skip
+
+
 def _measure(cdp: Cdp, body) -> dict:
     cdp.eval("window.__benchMeter.start()")
     body()
@@ -154,8 +175,7 @@ def _measure(cdp: Cdp, body) -> dict:
 
 
 def scenarios(cdp: Cdp, seconds: float) -> dict[str, dict]:
-    rect = cdp.eval("(() => { const r = document.querySelector('[data-bench=waveform] canvas')"
-                    ".getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")  # fmt: skip
+    rect = _rect(cdp, "[data-bench=waveform] canvas")
     x, y = rect[0] + rect[2] / 2, rect[1] + rect[3] / 2
     out = {}
 
@@ -177,6 +197,19 @@ def scenarios(cdp: Cdp, seconds: float) -> dict[str, dict]:
     for _ in range(40):  # zoomed in, so scrolling and the playhead have something to move
         _wheel(cdp, x, y, dy=-30, ctrl=True)
     out["scroll"] = _measure(cdp, scroll)
+
+    main = _rect(cdp, "[data-bench=waveform] .cursor-crosshair")
+
+    def hover() -> None:  # the time/bar readout follows the mouse
+        end, k = time.monotonic() + seconds, 0
+        while time.monotonic() < end:
+            frac = (k % 240) / 240 if (k // 240) % 2 == 0 else 1 - (k % 240) / 240  # across and back, 2 s each
+            cdp.call("Input.dispatchMouseEvent", type="mouseMoved", x=main[0] + main[2] * frac, y=main[1] + main[3] / 2)
+            k += 1
+            time.sleep(1 / 120)
+
+    out["hover"] = _measure(cdp, hover)
+    cdp.call("Input.dispatchMouseEvent", type="mouseMoved", x=1, y=1)
     time.sleep(2.6)  # the waveform only follows the playhead 2.5 s after the last manual scroll
     status = cdp.eval("window.__seedboxBench.play(0)")
     if status != "playing":
@@ -184,6 +217,20 @@ def scenarios(cdp: Cdp, seconds: float) -> dict[str, dict]:
     else:
         out["play"] = _measure(cdp, lambda: time.sleep(seconds))
         cdp.eval("window.__seedboxBench.stop()")
+
+    cdp.eval("document.querySelector('[data-bench=table]').scrollIntoView({block: 'center'})")
+    time.sleep(0.3)
+    table = _rect(cdp, "[data-bench=table] > div")
+    tx, ty = table[0] + table[2] / 2, table[1] + table[3] / 2
+
+    def list_scroll() -> None:  # 10,000 rows, down and back up
+        end, k = time.monotonic() + seconds, 0
+        while time.monotonic() < end:
+            _wheel(cdp, tx, ty, dy=100 if (k // 120) % 2 == 0 else -100)
+            k += 1
+            time.sleep(1 / 120)
+
+    out["list"] = _measure(cdp, list_scroll)
     return out
 
 
@@ -200,6 +247,8 @@ def _drive(cdp: Cdp, url: str, seconds: float, cpu_throttle: float, size: tuple[
     agent = cdp.eval("navigator.userAgent")
     if cpu_throttle > 1:
         cdp.call("Emulation.setCPUThrottlingRate", rate=cpu_throttle)
+    cdp.call("Page.enable")  # addScriptToEvaluateOnNewDocument needs it
+    cdp.call("Page.addScriptToEvaluateOnNewDocument", source=COMMITS_JS)
     cdp.call("Page.navigate", url=f"{url.rstrip('/')}/#/bench")
     _wait(lambda: cdp.eval("!!window.__seedboxBench?.ready && !!document.querySelector('[data-bench=waveform] canvas')"),
           30, "the #/bench page")  # fmt: skip
@@ -238,5 +287,6 @@ def run(dist: Path = DIST, seconds: float = 5.0, cpu_throttle: float = 1.0, size
             log(f"frontend  {name}: ERROR {sc['error']}")
         else:
             log(f"frontend  {name}: {sc['fps']:.1f} fps, p95 frame {sc['frame_p95_ms']:.1f} ms, "
-                f"{sc['long_tasks']} long tasks (longest {sc['long_task_ms_max']:.0f} ms)")
+                f"{sc['long_tasks']} long tasks (longest {sc['long_task_ms_max']:.0f} ms), "
+                f"{sc['react_commits_per_s']:.1f} React commits/s")
     return result

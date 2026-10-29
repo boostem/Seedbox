@@ -3,6 +3,7 @@ import { player } from "@/audio/player";
 import { Badge, Button, Page, PageBody, PageHeader, Panel, PanelHeader } from "@/components/ui";
 import { TrackWaveform } from "@/features/waveform";
 import { demoAnalysis } from "@/lib/demo/analysis";
+import { DemoTrackTable } from "@/lib/demo/tracks";
 
 // class names spelled out: Tailwind only generates classes (and emits theme variables) it finds whole in the source
 const COLOURS: [string, [string, string][]][] = [
@@ -66,6 +67,10 @@ export function UiPage() {
           <div className="p-4">
             <TrackWaveform analysis={analysis} trackId="demo" hotkeys onSeek={(t) => player.seek(t)} />
           </div>
+        </Panel>
+        <Panel>
+          <PanelHeader title="Virtualised table" description="10,000 rows; only the visible ones are in the DOM (components/ui/Virtual.tsx)" />
+          <DemoTrackTable count={10000} className="h-80" />
         </Panel>
         <Panel>
           <PanelHeader title="Sizes and elevation" description="Control heights 24 / 28 / 32 / 40 px; hover a card for the base motion" />

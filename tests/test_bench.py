@@ -48,10 +48,12 @@ def test_summary_and_budgets():
     assert s == {"count": 2, "errors": 1, "seconds_median": 2.0, "seconds_max": 3.0, "peak_rss_mb": 300.0,
                  "py_peak_mb": 30.0, "per_4min_s_median": 11.0, "per_4min_s_max": 20.0}  # fmt: skip
     rows = check_budgets({"stages": {"analysis": {"summary": s}, "stems": {"skipped": "not yet"}},
-                          "frontend": {"scenarios": {"zoom": {"fps": 59.5, "long_tasks": 2}}}})  # fmt: skip
+                          "frontend": {"scenarios": {"zoom": {"fps": 59.5, "long_tasks": 2, "react_commits_per_s": 30.0},
+                                                     "list": {"fps": 60.0, "react_commits_per_s": 30.0}}}})  # fmt: skip
     got = {(r["section"], r["field"]): r["ok"] for r in rows}
     assert got == {("analysis", "per_4min_s_max"): False, ("stages", "peak_rss_mb"): True,
-                   ("frontend.zoom", "fps"): True, ("frontend.zoom", "long_tasks"): False}  # fmt: skip
+                   ("frontend.zoom", "fps"): True, ("frontend.zoom", "long_tasks"): False,
+                   ("frontend.zoom", "react_commits_per_s"): False, ("frontend.list", "fps"): True}  # fmt: skip
 
 
 def _results(**fields) -> dict:
@@ -115,6 +117,8 @@ def test_run_on_synthetic_tracks(tmp_path):
                     reason="needs Chrome and frontend2/dist")  # fmt: skip
 def test_frontend_bench_measures_every_scenario():
     fe = frontend.run(seconds=0.5, log=lambda _: None)
-    assert set(fe["scenarios"]) == {"zoom", "scroll", "play"}
+    assert set(fe["scenarios"]) == {"zoom", "scroll", "hover", "play", "list"}
     for name, sc in fe["scenarios"].items():
         assert sc["frames"] > 5, (name, sc)
+        assert "react_commits_per_s" in sc, (name, sc)
+    assert fe["scenarios"]["list"]["react_commits"] > 0  # the virtualised table re-renders as rows scroll in
