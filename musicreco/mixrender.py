@@ -257,7 +257,7 @@ def _deck_trim_db(path: Path, deck: dict, audio: np.ndarray, beats: tuple[float,
     b0, b1 = beats
     if (b1 - b0) * 60.0 / float(deck["native_bpm"]) < MIN_MEASURE_S:
         return whole, whole
-    src, _ = _source(audio, deck, b0, b1, sr)
+    src = _source(audio, deck, b0, b1, sr)
     lufs = _range_lufs(src[:, ::2], sr // 2) if sr % 2 == 0 else _range_lufs(src, sr)
     if lufs <= -70:
         return whole, whole
@@ -710,8 +710,7 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
     warn: list[str] = []
     spb = 60.0 / deck["native_bpm"]
     s0, s1 = p0 - 2.0, p1 + 1.0
-    src, w = _source(audio, deck, s0, s1, sr)
-    warn += w
+    src = _source(audio, deck, s0, s1, sr)
     ft = np.asarray(deck_time(deck, np.linspace(p0, p1, 64, endpoint=False)), dtype=float)  # play_to is exclusive
     if ft.min() < -0.05 or ft.max() > audio.shape[1] / sr + 0.05:
         warn.append("plays outside its audio file (silence there)")
