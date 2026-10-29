@@ -4,15 +4,40 @@ The next generation of Seedbox. The goal is mixes that sound better than a good 
 software (the waveforms stay), on an ordinary laptop. It was planned in board ticket #34. The work lives in the
 `S2 …` epics on the board, tickets #35–#89.
 
+## Run from source
+
+Do the [Setup](../README.md#setup) in the main README first (`.venv`, `ffmpeg` and `deno`).
+
 ```sh
-.venv/bin/python -m seedbox2             # the app (same flags as python -m seedbox: --server-only, --port, --dev, --debug, --self-test)
-.venv/bin/python -m seedbox2 --version
+(cd frontend2 && deno install && deno task build)   # once, and after frontend changes (writes frontend2/dist)
+.venv/bin/python -m seedbox2                        # opens the Seedbox 2 window
 ```
 
-**Today `python -m seedbox2` runs the Seedbox 1 app** (`seedbox/` + `musicreco/`), with its own settings, caches and
-logs in `~/Library/{Application Support,Caches,Logs}/Seedbox 2`. Trying Seedbox 2 therefore never touches Seedbox 1's
-sets or settings. The music library (`~/Music/MusicReco`) is shared. #36 replaces this with Seedbox 2's own server
-and UI, and the other tickets replace the rest piece by piece.
+To work on the UI with hot reload, use two terminals:
+
+```sh
+cd frontend2 && deno task dev           # Vite on http://localhost:5174, proxies /api to 127.0.0.1:8766
+.venv/bin/python -m seedbox2 --dev      # API on :8766; the window loads the Vite page
+```
+
+These ports differ from Seedbox 1's (5173 and 8765), so both apps can run side by side, in dev mode too.
+
+Flags:
+- `--server-only [--port N]`: no window. Open the printed URL in a browser.
+- `--dev`: as above. `--debug`: verbose logs and the web inspector.
+- `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
+- `--version`
+
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
+
+Seedbox 2 keeps its own settings, caches and logs in `~/Library/{Application Support,Caches,Logs}/Seedbox 2`
+(`$SEEDBOX_SUPPORT_DIR`, `$SEEDBOX_CACHE_DIR` and `$SEEDBOX_LOG_DIR` override them), so trying it never touches
+Seedbox 1's sets or settings. The music library (`~/Music/MusicReco`) is shared. #37 moves these folders to each
+platform's conventions.
+
+**What's there so far** (#36): the server (`seedbox2/server/`: `/api/health`, `/api/system`, the `/api/events`
+stream and one empty router per area) and the `frontend2/` app shell (sidebar, hash router, a placeholder page per
+area, `#/system`, and `#/ui` with the design tokens and the waveform). The other tickets fill in the areas.
 
 ## Architecture (target)
 

@@ -14,8 +14,10 @@ Do the [Setup](#setup) below first (`.venv`, Homebrew `ffmpeg` + `deno`).
 .venv/bin/python -m seedbox                        # opens the app window
 ```
 
-**Seedbox 2** is being built next to it: `.venv/bin/python -m seedbox2`, plan and architecture in
-[`seedbox2/README.md`](seedbox2/README.md).
+**Seedbox 2** is being built next to it, with its own server (`seedbox2/`) and UI (`frontend2/`):
+`(cd frontend2 && deno install && deno task build)`, then `.venv/bin/python -m seedbox2`. Its dev ports are 5174 and
+8766, so it runs side by side with Seedbox 1. The plan, the architecture and how to run it from source are in
+[`seedbox2/README.md`](seedbox2/README.md#run-from-source).
 
 To work on the UI with hot reload, use two terminals:
 

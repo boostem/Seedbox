@@ -1,0 +1,31 @@
+{
+  "name": "seedbox2-frontend",
+  "private": true,
+  "version": "2.0.0-dev.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview --port 4175",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "deno lint --rules-tags=recommended,react,jsx --rules-exclude=no-window,no-window-prefix,no-sloppy-imports src vite.config.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "lucide-react": "^1.40.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^7.0.0",
+    "vite": "^8.0.0",
+    "vitest": "^5.0.5"
+  }
+}
