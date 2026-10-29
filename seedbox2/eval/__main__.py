@@ -5,6 +5,7 @@
                                      [--baseline FILE --max-drop 2] [--out FILE] [--jobs N]
     python -m seedbox2.eval annotate AUDIO... [--analyser seedbox1] [--rekordbox FILE.xml] [--force]
     python -m seedbox2.eval import-rekordbox FILE.xml
+    python -m seedbox2.eval mixes [PAIRS.toml] [--json FILE]   (objective mix metrics, #54)
 """
 
 from __future__ import annotations
@@ -161,6 +162,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "mixes":  # has its own parser
+        from . import mixes
+
+        return mixes.main(argv[1:])
     a = parse_args(argv)
     return a.fn(a)
 

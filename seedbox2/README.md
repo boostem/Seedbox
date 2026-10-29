@@ -28,7 +28,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -125,6 +125,21 @@ It needs `mir_eval` (in `requirements-dev.txt`).
   track's scores. `--baseline FILE --max-drop 2` exits 1 when a metric is more than 2 points worse. The nightly
   workflow (`.github/workflows/eval-nightly.yml`) does that on the first 50 GiantSteps tracks against
   `seedbox2/eval/baseline.json`: an analysis ticket that improves a number refreshes it with `--write-baseline`.
+
+**Mix metrics** (#54): `seedbox2/eval/mixmetrics.py` measures a rendered transition from its audio: beat alignment
+between the decks (ms), bass overlap below 120 Hz (s, dB·s), vocal overlap (s), the short-term loudness dip/bump
+against the tracks (LU), true peak and clipped samples, a spectral masking index per band, and the key distance and
+stretch actually used; `checks()` grades them pass/warn/fail for the transition editor (`frontend2/src/features/mix`,
+shown on `#/ui`). Compare engines over a set of pairs:
+
+```sh
+.venv/bin/python -m seedbox2.eval mixes                                  # built-in synthetic pairs
+.venv/bin/python -m seedbox2.eval mixes pairs.toml --json metrics.json   # your own pairs (format: seedbox2/eval/mixes.py)
+```
+
+Until Seedbox 2's mix engine lands (#51–#53) its column reads n/a; that engine should call `mixmetrics.measure` on
+every render. Without stems (#44, #47) bass overlap uses a low-pass of each deck and vocal overlap a tonal voice-band
+proxy.
 
 ## Architecture (target)
 
