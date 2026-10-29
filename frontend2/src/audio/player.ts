@@ -2,8 +2,8 @@
  * The one global audio player (single HTMLAudioElement), so only one thing sounds at a time. The waveforms draw
  * their playhead from `usePlayer`. Seedbox 2's AudioWorklet engine (#65) replaces it.
  *
- *   player.play(id, url, { startAt })   any audio URL from the API
- *   player.toggle(id?) / stop() / pause() / resume() / seek(s) / setVolume(v)
+ *   player.play(id, url, { startAt, title, subtitle })   any audio URL; title/subtitle show in the transport strip
+ *   player.toggle(id?) / playPause() / stop() / pause() / resume() / seek(s) / setVolume(v)
  *   usePlayer((s) => s.currentId === id && s.status === "playing")   reactive state
  */
 import { create } from "zustand";
@@ -15,6 +15,9 @@ export type PlayerStatus = "idle" | "loading" | "playing" | "paused" | "error";
 export interface PlayerState {
   currentId: string | null;
   url: string | null;
+  /** What the transport strip shows: track title and artist (or whatever the caller passed). */
+  title: string | null;
+  subtitle: string | null;
   status: PlayerStatus;
   position: number; // seconds
   duration: number; // seconds (0 until known)
@@ -36,6 +39,8 @@ function loadVolume(): number {
 export const usePlayer = create<PlayerState>()(() => ({
   currentId: null,
   url: null,
+  title: null,
+  subtitle: null,
   status: "idle",
   position: 0,
   duration: 0,
@@ -98,10 +103,10 @@ function stopTicker() {
   if (audio) usePlayer.setState({ position: audio.currentTime });
 }
 
-async function play(id: string, url: string, opts: { startAt?: number } = {}): Promise<void> {
+async function play(id: string, url: string, opts: { startAt?: number; title?: string; subtitle?: string } = {}): Promise<void> {
   const my = ++token;
   const a = el();
-  usePlayer.setState({ currentId: id, url, status: "loading", position: opts.startAt ?? 0, duration: 0, error: null });
+  usePlayer.setState({ currentId: id, url, title: opts.title ?? null, subtitle: opts.subtitle ?? null, status: "loading", position: opts.startAt ?? 0, duration: 0, error: null });
   try {
     const src = await resolveMediaUrl(url);
     if (my !== token) return;
@@ -122,7 +127,7 @@ function stop(): void {
     audio.load();
   }
   stopTicker();
-  usePlayer.setState({ currentId: null, url: null, status: "idle", position: 0, duration: 0, error: null });
+  usePlayer.setState({ currentId: null, url: null, title: null, subtitle: null, status: "idle", position: 0, duration: 0, error: null });
 }
 
 function isCurrent(id: string): boolean {
@@ -145,6 +150,13 @@ export const player = {
     } else if (s.status === "paused" && (!id || s.currentId === id)) {
       return player.resume();
     }
+  },
+  /** The transport's play button: pause what plays, resume what is paused or ended. */
+  playPause(): void {
+    const s = usePlayer.getState();
+    if (!s.currentId) return;
+    if (s.status === "playing" || s.status === "loading") player.pause();
+    else player.resume();
   },
   seek(seconds: number): void {
     if (!audio) return;

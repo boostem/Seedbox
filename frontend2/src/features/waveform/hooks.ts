@@ -1,4 +1,6 @@
-import { type RefObject, useCallback, useLayoutEffect, useRef, useState } from "react";
+import { Maximize2, ZoomIn, ZoomOut } from "lucide-react";
+import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { registerCommands } from "@/lib/commands";
 
 /** Width of an element (ResizeObserver), 0 until measured. */
 export function useWidth(ref: RefObject<HTMLElement | null>): number {
@@ -84,4 +86,21 @@ export function useTimeView(min: number, max: number, minSpan: number, initial?:
   );
   const fit = useCallback(() => set({ start: min, span: max - min }), [set, min, max]);
   return { view, set, zoom, scroll, reveal, fit, bounds: { min, max, minSpan } };
+}
+
+/**
+ * The waveform's keys (= / − zoom, 0 fit) as commands in the "View" group, so the palette and the shortcuts sheet
+ * list them while a waveform with `hotkeys` is on screen.
+ */
+export function useWaveformKeys(enabled: boolean, zoom: (factor: number) => void, fit: () => void): void {
+  const fns = useRef({ zoom, fit });
+  fns.current = { zoom, fit };
+  useEffect(() => {
+    if (!enabled) return;
+    return registerCommands([
+      { id: "wave.zoomIn", title: "Zoom in", group: "View", icon: ZoomIn, combo: "=", altCombos: ["Shift+Equal"], keywords: "waveform", run: () => fns.current.zoom(1.6) },
+      { id: "wave.zoomOut", title: "Zoom out", group: "View", icon: ZoomOut, combo: "-", keywords: "waveform", run: () => fns.current.zoom(1 / 1.6) },
+      { id: "wave.fit", title: "Fit the waveform", group: "View", icon: Maximize2, combo: "0", keywords: "zoom reset whole", run: () => fns.current.fit() },
+    ]);
+  }, [enabled]);
 }

@@ -12,9 +12,8 @@ import type { TrackAnalysis, Transition } from "@/api/types";
 import { usePlayer } from "@/audio/player";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { useHotkey } from "@/lib/hotkeys";
 import { barBeat, drawCues, drawEdges, drawGrid, drawSections, drawTimeRuler, drawWave, fmtPrecise, setupCanvas, shade, toFile, toMix, type View, xOf } from "./draw";
-import { useTimeView, useWidth } from "./hooks";
+import { useTimeView, useWaveformKeys, useWidth } from "./hooks";
 import { type MixGeometry, mixGeometry } from "./mix";
 import { alpha, wavePalette } from "./palette";
 
@@ -167,9 +166,7 @@ export function MixWaveform({ a, b, aId, bId, aBpm, transition, clock, onSeek, l
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
   const reset = () => initial && tv.set(initial);
-  useHotkey(["=", "Shift+Equal"], () => tv.zoom(1.6), { enabled: !!hotkeys });
-  useHotkey("-", () => tv.zoom(1 / 1.6), { enabled: !!hotkeys });
-  useHotkey("0", reset, { enabled: !!hotkeys });
+  useWaveformKeys(!!hotkeys, (f) => tv.zoom(f), reset);
 
   if (!g) return null;
   const hm = hover == null ? null : view.start + hover / view.pxPerSec;

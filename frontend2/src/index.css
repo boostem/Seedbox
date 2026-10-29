@@ -99,7 +99,8 @@
   --spacing-control-md: 28px; /* the default button, input, select */
   --spacing-control-lg: 32px; /* top bar, prominent inputs */
   --spacing-control-xl: 40px; /* primary call to action, transport */
-  --spacing-sidebar: 212px;
+  --spacing-rail: 56px; /* the icon rail */
+  --spacing-transport: 56px; /* the transport / now-playing strip */
   --container-toast: 360px;
 
   --radius-xs: 2px;
@@ -132,6 +133,16 @@
   --animate-pulse-soft: pulse-soft 1.6s ease-in-out infinite;
   --animate-indeterminate: indeterminate 1.2s ease-in-out infinite;
   --animate-toast-in: toast-in var(--duration-base) var(--ease-enter);
+  /* a page arriving after a route change (never on first paint) */
+  --animate-route-in: route-in var(--duration-base) var(--ease-enter);
+  /* the command palette: pops in, leaves faster */
+  --animate-pop-in: pop-in var(--duration-base) var(--ease-enter);
+  --animate-pop-out: pop-out var(--duration-fast) var(--ease-exit) forwards;
+  /* a side panel (the shortcuts sheet) sliding in from the right edge, with the spring; leaves faster */
+  --animate-panel-in: panel-in var(--duration-slow) var(--ease-spring);
+  --animate-panel-out: panel-out var(--duration-fast) var(--ease-exit) forwards;
+  --animate-fade-in: fade-in var(--duration-base) var(--ease-enter);
+  --animate-fade-out: fade-out var(--duration-fast) var(--ease-exit) forwards;
   @keyframes pulse-soft {
     0%,
     100% {
@@ -147,6 +158,55 @@
     }
     100% {
       transform: translateX(250%);
+    }
+  }
+  @keyframes route-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes pop-out {
+    to {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+  }
+  @keyframes panel-in {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: none;
+    }
+  }
+  @keyframes panel-out {
+    to {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes fade-out {
+    to {
+      opacity: 0;
     }
   }
   @keyframes toast-in {
@@ -291,6 +351,13 @@
   dialog::backdrop {
     background: rgb(0 0 0 / 0.6);
     backdrop-filter: blur(2px);
+  }
+  /* <Presence> dialogs fade their backdrop with them */
+  dialog[data-state="open"]::backdrop {
+    animation: var(--animate-fade-in);
+  }
+  dialog[data-state="closed"]::backdrop {
+    animation: var(--animate-fade-out);
   }
 }
 

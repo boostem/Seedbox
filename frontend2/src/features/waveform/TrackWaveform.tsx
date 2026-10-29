@@ -12,9 +12,8 @@ import type { TrackAnalysis } from "@/api/types";
 import { usePlayer } from "@/audio/player";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { useHotkey } from "@/lib/hotkeys";
 import { barBeat, drawCues, drawEdges, drawGrid, drawSections, drawWave, fmtPrecise, laneOf, setupCanvas, shade, type View, xOf } from "./draw";
-import { useTimeView, useWidth } from "./hooks";
+import { useTimeView, useWaveformKeys, useWidth } from "./hooks";
 import { alpha, sectionColor, wavePalette } from "./palette";
 import { prepareWave } from "./prepare";
 
@@ -219,9 +218,7 @@ export function TrackWaveform({ analysis, trackId, onSeek, height = 132, overvie
     tv.set({ start: t - tview.span / 2, span: tview.span });
   };
 
-  useHotkey(["=", "Shift+Equal"], () => tv.zoom(1.6), { enabled: !!hotkeys });
-  useHotkey("-", () => tv.zoom(1 / 1.6), { enabled: !!hotkeys });
-  useHotkey("0", () => tv.fit(), { enabled: !!hotkeys });
+  useWaveformKeys(!!hotkeys, (f) => tv.zoom(f), () => tv.fit());
 
   const zoomed = tview.span < duration - 0.01;
   const hoverT = hover == null ? null : view.start + hover / view.pxPerSec;
