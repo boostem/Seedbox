@@ -1,0 +1,67 @@
+# Checks on every pull request and push to main (#41): the Python tests on Linux, Windows and macOS (arm64) with
+# Python 3.12 and 3.13, and deno lint, tsc and vitest for both frontends. Tests marked `models` (they need downloaded
+# model weights) are left out here and run nightly (models-nightly.yml).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: pytest (${{ matrix.os }}, Python ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15]  # macos-15 is arm64
+        python: ["3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+          activate-environment: true
+          enable-cache: true
+          cache-dependency-glob: requirements*.txt
+      - name: Install
+        run: uv pip install -r requirements-dev.txt
+      - name: pytest
+        run: python -m pytest -q -ra
+
+  frontend:
+    name: ${{ matrix.dir }} (deno lint, tsc, vitest)
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [frontend, frontend2]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+          cache: true
+          cache-hash: ${{ hashFiles(format('{0}/deno.lock', matrix.dir)) }}
+      - name: Install
+        run: deno install --frozen
+      - name: deno lint
+        run: deno task lint
+      - name: tsc
+        run: deno task typecheck
+      - name: vitest
+        run: deno task test

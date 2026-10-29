@@ -1,5 +1,9 @@
 # Seedbox (desktop app)
 
+[![CI](https://github.com/boostem/Seedbox/actions/workflows/ci.yml/badge.svg)](https://github.com/boostem/Seedbox/actions/workflows/ci.yml)
+[![Nightly model tests](https://github.com/boostem/Seedbox/actions/workflows/models-nightly.yml/badge.svg)](https://github.com/boostem/Seedbox/actions/workflows/models-nightly.yml)
+[![Nightly benchmark](https://github.com/boostem/Seedbox/actions/workflows/bench.yml/badge.svg)](https://github.com/boostem/Seedbox/actions/workflows/bench.yml)
+
 Seedbox is the desktop version of this tool. It runs the same engine (`musicreco/`) in a dark, DJ-style window.
 Search tunebat, open a seed's crate (20 s previews of every rec load in the background), tick and download. Then
 build the set: drag to reorder, with waveforms, intro/outro and mix-point analysis and suggested transitions. Under the
@@ -47,6 +51,31 @@ The tests run on synthetic analyses (`tests/fixtures.py`: known BPM, downbeat, p
 vocals) and click tracks, not on the analyser. `tests/snapshots/plan_summaries.txt` holds the plan of every fixture
 pair, so a planner change shows up as a diff of that file. `musicreco.mixpair` analyses two real files, prints the
 plan and writes the rendered transition (`.wav`, or `.m4a` like the app).
+
+### Continuous integration
+
+GitHub Actions (`.github/workflows/`) runs on every pull request and push to main:
+
+| Workflow | When | What |
+|---|---|---|
+| `ci.yml` | every pull request and push to main | `pytest` on Linux, Windows and macOS (arm64) with Python 3.12 and 3.13 (uv, cached), and `deno lint`, `tsc` and `vitest` for `frontend/` and `frontend2/` |
+| `models-nightly.yml` | nightly, or *Run workflow* in the Actions tab | the tests marked `@pytest.mark.models` on the three OSes, with the model downloads kept in the Actions cache |
+| `bench.yml` | nightly, and on pull requests labelled `bench` | `python -m seedbox2.bench run --frontend` ([seedbox2/bench/README.md](seedbox2/bench/README.md)); nightly it comments on the *Nightly benchmark regressions* issue when a metric gets 10 % worse, on a labelled pull request it posts its numbers and the comparison with the last nightly run as a comment |
+| `eval-nightly.yml` | nightly | the analysis evaluation on GiantSteps (`seedbox2/eval`) |
+
+To run the same checks locally:
+
+```sh
+.venv/bin/python -m pytest                    # what CI runs; tests marked `models` are skipped
+.venv/bin/python -m pytest -m models          # the nightly model tests (downloads the models once)
+(cd frontend2 && deno install && deno task lint && deno task typecheck && deno task test)   # and the same in frontend/
+```
+
+A test that needs real model weights (the model manager downloads them, #42) is marked `@pytest.mark.models`: plain
+`pytest` deselects it (`pytest.ini`), so pull requests stay fast and don't download hundreds of megabytes. Point the
+cache at a folder of your own with `SEEDBOX_CACHE_DIR` to keep the downloads; the nightly job caches
+`$SEEDBOX_CACHE_DIR/models`. To benchmark a pull request, add the `bench` label to it; each push then updates the
+benchmark comment.
 
 ### Build the app to share
 

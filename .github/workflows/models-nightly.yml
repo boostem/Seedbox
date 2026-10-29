@@ -1,0 +1,44 @@
+# Tests marked `@pytest.mark.models` (#41): they run the real model weights, which the model manager (#42) downloads
+# into Seedbox 2's cache folder. Every night on the three OSes, with the downloads kept in the Actions cache (the key
+# changes with the model list in seedbox2/models/, so a new or updated model is fetched once).
+name: Nightly model tests
+
+on:
+  schedule:
+    - cron: "41 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  models:
+    name: pytest -m models (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      SEEDBOX_CACHE_DIR: ${{ github.workspace }}/.seedbox-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          activate-environment: true
+          enable-cache: true
+          cache-dependency-glob: requirements*.txt
+      - name: Install
+        run: uv pip install -r requirements-dev.txt
+      - name: Model downloads
+        uses: actions/cache@v4
+        with:
+          path: .seedbox-cache/models
+          key: models-${{ runner.os }}-${{ hashFiles('seedbox2/models/**') }}
+          restore-keys: models-${{ runner.os }}-
+      - name: pytest -m models
+        shell: bash
+        # exit code 5: no test is marked yet
+        run: python -m pytest -q -ra -m models || [ $? -eq 5 ]

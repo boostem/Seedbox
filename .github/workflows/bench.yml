@@ -1,23 +1,29 @@
 # Nightly Seedbox 2 benchmark (seedbox2/bench/README.md): runs `python -m seedbox2.bench run --frontend`, compares
 # with the previous night's results and comments on the "Nightly benchmark regressions" issue when a metric got worse
 # by more than 10 %. The results of each night are kept as an artifact (90 days) and as the baseline in the cache.
+# On a pull request labelled `bench` (#41) it runs on every push too and posts its numbers and the comparison with the
+# last nightly run as a comment on the pull request (one comment, updated), without touching the baseline.
 name: Nightly benchmark
 
 on:
   schedule:
     - cron: "23 3 * * *"
   workflow_dispatch:
+  pull_request:
+    types: [labeled, synchronize, reopened]
 
 permissions:
   contents: read
   issues: write
+  pull-requests: write
 
 concurrency:
-  group: nightly-benchmark
-  cancel-in-progress: false
+  group: benchmark-${{ github.event.pull_request.number || 'nightly' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   bench:
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'bench')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -75,8 +81,42 @@ jobs:
           fi
           cat bench-out/compare.md >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Comment on the pull request
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          MARKER: "<!-- seedbox2-bench -->"
+        run: |
+          {
+            echo "$MARKER"
+            echo "### Benchmark of ${{ github.event.pull_request.head.sha }}"
+            echo
+            echo "On GitHub's shared Ubuntu runner: compare with the last nightly run, not with the budgets."
+            echo
+            if [ -f bench-out/compare.md ]; then
+              echo "#### Compared with the last nightly run"
+              cat bench-out/compare.md
+              echo
+            fi
+            echo "<details><summary>Full report</summary>"
+            echo
+            python -m seedbox2.bench report bench-out/results.json
+            echo
+            echo "</details>"
+            echo
+            echo "[Run ${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}), results in its artifacts."
+          } > bench-out/comment.md
+          comment=$(gh api "repos/${{ github.repository }}/issues/$PR/comments" --paginate \
+            --jq "map(select(.body | startswith(\"$MARKER\"))) | .[0].id // empty")
+          if [ -n "$comment" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$comment" -F body=@bench-out/comment.md > /dev/null
+          else
+            gh pr comment "$PR" --body-file bench-out/comment.md
+          fi
+
       - name: Comment on regressions
-        if: steps.compare.outputs.regressed == 'true'
+        if: github.event_name != 'pull_request' && steps.compare.outputs.regressed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TITLE: Nightly benchmark regressions
@@ -93,9 +133,11 @@ jobs:
           gh issue comment "$issue" --body-file bench-out/compare.md
 
       - name: Keep tonight's results as the baseline
+        if: github.event_name != 'pull_request'
         run: mkdir -p bench-last && cp bench-out/results.json bench-last/results.json
 
       - uses: actions/cache/save@v4
+        if: github.event_name != 'pull_request'
         with:
           path: bench-last
           key: bench-results-${{ github.run_id }}

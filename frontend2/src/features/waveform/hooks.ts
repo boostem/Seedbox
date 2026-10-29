@@ -137,22 +137,3 @@ export function useWaveformKeys(enabled: boolean, zoom: (factor: number) => void
     ]);
   }, [enabled]);
 }
-
-}
-
-/**
- * The waveform's keys (= / − zoom, 0 fit) as commands in the "View" group, so the palette and the shortcuts sheet
- * list them while a waveform with `hotkeys` is on screen.
- */
-export function useWaveformKeys(enabled: boolean, zoom: (factor: number) => void, fit: () => void): void {
-  const fns = useRef({ zoom, fit });
-  fns.current = { zoom, fit };
-  useEffect(() => {
-    if (!enabled) return;
-    return registerCommands([
-      { id: "wave.zoomIn", title: "Zoom in", group: "View", icon: ZoomIn, combo: "=", altCombos: ["Shift+Equal"], keywords: "waveform", run: () => fns.current.zoom(1.6) },
-      { id: "wave.zoomOut", title: "Zoom out", group: "View", icon: ZoomOut, combo: "-", keywords: "waveform", run: () => fns.current.zoom(1 / 1.6) },
-      { id: "wave.fit", title: "Fit the waveform", group: "View", icon: Maximize2, combo: "0", keywords: "zoom reset whole", run: () => fns.current.fit() },
-    ]);
-  }, [enabled]);
-}
