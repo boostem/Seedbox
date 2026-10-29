@@ -14,6 +14,9 @@ Do the [Setup](#setup) below first (`.venv`, Homebrew `ffmpeg` + `deno`).
 .venv/bin/python -m seedbox                        # opens the app window
 ```
 
+**Seedbox 2** is being built next to it: `.venv/bin/python -m seedbox2`, plan and architecture in
+[`seedbox2/README.md`](seedbox2/README.md).
+
 To work on the UI with hot reload, use two terminals:
 
 ```sh
