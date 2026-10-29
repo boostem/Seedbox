@@ -1,8 +1,5 @@
 cloudscraper
 requests
-beautifulsoup4
-questionary
-rich
 yt-dlp[default]
 mutagen
 numpy
