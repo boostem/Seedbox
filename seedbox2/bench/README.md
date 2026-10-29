@@ -55,7 +55,8 @@ commit, the corpus and what each stage ran, so runs stay comparable later.
 GitHub's Ubuntu runner, keeps the corpus and the last night's results in the Actions cache, and compares tonight's
 results with them. On a regression over 10 % it comments on the open issue titled *Nightly benchmark regressions*
 (created the first time). Every night's results and comparison are kept as an artifact for 90 days, and the report
-is in the run's summary. CI runners are shared and noisy and are not the reference laptops: CI catches regressions,
+is in the run's summary. A pull request labelled `bench` runs it too, on every push, and gets one comment (updated
+each time) with its numbers and the comparison with the last nightly run; it doesn't replace the nightly baseline. CI runners are shared and noisy and are not the reference laptops: CI catches regressions,
 the laptops check the budgets.
 
 ## Results file
