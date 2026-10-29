@@ -11,5 +11,4 @@ fastapi
 uvicorn[standard]
 pywebview
 imageio-ffmpeg
-httpx
 pedalboard

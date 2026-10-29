@@ -105,12 +105,6 @@ def downloads_root() -> Path:
     return load_settings().output_root
 
 
-def __getattr__(name: str) -> Any:
-    if name == "DOWNLOADS_ROOT":  # backwards-compatible alias of downloads_root(), resolved on every access
-        return downloads_root()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
 _crate_locks: dict[str, threading.RLock] = {}
 _crate_locks_guard = threading.Lock()
 

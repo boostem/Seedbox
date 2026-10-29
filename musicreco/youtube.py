@@ -347,13 +347,6 @@ def find_match(track: Track, tolerance_s: float = 15.0) -> MatchResult:
         running.set()
 
 
-def clear_match_cache(track_id: str | None = None) -> None:
-    """Forget memoised matches (all of them, or one track's)."""
-    with _match_lock:
-        for key in [k for k in _match_cache if track_id is None or k[0] == track_id]:
-            del _match_cache[key]
-
-
 def _prune_matches() -> None:
     """Drop expired entries (and the oldest ones beyond MATCH_CACHE_MAX). Caller holds _match_lock."""
     now = time.monotonic()

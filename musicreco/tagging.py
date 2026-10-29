@@ -12,7 +12,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import quote
 
-import mutagen
 import requests
 from mutagen import id3
 
@@ -226,17 +225,6 @@ def set_track_number(path: Path, n: int, total: int) -> None:
     value = f"{n}/{max(n, int(total))}"
     with _editing(path) as tags:
         tags.setall("TRCK", [id3.TRCK(encoding=0, text=[value])])
-
-
-def read_spotify_id(path: Path) -> str | None:
-    """Spotify track ID from TXXX:SPOTIFY_TRACK_ID, or None if missing/unreadable."""
-    try:
-        frame = id3.ID3(path).get(SPOTIFY_ID_KEY)
-    except (mutagen.MutagenError, OSError):
-        return None
-    if frame is None or not frame.text:
-        return None
-    return str(frame.text[0]) or None
 
 
 def _text_of(tags: id3.ID3, key: str) -> str | None:

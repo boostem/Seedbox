@@ -122,9 +122,3 @@ def find_metadata(track: Track) -> tuple[str | None, str | None, BeatportInfo | 
     except Exception as exc:
         log.warning("find_metadata failed: %s", exc)
         return (None, None, None)
-
-
-def find_genre(track: Track) -> tuple[str | None, str | None]:
-    """Return (genre in Title Case, source 'beatport' | 'musicbrainz') or (None, None). Never raises."""
-    genre, source, _ = find_metadata(track)
-    return genre, source

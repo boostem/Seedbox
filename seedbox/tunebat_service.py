@@ -99,10 +99,6 @@ class TunebatService:
         self._remember([detail.seed, *detail.recommended])
         return detail
 
-    def cached_detail(self, track_id: str) -> TrackDetail | None:
-        with self._cache_lock:
-            return self._details.get(track_id)
-
     def search(self, term: str, page: int = 1) -> SearchPage:
         """One page of tunebat's text search (cached briefly)."""
         key = (" ".join(term.split()).casefold(), page)
