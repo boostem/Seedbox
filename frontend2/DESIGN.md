@@ -4,6 +4,7 @@
 > as written. The sections on Seedbox 1's pages, mock mode and `deno task screenshot` describe `frontend/` only:
 > frontend2 has no mock mode yet, its dev server is on :5174 and it proxies `/api` to 127.0.0.1:8766. The design
 > language (tokens, sizes, motion, colour roles) is in `DESIGN2.md` (#71), which replaces the Tokens section here.
+> frontend2's tests are under [Tests](#tests-frontend2) at the end.
 
 React 19 + TypeScript (strict) + Vite 8 + Tailwind 4, built with **Deno 2.9** (no Node). Read this before adding screens.
 
@@ -240,3 +241,19 @@ fire while typing or over a dialog, `altCombos` binds more keys without listing 
 the area that owns them: `registerPaletteSource({ id: "tracks", group: "Tracks", search: (q) => items })`; the
 palette ranks what `search` returns with `lib/fuzzy.ts` (words in any order, word starts and runs score high).
 
+## Tests (frontend2)
+
+- **Unit and component tests:** `deno task test` (vitest). Unit tests run in node; component tests (Testing Library)
+  start with `// @vitest-environment jsdom`, as in `src/components/ui/*.test.tsx`: query by role and accessible name,
+  drive them with `userEvent`, and stub only the browser APIs jsdom lacks (`showModal`, `ResizeObserver`, layout).
+  An `it.skip` there marks a known component bug.
+- **Screenshot tests:** `deno task screenshot` builds `dist/`, then runs `scripts/screenshot.ts` in the Docker image of
+  `scripts/screenshot.Dockerfile` (a pinned Chrome, Inter and JetBrains Mono, so a laptop and CI render the same
+  pixels). It serves `dist/` with a stub `/api` (a working engine, one that never answers, or none), shoots every
+  route and state in its `SHOTS` list at 1440×900 and 1280×720 with animations off, and compares each with
+  `visual-baselines/`: a screenshot fails when more than 0.1 % of its pixels moved by more than 24/255. The new
+  screenshots go to `screenshots/actual/`, and for each failure `expected/` and `diff/` (changed pixels in red);
+  CI uploads that folder as an artifact. When the change is intended, `UPDATE_SCREENSHOTS=1 deno task screenshot`
+  rewrites the baselines (commit them with the change). `--only=home,settings` shoots a few, `--no-build` reuses
+  `dist/`, `--no-docker` uses this machine's Chrome (quick to look at, but it won't match the baselines). A new
+  screen or state adds a line to `SHOTS` (states: empty, loading, analysing, error).

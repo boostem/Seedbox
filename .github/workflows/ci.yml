@@ -65,3 +65,34 @@ jobs:
         run: deno task typecheck
       - name: vitest
         run: deno task test
+
+  # frontend2's screenshot tests (#81): every route at 1440×900 and 1280×720 against frontend2/visual-baselines/,
+  # in the pinned Chrome and fonts of scripts/screenshot.Dockerfile. On failure the new screenshots and the diffs
+  # are an artifact.
+  screenshots:
+    name: frontend2 screenshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+          cache: true
+          cache-hash: ${{ hashFiles('frontend2/deno.lock') }}
+      - name: Install
+        run: deno install --frozen
+      - name: Build
+        run: deno task build
+      - name: Screenshots
+        run: deno task screenshot --no-build
+      - name: Upload the screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend2-screenshots
+          path: frontend2/screenshots/
+          if-no-files-found: ignore
