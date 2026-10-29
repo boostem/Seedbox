@@ -38,10 +38,11 @@ class ImportReport:
     plans: int = 0
     plans_kept: int = 0  # edited in Seedbox 2 since: left alone
     errors: list[str] = field(default_factory=list)
+    new_hashes: list[str] = field(default_factory=list)  # tracks the library didn't have: they need analysis
 
     def to_json(self) -> dict:
         return {"crates": self.crates, "tracks": self.tracks, "sets": self.sets, "plans": self.plans,
-                "plans_kept": self.plans_kept, "errors": self.errors}  # fmt: skip
+                "plans_kept": self.plans_kept, "new": len(self.new_hashes), "errors": self.errors}  # fmt: skip
 
 
 def _tags(f: sb1.CrateFile, track: object | None) -> dict:
@@ -67,7 +68,7 @@ def import_seedbox1(lib: Library, root: Path | None = None,
         for n, summary in enumerate(crates, 1):
             seed_dir = Path(summary["path"])
             try:
-                _import_crate(lib, seed_dir, pool, report)
+                import_crate(lib, seed_dir, pool, report)
             except Exception as e:
                 log.exception("importing crate %s", seed_dir.name)
                 report.errors.append(f"{seed_dir.name}: {e}")
@@ -75,6 +76,17 @@ def import_seedbox1(lib: Library, root: Path | None = None,
                 progress(n, len(crates), seed_dir.name)
     log.info("imported from Seedbox 1 (%s): %s", root, report.to_json())
     return report
+
+
+def import_crate(lib: Library, seed_dir: Path, pool: ThreadPoolExecutor, report: ImportReport) -> None:
+    """Import (or update) one crate folder, holding Seedbox 1's lock on it while a download may be writing it."""
+    with sb1.crate_lock(seed_dir):
+        _import_crate(lib, seed_dir, pool, report)
+
+
+def is_crate_folder(folder: Path) -> bool:
+    """A folder Seedbox 1 downloaded a crate into (its tracks.csv or .seedbox/crate.json)."""
+    return (folder / "tracks.csv").is_file() or sb1.crate_json_path(folder).is_file()
 
 
 def _import_crate(lib: Library, seed_dir: Path, pool: ThreadPoolExecutor, report: ImportReport) -> None:
@@ -99,6 +111,8 @@ def _import_crate(lib: Library, seed_dir: Path, pool: ThreadPoolExecutor, report
                 "artist": f.artist or (", ".join(track.artists) if track else ""),
                 "album": f.album or (track.album if track else ""), "tags": _tags(f, track), "source": SOURCE,
                 "source_id": f.track_id}  # fmt: skip
+        if lib.track(content.hash) is None:
+            report.new_hashes.append(content.hash)
         lib.add_file(f.path, content=content, **meta)
         hashes.append(content.hash)
         if f.track_id:

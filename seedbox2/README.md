@@ -28,7 +28,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -81,6 +81,20 @@ folder's `waveforms/`: about 0.2 s and at most 187 KB per 6 minutes of music (me
 /api/tracks/{hash}/waveform` serves it as `application/octet-stream` (gzip-encoded when accepted) with an ETag from
 the content hash, so an unchanged waveform is a 304; before it is computed it answers 202 and queues the job at the
 front. Importers call `waveform.submit(jobs, hash)` first; the stems job (#44) calls it again to add the stem rows.
+
+**Local music** (#40, `seedbox2/library/importer.py`, `watch.py`, `playlists_xml.py`, `tags.py`): MP3, AAC/M4A,
+FLAC, WAV, AIFF and OGG/Opus come in three ways. *Watch folders* (Settings; kept in `settings.json` next to the
+library, default: the music folder) are scanned at start, then followed with `watchdog`: new and changed files are
+added once they stop growing, moved ones keep their track (same hash, same analyses), deleted ones are forgotten (a
+track with no file left goes, unless a crate, set or plan uses it). *Dropping* files or folders onto the window
+hands their paths to `POST /api/library/import` (pywebview's drop event); in a browser they are uploaded into the
+music folder's `Imported` folder. *Rekordbox XML and iTunes/Music library XML* (`POST /api/library/import/xml`):
+every playlist becomes a crate named by its folder path, and Rekordbox's cues and beatgrid are kept as the track's
+`rekordbox` analysis. Tags (mutagen) fill the title, artist and album; BPM, key, comment and the rest are hints in
+`tracks.tags` (`file`, `rekordbox`, `itunes`), never analysis. Files inside a Seedbox 1 crate folder go through the
+Seedbox 1 importer, so tunebat downloads into the music folder land in the library with their crate. Every new
+track queues the job types registered `per_track=True`: the light ones at library priority, the heavy ones (stems)
+at background priority. Progress is the `library.import` event.
 
 ## Evaluating the analysis
 

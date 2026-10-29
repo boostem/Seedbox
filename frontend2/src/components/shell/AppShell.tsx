@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect } from "react";
+import { DropOverlay } from "@/features/import/DropOverlay";
 import { registerCommands } from "@/lib/commands";
 import { appCommands } from "./appCommands";
 import { CommandPalette } from "./CommandPalette";
@@ -9,7 +10,8 @@ import { Toaster } from "./Toaster";
 import { TopBar } from "./TopBar";
 import { TransportStrip } from "./TransportStrip";
 
-/** Window layout: rail | (top bar / page), the transport strip along the bottom; palette, shortcuts and toasts on top. */
+/** Window layout: rail | (top bar / page), the transport strip along the bottom; palette, shortcuts, toasts and
+ * the drop overlay on top. */
 export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => registerCommands(appCommands()), []);
   return (
@@ -26,6 +28,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Toaster />
       <CommandPalette />
       <ShortcutsSheet />
+      <DropOverlay />
     </div>
   );
 }

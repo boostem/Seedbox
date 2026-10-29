@@ -1,4 +1,4 @@
-import { Boxes, Compass, Disc3, Library, ListMusic } from "lucide-react";
+import { Boxes, Compass, Disc3, ListMusic } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useServerEvents } from "@/api/events";
 import { AppShell } from "@/components/shell/AppShell";
@@ -8,16 +8,18 @@ import { navigate, type Route, useRoute } from "@/lib/router";
 import { AreaPage } from "@/pages/AreaPage";
 import { BenchPage } from "@/pages/BenchPage";
 import { HomePage } from "@/pages/HomePage";
+import { LibraryPage } from "@/pages/LibraryPage";
 import { SystemPage } from "@/pages/SystemPage";
 import { UiPage } from "@/pages/UiPage";
 import { useApp } from "@/store/app";
+import { followImports } from "@/store/imports";
 
 function Page({ route }: { route: Route }) {
   switch (route.name) {
     case "home":
       return <HomePage />;
     case "library":
-      return <AreaPage title="Library" icon={Library} description="Import folders and Rekordbox/iTunes XML, see analysis status (#38, #40, #73)." />;
+      return <LibraryPage />;
     case "crates":
       return <AreaPage title="Crates" icon={Boxes} description="Group tracks into crates, and plan sets across them (#40, #62)." />;
     case "sets":
@@ -67,6 +69,7 @@ export function App() {
   useEffect(() => {
     void useApp.getState().refreshSystem();
   }, []);
+  useEffect(followImports, []);
   return (
     <AppShell>
       <Routes />
