@@ -90,9 +90,12 @@ export interface Settings {
   preview_cache_mb: number; // default 500
   pretick_all: boolean; // default true: every "r" rec starts ticked; false = only key/BPM rule matches
   mix_length: MixLength; // preferred blend length of mix plans, default "normal" (16 bars)
+  mix_view: MixView; // how much of a mix plan the transition editor shows, default "simple"
 }
 
 export type MixLength = "short" | "normal" | "long"; // 8 / 16 / 32-bar blends
+// simple: style, length and a few amounts; advanced: the main lanes (the rest follow); manual: every lane
+export type MixView = "simple" | "advanced" | "manual";
 
 export interface SystemStatus {
   version: string;

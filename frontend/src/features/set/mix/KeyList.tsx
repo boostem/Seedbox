@@ -10,7 +10,7 @@ import type { Curve, DeckFx, DeckFxType, DeckLoop, Keyframe, LaneId, MixPlan } f
 import { Button, IconButton, Select } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { useSessionState } from "../useSessionState";
-import { barLabel, CURVES, type DeckId, divLabel, FX_TYPES, getLane, laneRange, LANES, type LaneKey, laneUsed, laneValue, MAX_FX_BEATS, metaOf, setLane, STUTTER_DIV, STUTTER_DIVS } from "./lanes";
+import { barLabel, CURVES, type DeckId, divLabel, FX_TYPES, getLane, laneRange, LANES, type LaneKey, type LaneMeta, laneUsed, laneValue, MAX_FX_BEATS, metaOf, setLane, STUTTER_DIV, STUTTER_DIVS } from "./lanes";
 
 type Sel = Map<LaneKey, Set<number>>;
 type LoopSel = { deck: DeckId; index: number } | null;
@@ -28,6 +28,9 @@ export interface KeyListProps {
   setFxSel: (s: LoopSel) => void;
   update: (p: MixPlan) => void;
   menu: (m: KeyMenu) => void;
+  /** The deck lanes offered (default: all) and whether the master tempo is. */
+  lanes?: LaneMeta[];
+  tempo?: boolean;
 }
 
 const LOOP_LENGTHS = [1, 2, 4, 8, 16];
@@ -72,10 +75,13 @@ function NumField({ value, step, fine, min, max, label, onCommit, className, ...
   );
 }
 
-export function KeyList({ plan, sel, setSel, loopSel, setLoopSel, fxSel, setFxSel, update, menu }: KeyListProps) {
+export function KeyList({ plan, sel, setSel, loopSel, setLoopSel, fxSel, setFxSel, update, menu, lanes = LANES, tempo = true }: KeyListProps) {
   const [open, setOpen] = useSessionState("seedbox.mix.keyList", false);
-  const firstUsed = (["tempo", ...(["a", "b"] as DeckId[]).flatMap((d) => LANES.map((m) => `${d}.${m.id}` as LaneKey))] as LaneKey[]).find((k) => laneUsed(k, getLane(plan, k)));
-  const [target, setTarget] = useState<Target>(firstUsed ?? "a.volume");
+  const keys = [...(tempo ? ["tempo"] : []), ...(["a", "b"] as DeckId[]).flatMap((d) => lanes.map((m) => `${d}.${m.id}`))] as LaneKey[];
+  const firstUsed = keys.find((k) => laneUsed(k, getLane(plan, k))) ?? keys[0] ?? "a.volume";
+  const [picked, setTarget] = useState<Target>(firstUsed);
+  // a lane the current view doesn't offer (switched from manual) → the first one it does
+  const target: Target = picked.startsWith("loops.") || picked.startsWith("fx.") || keys.includes(picked as LaneKey) ? picked : firstUsed;
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const refocus = useRef<{ index: number; field: string } | null>(null);
 
@@ -234,10 +240,10 @@ export function KeyList({ plan, sel, setSel, loopSel, setLoopSel, fxSel, setFxSe
           <>
             <span className="flex-1" />
             <Select aria-label="Lane" value={target} onChange={(e) => setTarget(e.target.value as Target)} className="h-6 text-xs">
-              <option value="tempo">Master tempo</option>
+              {tempo && <option value="tempo">Master tempo</option>}
               {(["a", "b"] as DeckId[]).map((d) => (
                 <optgroup key={d} label={`Deck ${d.toUpperCase()}`}>
-                  {LANES.map((m) => {
+                  {lanes.map((m) => {
                     const k = `${d}.${m.id as LaneId}` as LaneKey;
                     return (
                       <option key={k} value={k}>

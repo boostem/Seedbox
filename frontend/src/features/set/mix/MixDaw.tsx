@@ -8,11 +8,14 @@
  * across lanes, loops and effects: drag to move, drag an edge to resize, double-click the row to add one (an effect
  * starts as a 1-beat spinback; right-click for its type and a stutter's repeat length). Without a mouse: the
  * "Keys & loops" list under the rows (KeyList).
+ *
+ * `view` (settings.mix_view): "manual" shows every lane; "advanced" only the main ones (ADVANCED_LANES, no tempo);
+ * "simple" just the ruler and the two decks, as a read-only overview.
  */
 import { Info, Minus, Plus, Scan } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Curve, DeckFxType, LaneId, MixPlan, TrackAnalysis } from "@/api/types";
+import type { Curve, DeckFxType, LaneId, MixPlan, MixView, TrackAnalysis } from "@/api/types";
 import { IconButton, Tooltip } from "@/components/ui";
 import { setupCanvas, type View } from "@/features/waveform/draw";
 import { useTimeView, useWidth } from "@/features/waveform/hooks";
@@ -28,6 +31,7 @@ import { paintMarkerLines } from "./paint";
 import { DeckCanvas, FxCanvas, LoopsCanvas, MoreRow, RulerCanvas } from "./rows";
 import { deleteKeyframes, pruneSelection } from "./selection";
 import { useDawHotkeys } from "./useDawHotkeys";
+import { ADVANCED_LANES } from "./views";
 import type { BeatClock } from "./useMixRender";
 
 export interface MixDawProps {
@@ -45,6 +49,7 @@ export interface MixDawProps {
   clock: BeatClock;
   onPlayFrom: (beat: number) => void;
   hotkeys?: boolean;
+  view?: MixView;
 }
 
 /** Per-session "show unused lanes" state: deck A, deck B, master tempo lane. */
@@ -56,7 +61,9 @@ const DECK_TINT: Record<DeckId, string> = { a: "var(--color-fg-muted)", b: "var(
 
 const SHORTCUTS = "drag keys · dbl-click add · ⌫ delete · right-click curve / effect type · ⌥ ¼-beat · ⇧ fine · ⌘-scroll zoom · keyboard: the key list below";
 
-export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo, anA, anB, nameA, nameB, clock, onPlayFrom, hotkeys = true }: MixDawProps) {
+export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo, anA, anB, nameA, nameB, clock, onPlayFrom, hotkeys = true, view: mode = "manual" }: MixDawProps) {
+  const allLanes = mode === "manual" ? LANES : mode === "advanced" ? ADVANCED_LANES : [];
+  const editable = mode !== "simple";
   const boxRef = useRef<HTMLDivElement>(null);
   const width = useWidth(boxRef);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -271,13 +278,14 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
     const an = d === "a" ? anA : anB;
     const keyOf = (id: string) => `${d}.${id}` as LaneKey;
     const isUsed = (id: string) => laneUsed(keyOf(id), deck.lanes[id as LaneId]) || sel.has(keyOf(id));
-    const unused = LANES.filter((m) => !isUsed(m.id));
+    const unused = allLanes.filter((m) => !isUsed(m.id));
     const open = !!showAll[d];
-    const hasLoops = deck.loops.length > 0 || loopSel?.deck === d;
+    const hasLoops = editable && (deck.loops.length > 0 || loopSel?.deck === d);
     const fxCount = deck.fx?.length ?? 0;
-    const hasFx = fxCount > 0 || fxSel?.deck === d;
-    const hidden = unused.length + (hasLoops ? 0 : 1) + (hasFx ? 0 : 1); // lanes behind the "+ N more" row (empty loops / effects rows count)
-    const lanes = open ? LANES : LANES.filter((m) => !unused.includes(m));
+    const hasFx = editable && (fxCount > 0 || fxSel?.deck === d);
+    // lanes behind the "+ N more" row (empty loops / effects rows count)
+    const hidden = editable ? unused.length + (hasLoops ? 0 : 1) + (hasFx ? 0 : 1) : 0;
+    const lanes = open ? allLanes : allLanes.filter((m) => !unused.includes(m));
     const name = d === "a" ? nameA : nameB;
     const details = `${name} · ${deck.native_bpm.toFixed(1)} BPM · plays bar ${barLabel(deck.play_from_beat)} → ${barLabel(deck.play_to_beat)} · echo ${deck.echo_beats} beat${deck.loops.length ? ` · ${deck.loops.length} loop${deck.loops.length === 1 ? "" : "s"}` : ""}${fxCount ? ` · ${fxCount} effect${fxCount === 1 ? "" : "s"}` : ""}`;
     return (
@@ -296,7 +304,7 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
           const k = keyOf(m.id);
           const dim = !isUsed(m.id);
           return [
-            <LaneLabel key={`${k}-l`} k={k} kfs={deck.lanes[m.id as LaneId]} height={H_LANE} dim={dim} />,
+            <LaneLabel key={`${k}-l`} k={k} kfs={deck.lanes[m.id as LaneId]} height={H_LANE} dim={dim} label={m.label} />,
             <div key={`${k}-c`} className="border-b border-line/60">
               <LaneCanvas k={k} kfs={deck.lanes[m.id as LaneId]} range={ranges[m.id as LaneId]} view={view} width={width} height={H_LANE - 1} selected={sel.get(k)} play={[deck.play_from_beat, deck.play_to_beat]} ed={ed} />
             </div>,
@@ -334,18 +342,21 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
     );
   };
 
+  const tempoLane = mode === "manual"; // advanced / simple: the planner's tempo ramp runs under the hood
   const tempoUsed = laneUsed("tempo", plan.tempo) || sel.has("tempo");
-  const tempoOpen = tempoUsed || !!showAll.tempo;
+  const tempoOpen = tempoLane && (tempoUsed || !!showAll.tempo);
 
   return (
     <div className="flex flex-col">
       <div className="mb-1.5 flex h-6 items-center gap-2">
-        <span className="label-caps">Automation</span>
-        <Tooltip content={SHORTCUTS} side="bottom">
-          <button type="button" aria-label={`Editing shortcuts: ${SHORTCUTS}`} className="grid size-4 place-items-center rounded-xs text-fg-faint hover:text-fg-muted">
-            <Info size={12} />
-          </button>
-        </Tooltip>
+        <span className="label-caps">{editable ? "Automation" : "Overview"}</span>
+        {editable && (
+          <Tooltip content={SHORTCUTS} side="bottom">
+            <button type="button" aria-label={`Editing shortcuts: ${SHORTCUTS}`} className="grid size-4 place-items-center rounded-xs text-fg-faint hover:text-fg-muted">
+              <Info size={12} />
+            </button>
+          </Tooltip>
+        )}
         <span className="flex-1" />
         <span className="shrink-0 text-2xs whitespace-nowrap text-fg-subtle num">{Math.round(tv.view.span / 4)} bars visible</span>
         <IconButton icon={Minus} label="Zoom out (−)" size="sm" onClick={() => tv.zoom(1 / 1.5)} />
@@ -370,7 +381,7 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
               </div>
             </>
           )}
-          {!tempoUsed && (
+          {tempoLane && !tempoUsed && (
             <MoreRow
               open={tempoOpen}
               onClick={() => toggleShow("tempo")}
@@ -383,7 +394,7 @@ export function MixDaw({ plan, update, checkpoint, undo, redo, canUndo, canRedo,
         </div>
         <canvas ref={overlayRef} className="pointer-events-none absolute top-0 bottom-0" style={{ left: GUTTER + 1, width: width || 0 }} />
       </div>
-      <KeyList plan={plan} sel={sel} setSel={ed.setSel} loopSel={loopSel} setLoopSel={ed.setLoopSel} fxSel={fxSel} setFxSel={ed.setFxSel} update={update} menu={setMenu} />
+      {editable && <KeyList lanes={allLanes} tempo={tempoLane} plan={plan} sel={sel} setSel={ed.setSel} loopSel={loopSel} setLoopSel={ed.setLoopSel} fxSel={fxSel} setFxSel={ed.setFxSel} update={update} menu={setMenu} />}
       {tip &&
         createPortal(
           <div className="pointer-events-none fixed z-[1000] rounded-xs bg-overlay px-1.5 py-0.5 text-2xs whitespace-nowrap text-fg shadow-pop num" style={{ left: tip.x + 12, top: tip.y - 26 }}>

@@ -34,6 +34,7 @@ LIMITS: dict[str, tuple[type, float, float]] = {
     "preview_cache_mb": (int, 0, 100_000),
 }
 MIX_LENGTHS = ("short", "normal", "long")  # preferred blend length: 8 / 16 / 32 bars (musicreco.transitions)
+MIX_VIEWS = ("simple", "advanced", "manual")  # how much of a mix plan the transition editor shows (UI only)
 
 _lock = threading.RLock()
 
@@ -48,6 +49,7 @@ class Settings:
     preview_cache_mb: int = 500
     pretick_all: bool = True  # tick every tunebat "r" rec; False = only key/BPM rule matches
     mix_length: str = "normal"  # preferred blend length of mix plans: short / normal / long = 8 / 16 / 32 bars
+    mix_view: str = "simple"  # transition editor: simple (style + amounts) / advanced (main lanes) / manual (every lane)
 
 
 def _env_dir(var: str, default: Path) -> Path:
@@ -113,6 +115,11 @@ def from_json(d: dict, *, strict: bool = False) -> Settings:
             s.mix_length = d["mix_length"]
         elif strict:
             raise ValueError(f"mix_length must be one of {', '.join(MIX_LENGTHS)}")
+    if "mix_view" in d:
+        if d["mix_view"] in MIX_VIEWS:
+            s.mix_view = d["mix_view"]
+        elif strict:
+            raise ValueError(f"mix_view must be one of {', '.join(MIX_VIEWS)}")
     return s
 
 

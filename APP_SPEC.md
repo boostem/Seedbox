@@ -50,6 +50,7 @@ packaging/                      PACKAGING agent (PyInstaller spec, build script,
 @dataclass class Settings: output_root: Path; workers: int = 2; tolerance_s: float = 15.0;
     bpm_tolerance: float = 0.10; preview_concurrency: int = 3; preview_cache_mb: int = 500
     mix_length: str = "normal"   # mix plans' preferred blend length: short / normal / long = 8 / 16 / 32 bars
+    mix_view: str = "simple"     # transition editor: simple (style + amounts) / advanced (main lanes) / manual (every lane)
 def app_support_dir() -> Path      # ~/Library/Application Support/Seedbox (created)
 def cache_dir() -> Path            # ~/Library/Caches/Seedbox (created)
 def load_settings() -> Settings    # JSON at app_support_dir()/settings.json; env MUSICRECO_OUTPUT_ROOT overrides root

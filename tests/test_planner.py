@@ -708,6 +708,15 @@ def test_settings_mix_length() -> None:
     assert settings.to_json(settings.from_json({"mix_length": "short"}))["mix_length"] == "short"
 
 
+def test_settings_mix_view() -> None:
+    assert settings.Settings().mix_view == "simple"
+    assert settings.from_json({"mix_view": "manual"}).mix_view == "manual"
+    assert settings.from_json({"mix_view": "expert"}).mix_view == "simple"
+    with pytest.raises(ValueError, match="mix_view"):
+        settings.from_json({"mix_view": "expert"}, strict=True)
+    assert settings.to_json(settings.from_json({"mix_view": "advanced"}))["mix_view"] == "advanced"
+
+
 def _send_at(plan: dict, lane: str, beats: list[float]) -> list[float]:
     return [round(float(mixplan.lane_value(plan["a"]["lanes"][lane], b)), 3) for b in beats]
 
