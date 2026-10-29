@@ -6,39 +6,18 @@
   --self-test     print a JSON report (binaries, imports, the server and the built UI), exit
   --version       print the version, exit
 
-Seedbox 2 keeps its own settings, caches and logs (`data_dirs`), so trying it never touches Seedbox 1's sets or
-settings. The music library (Settings.output_root, ~/Music/MusicReco) stays shared. $SEEDBOX_SUPPORT_DIR,
-$SEEDBOX_CACHE_DIR and $SEEDBOX_LOG_DIR still override each folder (musicreco reads the first two).
+Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (seedbox2/paths.py), so trying it never
+touches Seedbox 1's sets or settings. The music library (Settings.output_root, MusicReco in the Music folder) stays
+shared. $SEEDBOX_SUPPORT_DIR, $SEEDBOX_CACHE_DIR and $SEEDBOX_LOG_DIR still override each folder (musicreco reads the
+first two).
 """
 
 from __future__ import annotations
 
 import argparse
-import os
-from collections.abc import MutableMapping
-from pathlib import Path
 
 from seedbox2 import __version__
-
-APP_NAME = "Seedbox 2"
-
-
-def data_dirs(home: Path | None = None) -> dict[str, Path]:
-    """Seedbox 2's settings, cache and log folders, keyed by the environment variable they are read from."""
-    home = home or Path.home()
-    lib = home / "Library"
-    return {
-        "SEEDBOX_SUPPORT_DIR": lib / "Application Support" / APP_NAME,
-        "SEEDBOX_CACHE_DIR": lib / "Caches" / APP_NAME,
-        "SEEDBOX_LOG_DIR": lib / "Logs" / APP_NAME,
-    }
-
-
-def apply_data_dirs(environ: MutableMapping[str, str] = os.environ) -> None:
-    """Point musicreco and the log at Seedbox 2's folders, leaving any the environment already sets."""
-    for var, path in data_dirs().items():
-        if not environ.get(var, "").strip():
-            environ[var] = str(path)
+from seedbox2.paths import APP_NAME, apply_data_dirs, data_dirs  # noqa: F401 - data_dirs re-exported
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

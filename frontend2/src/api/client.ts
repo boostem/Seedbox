@@ -77,10 +77,13 @@ export async function request<T>(method: Method, path: string, body?: unknown, o
 }
 
 const get = <T>(path: string, opts?: RequestOptions) => request<T>("GET", path, undefined, opts);
+const post = <T>(path: string, body?: unknown, opts?: RequestOptions) => request<T>("POST", path, body, opts);
 
 export const api = {
   health: (opts?: RequestOptions) => get<Health>("/api/health", opts),
   system: (opts?: RequestOptions) => get<SystemInfo>("/api/system", opts),
+  /** Show a file or folder (inside Seedbox 2's folders) in Finder / Explorer / the file manager. */
+  reveal: (path: string, opts?: RequestOptions) => post<{ ok: boolean }>("/api/system/reveal", { path }, opts),
 };
 
 /** Turns an audio path from the API into a playable src. */

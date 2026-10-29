@@ -146,7 +146,7 @@ def data_root() -> Path:
     """Where `fetch` puts the public datasets: `$SEEDBOX2_EVAL_DATA`, else `eval-data` in Seedbox 2's cache folder."""
     if env := os.environ.get("SEEDBOX2_EVAL_DATA", "").strip():
         return Path(env).expanduser()
-    from seedbox2.app import data_dirs  # noqa: PLC0415
+    from seedbox2.paths import data_dirs  # noqa: PLC0415
 
     cache = os.environ.get("SEEDBOX_CACHE_DIR", "").strip()
     return (Path(cache).expanduser() if cache else data_dirs()["SEEDBOX_CACHE_DIR"]) / "eval-data"

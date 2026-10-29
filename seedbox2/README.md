@@ -30,10 +30,20 @@ Flags:
 
 Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
 
-Seedbox 2 keeps its own settings, caches and logs in `~/Library/{Application Support,Caches,Logs}/Seedbox 2`
-(`$SEEDBOX_SUPPORT_DIR`, `$SEEDBOX_CACHE_DIR` and `$SEEDBOX_LOG_DIR` override them), so trying it never touches
-Seedbox 1's sets or settings. The music library (`~/Music/MusicReco`) is shared. #37 moves these folders to each
-platform's conventions.
+Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
+`platformdirs`), so trying it never touches Seedbox 1's sets or settings:
+
+| | macOS | Windows | Linux |
+|---|---|---|---|
+| Settings and data (`$SEEDBOX_SUPPORT_DIR`) | `~/Library/Application Support/Seedbox 2` | `%LOCALAPPDATA%\Seedbox 2` | `~/.local/share/seedbox2` |
+| Cache (`$SEEDBOX_CACHE_DIR`) | `~/Library/Caches/Seedbox 2` | `%LOCALAPPDATA%\Seedbox 2\Cache` | `~/.cache/seedbox2` |
+| Logs (`$SEEDBOX_LOG_DIR`) | `~/Library/Logs/Seedbox 2` | `%LOCALAPPDATA%\Seedbox 2\Logs` | `~/.local/state/seedbox2/log` |
+| Music library (`$MUSICRECO_OUTPUT_ROOT`), shared with Seedbox 1 | `~/Music/MusicReco` | `Music\MusicReco` | `$XDG_MUSIC_DIR/MusicReco` |
+
+The environment variables override each folder; `#/system` shows the folders in use, each with a Show in
+Finder/Explorer/file manager button. The window is Cocoa on macOS, WebView2 on Windows (the Edge WebView2 runtime
+ships with Windows 10 and 11) and WebKitGTK or Qt on Linux, with a dark title bar where the platform allows it.
+ffmpeg and deno are found on the PATH or in the usual package manager folders of each OS (`musicreco/paths.py`).
 
 **What's there so far** (#36): the server (`seedbox2/server/`: `/api/health`, `/api/system`, the `/api/events`
 stream and one empty router per area) and the `frontend2/` app shell (sidebar, hash router, a placeholder page per

@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { IconButton, StatusDot, Tooltip } from "@/components/ui";
+import { comboLabel } from "@/lib/hotkeys";
 import { useRoute } from "@/lib/router";
 import { type ConnectionState, useApp } from "@/store/app";
 import { TITLES } from "./nav";
@@ -18,8 +19,8 @@ export function TopBar() {
   const c = CONNECTION[connection];
   return (
     <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line bg-panel px-3">
-      <IconButton icon={ChevronLeft} label="Back" tooltip="Back (⌘[)" size="sm" onClick={() => history.back()} />
-      <IconButton icon={ChevronRight} label="Forward" tooltip="Forward (⌘])" size="sm" onClick={() => history.forward()} />
+      <IconButton icon={ChevronLeft} label="Back" tooltip={`Back (${comboLabel("Mod+[")})`} size="sm" onClick={() => history.back()} />
+      <IconButton icon={ChevronRight} label="Forward" tooltip={`Forward (${comboLabel("Mod+]")})`} size="sm" onClick={() => history.forward()} />
       <h2 className="ml-1 truncate text-base font-semibold">{TITLES[route.name]}</h2>
       <div className="flex-1" />
       <Tooltip content={c.help}>

@@ -1,8 +1,39 @@
-import { InfoRow, Page, PageBody, PageHeader, Panel, PanelHeader, StatusDot } from "@/components/ui";
+import { FolderOpen } from "lucide-react";
+import { api } from "@/api/client";
+import type { SystemFolders } from "@/api/types";
+import { IconButton, InfoRow, Page, PageBody, PageHeader, Panel, PanelHeader, StatusDot } from "@/components/ui";
 import { useApp } from "@/store/app";
 
 function Value({ v }: { v: string | null | undefined }) {
   return v ? <span className="truncate font-mono text-xs">{v}</span> : <span className="text-fg-faint">not found</span>;
+}
+
+const FOLDERS: { key: keyof SystemFolders; label: string }[] = [
+  { key: "music", label: "Music library" },
+  { key: "settings", label: "Settings and data" },
+  { key: "cache", label: "Cache" },
+  { key: "logs", label: "Logs" },
+];
+
+/** Where Seedbox 2 keeps things on this computer, each with a Show in Finder/Explorer/file manager button. */
+function FoldersPanel() {
+  const system = useApp((s) => s.system);
+  return (
+    <Panel className="max-w-3xl">
+      <PanelHeader title="Folders" description="Where Seedbox 2 keeps its files on this computer" />
+      {FOLDERS.map(({ key, label }) => {
+        const path = system?.folders[key];
+        return (
+          <InfoRow key={key} label={label}>
+            <span className="min-w-0 flex-1 break-all font-mono text-xs">
+              {path ?? "…"}
+            </span>
+            {path && system && <IconButton icon={FolderOpen} label={system.reveal_label} tooltip={system.reveal_label} size="sm" onClick={() => void api.reveal(path)} />}
+          </InfoRow>
+        );
+      })}
+    </Panel>
+  );
 }
 
 export function SystemPage() {
@@ -10,8 +41,8 @@ export function SystemPage() {
   const connection = useApp((s) => s.connection);
   return (
     <Page>
-      <PageHeader title="System" subtitle="What the Seedbox 2 engine is running on" />
-      <PageBody>
+      <PageHeader title="System" subtitle="What the Seedbox 2 engine is running on, and where it keeps its files" />
+      <PageBody className="flex flex-col gap-4">
         <Panel className="max-w-3xl">
           <PanelHeader title="Engine" />
           <InfoRow label="Connection">
@@ -30,6 +61,7 @@ export function SystemPage() {
             <Value v={system?.frontend ?? (system ? "Vite dev server" : null)} />
           </InfoRow>
         </Panel>
+        <FoldersPanel />
       </PageBody>
     </Page>
   );
