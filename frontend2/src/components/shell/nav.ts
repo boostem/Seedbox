@@ -24,5 +24,6 @@ export const TITLES: Record<RouteName, string> = {
   mixes: "Mixes",
   system: "System",
   ui: "Design system",
+  bench: "Benchmark",
   notFound: "Not found",
 };
