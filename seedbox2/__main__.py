@@ -1,4 +1,4 @@
-"""`python -m seedbox2`: Seedbox 2, with the same flags as `python -m seedbox` (see seedbox.app) plus --version."""
+"""`python -m seedbox2`: Seedbox 2 (its flags are listed in seedbox2/app.py)."""
 
 import sys
 
