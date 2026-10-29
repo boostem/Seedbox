@@ -151,6 +151,37 @@ class Library:
         with self.db.write() as c:
             c.execute("DELETE FROM track_paths WHERE path = ?", (_key(path),))
 
+    def paths_under(self, folder: Path | str) -> list[str]:
+        """Every recorded file inside `folder` (at any depth)."""
+        prefix = _key(folder).rstrip(os.sep) + os.sep
+        like = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        rows = self.db.read().execute("SELECT path FROM track_paths WHERE path LIKE ? ESCAPE '\\'", (like,))
+        return [r["path"] for r in rows if r["path"].startswith(prefix)]  # LIKE ignores the case of ASCII letters
+
+    def remove_paths(self, paths: Iterable[Path | str]) -> list[str]:
+        """Forget these files; a track left with no file is deleted (with its analyses) unless a crate, a set or a
+        plan still uses it. Returns the hashes of the deleted tracks."""
+        keys = [_key(p) for p in paths]
+        if not keys:
+            return []
+        with self.db.write() as c:
+            hashes = set()
+            for key in keys:
+                row = c.execute("SELECT hash FROM track_paths WHERE path = ?", (key,)).fetchone()
+                if row is not None:
+                    hashes.add(row["hash"])
+                    c.execute("DELETE FROM track_paths WHERE path = ?", (key,))
+            gone = []
+            for h in sorted(hashes):
+                used = c.execute(
+                    "SELECT EXISTS (SELECT 1 FROM track_paths WHERE hash = ?1) OR "
+                    "EXISTS (SELECT 1 FROM crate_tracks WHERE hash = ?1) OR EXISTS (SELECT 1 FROM set_items WHERE hash = ?1) "
+                    "OR EXISTS (SELECT 1 FROM plans WHERE from_hash = ?1 OR to_hash = ?1)", (h,)).fetchone()[0]  # fmt: skip
+                if not used:
+                    c.execute("DELETE FROM tracks WHERE hash = ?", (h,))
+                    gone.append(h)
+            return gone
+
     # --- analyses and artifacts ------------------------------------------------------------------------------------
 
     def put_analysis(self, hash_: str, analyser: str, version: str, data: Any) -> None:

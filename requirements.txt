@@ -11,3 +11,4 @@ platformdirs
 imageio-ffmpeg
 pedalboard
 psutil
+watchdog

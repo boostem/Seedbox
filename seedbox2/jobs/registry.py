@@ -11,6 +11,9 @@ import it by its `module:qualname` rather than unpickling it.
         model = ctx.cached("beat_this", load_model)  # one ONNX session per worker process, reused across jobs
         ...
         ctx.progress(0.5)                           # also raises Cancelled once the job is cancelled
+
+`per_track=True` makes it an analysis that every track added to the library gets (`{"hash": ...}` as payload,
+seedbox2.library.importer.queue_analysis).
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ class JobType:
     pool: str  # heavy: stems, full renders (RAM-heavy, one at a time); light: beats, key, waveforms, embeddings, plans
     target: str  # "module:qualname" of the job function
     resumable: bool = True  # re-run from the start after a restart that interrupted it (else: marked failed)
+    per_track: bool = False  # an analysis queued for every new track, with payload {"hash": ...} (#40)
 
 
 def target_of(fn: Callable[..., Any]) -> str:
@@ -53,18 +57,20 @@ class Registry:
     def __init__(self) -> None:
         self._types: dict[str, JobType] = {}
 
-    def add(self, name: str, fn: Callable[..., Any] | str, *, pool: str = "light", resumable: bool = True) -> JobType:
+    def add(self, name: str, fn: Callable[..., Any] | str, *, pool: str = "light", resumable: bool = True,
+            per_track: bool = False) -> JobType:  # fmt: skip
         if pool not in POOLS:
             raise ValueError(f"pool must be one of {POOLS}")
-        job_type = JobType(name, pool, fn if isinstance(fn, str) else target_of(fn), resumable)
+        job_type = JobType(name, pool, fn if isinstance(fn, str) else target_of(fn), resumable, per_track)
         self._types[name] = job_type
         return job_type
 
-    def register(self, name: str, *, pool: str = "light", resumable: bool = True) -> Callable[[Callable], Callable]:
+    def register(self, name: str, *, pool: str = "light", resumable: bool = True,
+                 per_track: bool = False) -> Callable[[Callable], Callable]:  # fmt: skip
         """Decorator form of `add`."""
 
         def deco(fn: Callable[..., Any]) -> Callable[..., Any]:
-            self.add(name, fn, pool=pool, resumable=resumable)
+            self.add(name, fn, pool=pool, resumable=resumable, per_track=per_track)
             return fn
 
         return deco
@@ -80,6 +86,10 @@ class Registry:
 
     def names(self) -> list[str]:
         return sorted(self._types)
+
+    def per_track(self) -> list[JobType]:
+        """The analyses every new track gets: light ones first, then heavy ones (stems), each by name."""
+        return sorted((t for t in self._types.values() if t.per_track), key=lambda t: (t.pool != "light", t.name))
 
 
 REGISTRY = Registry()  # the app's job types; each analysis module registers its own on import

@@ -44,3 +44,41 @@ def start_jobs(app: Any) -> Supervisor:
 
 
 JobsDep = Annotated[Supervisor, Depends(get_jobs)]
+
+
+def get_local_music(request: Request) -> Any:
+    return local_music(request.app)
+
+
+def local_music(app: Any) -> Any:
+    """The app's LocalMusic (watch folders, imports of files and Rekordbox/iTunes XML), made on first use. New
+    tracks get their analyses queued on the job Supervisor. Its settings.json and artwork live next to the
+    library file."""
+    from seedbox2 import paths
+    from seedbox2.jobs import REGISTRY
+    from seedbox2.library.importer import queue_analysis
+    from seedbox2.library.service import SETTINGS_FILE, LocalMusic, Settings
+
+    state = app.state
+    if state.local_music is None:
+        with _open_lock:
+            if state.local_music is None:
+                if state.library is None:
+                    state.library = Library.open(Path(state.library_path) if state.library_path else default_path())
+                lib = state.library
+                data = Path(lib.db.path).parent
+
+                def on_new(hashes: list[str]) -> None:
+                    if REGISTRY.per_track():  # no analysis registered yet: don't start the workers for nothing
+                        queue_analysis(start_jobs(app), hashes)
+
+                def publish(status: dict) -> None:
+                    state.events.publish("library.import", status)
+
+                state.local_music = LocalMusic(lib, settings=Settings(data / SETTINGS_FILE),
+                                               music_dir=paths.folders()["music"], artwork_dir=data / "artwork",
+                                               on_new=on_new, publish=publish)  # fmt: skip
+    return state.local_music
+
+
+LocalMusicDep = Annotated[Any, Depends(get_local_music)]

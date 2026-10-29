@@ -4,6 +4,9 @@
 - `hashing`: the content hash that survives retagging and renames
 - `repo`: `Library`, the repository the server routers and jobs use (no SQL outside this package)
 - `import_seedbox1`: read-only import of Seedbox 1's crates, sets and user-edited mix plans
+- local music (#40): `tags` (mutagen, tags as hints), `importer` (files and folders, analysis queueing), `watch`
+  (watch folders with watchdog), `playlists_xml` (Rekordbox and iTunes/Music XML as crates), `service` (what the
+  server runs: settings, the import queue, the watcher)
 """
 
 from __future__ import annotations

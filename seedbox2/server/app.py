@@ -24,13 +24,15 @@ DEV_ORIGINS = ["http://localhost:5174", "http://127.0.0.1:5174"]  # frontend2's 
 
 
 def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s: float = HEARTBEAT_S,
-               library_path: Path | None = None, start_jobs: bool = False) -> FastAPI:
+               library_path: Path | None = None, start_jobs: bool = False, watch_folders: bool = False) -> FastAPI:
     """The Seedbox 2 API under /api, and the built frontend at / when `static_dir` (a Vite dist/) is given.
 
     Routers reach shared state through `request.app.state`: `events` (the EventBus), `static_dir` and the library
     (`seedbox2.server.deps.get_library`: `library_path`, default library.sqlite3 in the support folder, opened on
     first use and closed on shutdown) and `jobs` (`seedbox2.server.deps.get_jobs`: the job Supervisor, started on
-    first use, or with the server when `start_jobs`, so jobs left from the last run carry on; stopped on shutdown).
+    first use, or with the server when `start_jobs`, so jobs left from the last run carry on; stopped on shutdown)
+    and `local_music` (`seedbox2.server.deps.local_music`: imports, and the watch folders, scanned and watched from
+    the start when `watch_folders`).
     """
     app = FastAPI(title="Seedbox 2", version=__version__, docs_url="/api/docs" if dev else None, redoc_url=None,
                   openapi_url="/api/openapi.json" if dev else None, lifespan=_lifespan)  # fmt: skip
@@ -40,6 +42,8 @@ def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s
     app.state.library = None
     app.state.jobs = None
     app.state.start_jobs = start_jobs
+    app.state.local_music = None
+    app.state.watch_folders = watch_folders
     if dev:
         app.add_middleware(CORSMiddleware, allow_origins=DEV_ORIGINS, allow_methods=["*"], allow_headers=["*"])
     _add_error_handlers(app)
@@ -56,7 +60,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         from seedbox2.server.deps import start_jobs
 
         threading.Thread(target=start_jobs, args=(app,), name="seedbox2-jobs-start", daemon=True).start()
+    if app.state.watch_folders:
+        from seedbox2.server.deps import local_music
+
+        threading.Thread(target=lambda: local_music(app).start_watching(), name="seedbox2-watch-start",
+                         daemon=True).start()  # fmt: skip
     yield
+    if app.state.local_music is not None:
+        app.state.local_music.close()
+        app.state.local_music = None
     if app.state.jobs is not None:
         app.state.jobs.stop()
         app.state.jobs = None

@@ -29,6 +29,54 @@ export interface SystemFolders {
   music: string; // the music library shared with Seedbox 1
 }
 
+// ---- Library: GET /api/library, /api/library/tracks, /api/library/folders, /api/library/import (#38, #40) ----
+
+export interface LibrarySummary {
+  path: string;
+  tracks: number;
+  track_paths: number;
+  crates: number;
+  sets: number;
+}
+
+export interface LibraryTrack {
+  hash: string;
+  duration: number;
+  title: string;
+  artist: string;
+  album: string;
+  /** Hints, not truth: `file` (the file's own tags), `rekordbox`, `itunes`, `tunebat`, `artwork` (a path). */
+  tags: Record<string, unknown> & { file?: Record<string, unknown> };
+  source: string; // local, seedbox1, rekordbox, itunes...
+  added_at: string;
+}
+
+export interface WatchFolders {
+  folders: { path: string; exists: boolean }[];
+  scanning: string | null;
+}
+
+/** The latest import, from GET /api/library/import and the `library.import` events. */
+export interface ImportStatus {
+  state: "idle" | "queued" | "running" | "done" | "failed";
+  kind?: "files" | "xml" | "watch" | string;
+  label?: string;
+  folder?: string | null;
+  done?: number;
+  total?: number | null;
+  file?: string;
+  files?: number;
+  added?: number;
+  updated?: number;
+  removed?: number;
+  crates?: number;
+  tracks?: number;
+  missing?: number;
+  error_count?: number;
+  errors?: string[];
+  error?: string;
+}
+
 // ---- Server-sent events: GET /api/events (text/event-stream, one JSON object per `data:` line) ----
 
 export interface ServerEvent {

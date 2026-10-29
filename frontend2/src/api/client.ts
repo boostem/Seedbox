@@ -3,7 +3,7 @@
  * show an error toast, unless `{ quiet: true }` (then the caller handles it).
  */
 import { toast } from "@/store/toasts";
-import type { Health, SystemInfo } from "./types";
+import type { Health, ImportStatus, LibrarySummary, LibraryTrack, SystemInfo, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -84,6 +84,33 @@ export const api = {
   system: (opts?: RequestOptions) => get<SystemInfo>("/api/system", opts),
   /** Show a file or folder (inside Seedbox 2's folders) in Finder / Explorer / the file manager. */
   reveal: (path: string, opts?: RequestOptions) => post<{ ok: boolean }>("/api/system/reveal", { path }, opts),
+  library: {
+    summary: (opts?: RequestOptions) => get<LibrarySummary>("/api/library", opts),
+    tracks: (q: { search?: string; limit?: number; offset?: number } = {}, opts?: RequestOptions) => {
+      const params = new URLSearchParams({ search: q.search ?? "", limit: String(q.limit ?? 200), offset: String(q.offset ?? 0) });
+      return get<{ total: number; items: LibraryTrack[] }>(`/api/library/tracks?${params}`, opts);
+    },
+    folders: (opts?: RequestOptions) => get<WatchFolders>("/api/library/folders", opts),
+    addFolder: (path: string, opts?: RequestOptions) => post<WatchFolders>("/api/library/folders", { path }, opts),
+    removeFolder: (path: string, opts?: RequestOptions) => post<WatchFolders>("/api/library/folders/remove", { path }, opts),
+    importStatus: (opts?: RequestOptions) => get<ImportStatus>("/api/library/import", opts),
+    /** Import files and folders by path (the window's drop handler does this from Python). */
+    importPaths: (paths: string[], opts?: RequestOptions) => post<ImportStatus>("/api/library/import", { paths }, opts),
+    importXml: (path: string, opts?: RequestOptions) => post<ImportStatus>("/api/library/import/xml", { path }, opts),
+    /** The OS's folder or file dialog (only in the app's window: 501 in a browser). */
+    choose: (kind: "folder" | "xml", opts?: RequestOptions) => post<{ paths: string[] }>("/api/library/choose", { kind }, opts),
+    /** A file dropped in a browser, which gives us its bytes but not its path. */
+    upload: async (file: File, opts?: RequestOptions): Promise<ImportStatus> => {
+      const res = await fetch(apiUrl(`/api/library/upload?name=${encodeURIComponent(file.name)}`), { method: "POST", body: file, signal: opts?.signal });
+      const data = (await res.json().catch(() => null)) as unknown;
+      if (!res.ok) {
+        const err = new ApiError(res.status, messageFrom(data, `upload of ${file.name} failed (${res.status})`), data);
+        if (!opts?.quiet) toast.error(err.message, { key: "upload" });
+        throw err;
+      }
+      return data as ImportStatus;
+    },
+  },
 };
 
 /** Turns an audio path from the API into a playable src. */

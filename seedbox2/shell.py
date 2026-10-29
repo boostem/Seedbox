@@ -123,7 +123,7 @@ def start_api(args: argparse.Namespace) -> Any:
         log.warning("no built frontend found (frontend2/dist); the window will only show the API")
     t0 = time.monotonic()
     handle = start_server(static, port=port, dev=args.dev, log_level="debug" if args.debug else "warning",
-                          start_jobs=True)
+                          start_jobs=True, watch_folders=True)
     wait_healthy(handle.url, alive=lambda: handle.running)
     log.info("Seedbox 2 %s API on %s (%.2fs, static=%s)", __version__, handle.url, time.monotonic() - t0, static)
     return handle
@@ -240,6 +240,35 @@ def _dark_title_bar_windows(window: Any) -> None:
     dwm.DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, ctypes.byref(color), ctypes.sizeof(color))
 
 
+def dropped_paths(event: dict) -> list[str]:
+    """The real paths of the files and folders in a pywebview `drop` event (the page itself only sees names)."""
+    files = (event.get("dataTransfer") or {}).get("files") or []
+    return [f["pywebviewFullPath"] for f in files if isinstance(f, dict) and f.get("pywebviewFullPath")]
+
+
+def _accept_drops(window: Any, api_url: str) -> None:
+    """Files and folders dropped onto the window go to POST /api/library/import (#40). Registered on every page
+    load; the page shows the drop overlay and the import's progress."""
+    from webview.dom import DOMEventHandler
+
+    def on_drop(event: dict) -> None:
+        paths = dropped_paths(event)
+        if not paths:
+            return
+        req = urllib.request.Request(f"{api_url}/api/library/import", data=json.dumps({"paths": paths}).encode(),
+                                     headers={"Content-Type": "application/json"}, method="POST")  # fmt: skip
+        try:
+            with urllib.request.urlopen(req, timeout=10):  # noqa: S310 - our own localhost server
+                pass
+        except OSError as e:
+            log.warning("importing %d dropped items failed: %s", len(paths), e)
+
+    try:
+        window.dom.document.events.drop += DOMEventHandler(on_drop, prevent_default=True)
+    except Exception:  # noqa: BLE001 - an old pywebview without DOM events: dropping does nothing
+        log.exception("can't accept dropped files")
+
+
 def _rename_menu_app() -> None:
     """macOS from source: the menu bar says "Python"; call it Seedbox 2."""
     if frozen() or sys.platform != "darwin":
@@ -310,6 +339,8 @@ def run_window(args: argparse.Namespace, log_file: Path) -> int:
             handle.stop(timeout=4.0)
 
     window.events.before_show += _dark_window
+    if handle is not None:
+        window.events.loaded += lambda: _accept_drops(window, handle.url)
     window.events.closing += shutdown
     icon = icon_path()
     webview.start(gui=gui_backend(), debug=bool(args.dev or args.debug),
