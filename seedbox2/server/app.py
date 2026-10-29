@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -20,15 +22,20 @@ log = logging.getLogger(__name__)
 DEV_ORIGINS = ["http://localhost:5174", "http://127.0.0.1:5174"]  # frontend2's Vite (Seedbox 1's is on 5173)
 
 
-def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s: float = HEARTBEAT_S) -> FastAPI:
+def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s: float = HEARTBEAT_S,
+               library_path: Path | None = None) -> FastAPI:
     """The Seedbox 2 API under /api, and the built frontend at / when `static_dir` (a Vite dist/) is given.
 
-    Routers reach shared state through `request.app.state`: `events` (the EventBus) and `static_dir`.
+    Routers reach shared state through `request.app.state`: `events` (the EventBus), `static_dir` and the library
+    (`seedbox2.server.deps.get_library`: `library_path`, default library.sqlite3 in the support folder, opened on
+    first use and closed on shutdown).
     """
     app = FastAPI(title="Seedbox 2", version=__version__, docs_url="/api/docs" if dev else None, redoc_url=None,
-                  openapi_url="/api/openapi.json" if dev else None)  # fmt: skip
+                  openapi_url="/api/openapi.json" if dev else None, lifespan=_lifespan)  # fmt: skip
     app.state.events = EventBus(heartbeat_s=heartbeat_s)
     app.state.static_dir = Path(static_dir) if static_dir is not None else None
+    app.state.library_path = Path(library_path) if library_path is not None else None
+    app.state.library = None
     if dev:
         app.add_middleware(CORSMiddleware, allow_origins=DEV_ORIGINS, allow_methods=["*"], allow_headers=["*"])
     _add_error_handlers(app)
@@ -37,6 +44,14 @@ def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s
     if static_dir is not None:
         _add_spa(app, Path(static_dir))
     return app
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    yield
+    if app.state.library is not None:
+        app.state.library.close()
+        app.state.library = None
 
 
 def _inside(path: Path, root: Path) -> bool:

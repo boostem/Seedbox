@@ -28,7 +28,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -48,6 +48,14 @@ ffmpeg and deno are found on the PATH or in the usual package manager folders of
 **What's there so far** (#36): the server (`seedbox2/server/`: `/api/health`, `/api/system`, the `/api/events`
 stream and one empty router per area) and the `frontend2/` app shell (sidebar, hash router, a placeholder page per
 area, `#/system`, and `#/ui` with the design tokens and the waveform). The other tickets fill in the areas.
+
+**The library** (#38, `seedbox2/library/`): `library.sqlite3` in the support folder (WAL), keyed by a SHA-1 of
+the decoded audio (duration and the first and last 30 s of PCM), so retagging, renaming or moving a file keeps its
+analyses. `db.py` holds the schema as numbered migrations (`PRAGMA user_version`; append, never edit) and the
+connections: one writer shared by all threads behind a lock, a read-only connection per thread; worker processes
+open their own. `repo.Library` is the only way in (no SQL in the routers). `POST /api/library/import/seedbox1`
+(optionally `{"root": "<crates folder>"}`) imports Seedbox 1's crates, their running order as sets and its edited
+mix plans, without writing to Seedbox 1's files; importing again updates them and keeps plans edited here since.
 
 ## Evaluating the analysis
 
