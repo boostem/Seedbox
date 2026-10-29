@@ -36,7 +36,7 @@ export function Tabs<T extends string>({ items, value, onChange, variant = "unde
             onClick={() => onChange(id)}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-xs font-medium transition-colors disabled:opacity-40",
-              size === "sm" ? "h-[22px] px-2 text-xs" : "h-7 px-3 text-sm",
+              size === "sm" ? "h-control-sm px-2 text-xs" : "h-control-md px-3 text-sm",
               value === id ? "bg-overlay text-fg shadow-card" : "text-fg-subtle hover:text-fg-muted",
             )}
           >

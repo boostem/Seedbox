@@ -17,7 +17,7 @@ export interface ModalProps {
   dismissable?: boolean;
 }
 
-const WIDTH = { sm: "w-[380px]", md: "w-[520px]", lg: "w-[720px]", xl: "w-[960px]" };
+const WIDTH = { sm: "w-sm", md: "w-lg", lg: "w-3xl", xl: "w-5xl" };
 
 /** Modal dialog on native <dialog> (focus trap, Esc to close). Global hotkeys pause while it's open. */
 export function Modal({ open, onClose, title, description, children, footer, size = "md", className, dismissable = true }: ModalProps) {
@@ -40,7 +40,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       onMouseDown={(e) => {
         if (dismissable && e.target === ref.current) onClose();
       }}
-      className={cn("m-auto max-h-[85vh] max-w-[92vw] overflow-hidden rounded-lg bg-overlay p-0 text-fg shadow-pop", WIDTH[size], className)}
+      className={cn("m-auto max-h-[85vh] max-w-[92vw] overflow-hidden rounded-lg bg-overlay p-0 text-fg shadow-modal", WIDTH[size], className)}
     >
       <div className="flex max-h-[85vh] flex-col">
         {(title || description) && (

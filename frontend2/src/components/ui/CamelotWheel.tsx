@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { CAMELOT_CODES, camelotAdjacent, keyColor, parseCamelot } from "@/lib/camelot";
 import { cn } from "@/lib/cn";
+import { textPx } from "@/lib/theme";
 
 export interface CamelotWheelProps {
   size?: number;
@@ -62,7 +63,7 @@ export function CamelotWheel({ size = 220, counts, active, path, onSelect, cente
             d={sector(c, c, s.r0, s.r1, s.a - s.half, s.a + s.half)}
             fill={s.col.base}
             fillOpacity={s.isActive ? 1 : s.lit ? (counts ? 0.82 : 0.7) : 0.13}
-            stroke={s.isActive ? "#fff" : s.related ? s.col.base : "none"}
+            stroke={s.isActive ? "var(--color-white)" : s.related ? s.col.base : "none"}
             strokeWidth={s.isActive ? 2 : 1.25}
             strokeOpacity={s.related ? 1 : undefined}
           >
@@ -73,7 +74,7 @@ export function CamelotWheel({ size = 220, counts, active, path, onSelect, cente
             y={centers[s.code][1]}
             textAnchor="middle"
             dominantBaseline="central"
-            fontSize={Math.max(8, size * (s.p.letter === "B" ? 0.05 : 0.045))}
+            fontSize={textPx(size * (s.p.letter === "B" ? 0.05 : 0.045))}
             fontWeight={650}
             fill={s.lit || s.isActive ? s.col.solidFg : s.col.base}
             fillOpacity={s.lit || s.isActive ? 0.92 : 0.7}
@@ -85,7 +86,7 @@ export function CamelotWheel({ size = 220, counts, active, path, onSelect, cente
             <text
               x={polar(c, c, s.r1 - 4, s.a + s.half - 0.06)[0]}
               y={polar(c, c, s.r1 - 4, s.a + s.half - 0.06)[1]}
-              fontSize={Math.max(7, size * 0.032)}
+              fontSize={textPx(size * 0.032)}
               textAnchor="middle"
               dominantBaseline="central"
               fill={s.col.solidFg}
@@ -99,14 +100,14 @@ export function CamelotWheel({ size = 220, counts, active, path, onSelect, cente
       ))}
       {pts.length > 1 && (
         <g className="pointer-events-none">
-          <polyline points={pts.map(([x, y]) => `${x},${y}`).join(" ")} fill="none" stroke="#fff" strokeOpacity={0.85} strokeWidth={1.5} strokeLinejoin="round" />
+          <polyline points={pts.map(([x, y]) => `${x},${y}`).join(" ")} fill="none" stroke="var(--color-white)" strokeOpacity={0.85} strokeWidth={1.5} strokeLinejoin="round" />
           {pts.map(([x, y], i) => (
-            <circle key={i} cx={x} cy={y} r={i === 0 ? 3.5 : 2.2} fill={i === 0 ? "#fff" : "var(--color-bg)"} stroke="#fff" strokeWidth={1.2} />
+            <circle key={i} cx={x} cy={y} r={i === 0 ? 3.5 : 2.2} fill={i === 0 ? "var(--color-white)" : "var(--color-bg)"} stroke="var(--color-white)" strokeWidth={1.2} />
           ))}
         </g>
       )}
       <circle cx={c} cy={c} r={R * 0.42 - 3} fill="var(--color-panel)" stroke="var(--color-line)" />
-      <text x={c} y={c} textAnchor="middle" dominantBaseline="central" fontSize={size * 0.085} fontWeight={700} fill={act ? keyColor(act).base : "var(--color-fg-subtle)"} className="num">
+      <text x={c} y={c} textAnchor="middle" dominantBaseline="central" fontSize={textPx(size * 0.085)} fontWeight={700} fill={act ? keyColor(act).base : "var(--color-fg-subtle)"} className="num">
         {center ?? act ?? ""}
       </text>
     </svg>

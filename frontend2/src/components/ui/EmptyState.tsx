@@ -22,7 +22,7 @@ export function EmptyState({ icon: Icon, title, description, action, compact, cl
         </div>
       )}
       <div className={cn("font-medium text-fg", compact ? "text-sm" : "text-md")}>{title}</div>
-      {description && <div className={cn("max-w-[420px] text-fg-subtle", compact ? "text-xs" : "text-sm")}>{description}</div>}
+      {description && <div className={cn("max-w-md text-fg-subtle", compact ? "text-xs" : "text-sm")}>{description}</div>}
       {action && <div className="mt-1.5 flex items-center gap-2">{action}</div>}
     </div>
   );

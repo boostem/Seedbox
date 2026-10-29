@@ -35,7 +35,7 @@ export function ProgressBar({ value, tone = "accent", size = "sm", className, la
       {indeterminate ? (
         <div className={cn("absolute inset-y-0 w-2/5 rounded-full animate-indeterminate", FILL[tone])} />
       ) : (
-        <div className={cn("h-full rounded-full transition-[width] duration-300 ease-out", FILL[tone])} style={{ width: `${pct}%` }} />
+        <div className={cn("h-full rounded-full transition-[width] duration-slow ease-standard", FILL[tone])} style={{ width: `${pct}%` }} />
       )}
     </div>
   );

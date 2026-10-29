@@ -9,7 +9,7 @@ export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "outl
 export type ButtonSize = "xs" | "sm" | "md" | "lg";
 
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-accent-fg hover:bg-accent-hover active:brightness-95 shadow-[0_1px_0_rgb(255_255_255/0.15)_inset]",
+  primary: "bg-accent text-accent-fg hover:bg-accent-hover active:brightness-95 shadow-highlight",
   secondary: "bg-raised text-fg border border-line-strong hover:bg-overlay hover:border-fg-faint active:bg-raised",
   outline: "text-fg-muted border border-line-strong hover:text-fg hover:bg-raised",
   ghost: "text-fg-muted hover:text-fg hover:bg-raised active:bg-overlay",
@@ -17,10 +17,10 @@ const VARIANT: Record<ButtonVariant, string> = {
 };
 
 const SIZE: Record<ButtonSize, string> = {
-  xs: "h-6 px-2 gap-1 text-xs rounded-sm",
-  sm: "h-7 px-2.5 gap-1.5 text-sm rounded-sm",
-  md: "h-8 px-3 gap-2 text-base rounded-md",
-  lg: "h-10 px-4 gap-2 text-md rounded-md",
+  xs: "h-control-sm px-2 gap-1 text-xs rounded-sm",
+  sm: "h-control-md px-2.5 gap-1.5 text-sm rounded-sm",
+  md: "h-control-lg px-3 gap-2 text-base rounded-md",
+  lg: "h-control-xl px-4 gap-2 text-md rounded-md",
 };
 
 const ICON_SIZE: Record<ButtonSize, number> = { xs: 12, sm: 14, md: 15, lg: 16 };
@@ -44,7 +44,7 @@ export function Button({ variant = "secondary", size = "sm", icon: Icon, iconRig
       type={type}
       disabled={disabled || loading}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center font-medium whitespace-nowrap transition-colors duration-100 select-none",
+        "inline-flex shrink-0 items-center justify-center font-medium whitespace-nowrap transition-colors select-none",
         "disabled:pointer-events-none disabled:opacity-40",
         VARIANT[variant],
         SIZE[size],
@@ -73,10 +73,10 @@ export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
 }
 
 const ICON_BTN: Record<ButtonSize, string> = {
-  xs: "size-5 rounded-xs",
-  sm: "size-6 rounded-sm",
-  md: "size-7 rounded-sm",
-  lg: "size-9 rounded-md",
+  xs: "size-5 rounded-xs", // inside a dense row, below the control scale
+  sm: "size-control-sm rounded-sm",
+  md: "size-control-md rounded-sm",
+  lg: "size-control-xl rounded-md",
 };
 
 /** Square icon-only button with tooltip. `active` = toggled on (e.g. grid/list view). */
@@ -88,7 +88,7 @@ export function IconButton({ icon: Icon, label, tooltip, variant = "ghost", size
       aria-pressed={active}
       disabled={disabled || loading}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center transition-colors duration-100 disabled:pointer-events-none disabled:opacity-40",
+        "inline-flex shrink-0 items-center justify-center transition-colors disabled:pointer-events-none disabled:opacity-40",
         variant === "ghost" ? "text-fg-muted hover:bg-raised hover:text-fg" : VARIANT[variant],
         active && "bg-overlay text-fg",
         ICON_BTN[size],

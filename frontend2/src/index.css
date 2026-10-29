@@ -1,11 +1,12 @@
 @import "tailwindcss";
 
 /*
- * Seedbox design tokens. Tailwind's default colour palette is removed on purpose: use these tokens
- * (bg-surface, text-fg-muted, border-line, text-move-same, …) so every screen stays on one system.
- * Camelot key colours live in src/lib/camelot.ts (single source; injected as --camelot-<code> vars at startup).
+ * Seedbox 2 design tokens: design language v2, documented in DESIGN2.md. Tailwind's default colour palette is
+ * removed on purpose: use these tokens (bg-surface, text-fg-muted, h-control-md, duration-fast, z-toast, …) so every
+ * screen stays on one system. This file is the only place a hex colour may appear (src/design-tokens.test.ts checks).
+ * Camelot key colours are computed in src/lib/camelot.ts (12 hues; injected as --camelot-<code> vars at startup).
  */
-@theme {
+@theme static {
   --color-*: initial;
   --color-white: #ffffff;
   --color-black: #000000;
@@ -27,18 +28,35 @@
   --color-fg-subtle: #6f7682;
   --color-fg-faint: #474d57;
 
-  /* brand accent (indigo — deliberately not one of the move colours) */
+  /* the one accent (indigo: never a music or a status colour) */
   --color-accent: #6f7dff;
   --color-accent-hover: #8a96ff;
   --color-accent-soft: #6f7dff26;
   --color-accent-fg: #ffffff;
   --color-focus: #9aa4ff;
+  --color-brand-deep: #5a3bd8; /* the logo gradient's dark end, nowhere else */
 
-  /* status */
+  /* status: the state of the app (jobs, health, errors). Never on music data */
   --color-ok: #3ddc97;
   --color-warn: #f5b841;
   --color-danger: #ff4d6a;
   --color-info: #4cc9f0;
+
+  /* music: what is in the track. Never means good or bad */
+  --color-section-intro: #3fb8af;
+  --color-section-build: #b07cf0;
+  --color-section-drop: #ef5da8;
+  --color-section-breakdown: #5a9fe0;
+  --color-section-body: #6f7682;
+  --color-section-outro: #3fb8af;
+  --color-phrase: #dfe3ea; /* phrase lines (every 8 bars) and their numbers; bars use fg at low alpha */
+  --color-cue-mix: #9be564; /* mix-in / mix-out cues; other cues take their section's colour */
+  --color-stem-drums: #f2c14e;
+  --color-stem-bass: #4d7cfe;
+  --color-stem-vocals: #e26ee5;
+  --color-stem-other: #45c4a0; /* melody, pads, everything else */
+  --color-key-unknown: #8a909b; /* "?" key; the 24 Camelot colours come from src/lib/camelot.ts */
+  --color-on-key: #0b0c0e; /* text on a filled key colour */
 
   /* Camelot moves (README "Score and colours") */
   --color-move-same: #3ddc84; /* same key — green */
@@ -55,7 +73,7 @@
   --color-wave-played: #6f7682;
   --color-playhead: #ffffff;
 
-  /* type: system UI font (SF Pro in the macOS webview), 13px dense base */
+  /* type: system UI font (SF Pro in the macOS webview), 13px dense base, nothing under 10px (canvas included) */
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
   --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
   --text-2xs: 10px;
@@ -74,6 +92,15 @@
   --text-xl--line-height: 26px;
   --text-2xl: 26px;
   --text-2xl--line-height: 32px;
+  --tracking-caps: 0.08em;
+
+  /* sizes: spacing stays Tailwind's 4px grid (p-2 = 8px, h-4.5 = 18px); these name the ones with a role */
+  --spacing-control-sm: 24px; /* small buttons, tabs, inputs in toolbars */
+  --spacing-control-md: 28px; /* the default button, input, select */
+  --spacing-control-lg: 32px; /* top bar, prominent inputs */
+  --spacing-control-xl: 40px; /* primary call to action, transport */
+  --spacing-sidebar: 212px;
+  --container-toast: 360px;
 
   --radius-xs: 2px;
   --radius-sm: 3px;
@@ -81,12 +108,30 @@
   --radius-lg: 8px;
   --radius-xl: 12px;
 
-  --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.55), 0 0 0 1px var(--color-line-strong);
+  /* elevation, lowest → highest; z-index follows the same order (--z-* below) */
+  --shadow-hairline: inset 0 0 0 1px rgb(255 255 255 / 0.06); /* artwork edge */
+  --shadow-highlight: inset 0 1px 0 rgb(255 255 255 / 0.15); /* top light on a filled button */
   --shadow-card: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-knob: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.55), 0 0 0 1px var(--color-line-strong);
+  --shadow-modal: 0 24px 64px rgb(0 0 0 / 0.65), 0 0 0 1px var(--color-line-strong);
+  --shadow-selected-edge: inset 2px 0 0 var(--color-accent);
+
+  /* motion: fast for state (hover, press, toggle), base for things that appear, slow for panels and layout */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  /* a damped spring (ζ ≈ 0.72, 4 % overshoot) for panels sliding in; use with duration-slow */
+  --ease-spring: linear(0, 0.048, 0.161, 0.305, 0.455, 0.596, 0.719, 0.819, 0.897, 0.954, 0.994, 1.019, 1.032, 1.038, 1.038, 1.035, 1.03, 1.024, 1.018, 1.013, 1);
+  --default-transition-duration: var(--duration-fast);
+  --default-transition-timing-function: var(--ease-standard);
 
   --animate-pulse-soft: pulse-soft 1.6s ease-in-out infinite;
   --animate-indeterminate: indeterminate 1.2s ease-in-out infinite;
-  --animate-toast-in: toast-in 160ms ease-out;
+  --animate-toast-in: toast-in var(--duration-base) var(--ease-enter);
   @keyframes pulse-soft {
     0%,
     100% {
@@ -116,11 +161,46 @@
   }
 }
 
+/* z-index scale (Tailwind has no theme namespace for it): z-sticky, z-dropdown, z-modal, z-toast, z-tooltip */
+:root {
+  --z-sticky: 10;
+  --z-dropdown: 100;
+  --z-modal: 200;
+  --z-toast: 300;
+  --z-tooltip: 400;
+}
+@utility z-sticky {
+  z-index: var(--z-sticky);
+}
+@utility z-dropdown {
+  z-index: var(--z-dropdown);
+}
+@utility z-modal {
+  z-index: var(--z-modal);
+}
+@utility z-toast {
+  z-index: var(--z-toast);
+}
+@utility z-tooltip {
+  z-index: var(--z-tooltip);
+}
+
+/* motion durations (Tailwind's duration-* only takes numbers): duration-fast, duration-base, duration-slow */
+@utility duration-fast {
+  transition-duration: var(--duration-fast);
+}
+@utility duration-base {
+  transition-duration: var(--duration-base);
+}
+@utility duration-slow {
+  transition-duration: var(--duration-slow);
+}
+
 /* small uppercase section label: "LIBRARY", table group headers, field labels */
 @utility label-caps {
   font-size: var(--text-2xs);
   line-height: var(--text-2xs--line-height);
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   font-weight: 600;
   color: var(--color-fg-subtle);
@@ -198,6 +278,15 @@
   }
   ::-webkit-scrollbar-corner {
     background: transparent;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      transition-duration: 1ms !important;
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+    }
   }
   dialog::backdrop {
     background: rgb(0 0 0 / 0.6);

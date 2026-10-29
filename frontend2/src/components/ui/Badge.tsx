@@ -31,7 +31,7 @@ export function Badge({ tone = "neutral", variant = "soft", size = "sm", icon: I
     <span
       className={cn(
         "inline-flex shrink-0 items-center gap-1 rounded-xs font-medium whitespace-nowrap num",
-        size === "xs" ? "h-4 px-1 text-2xs" : "h-[18px] px-1.5 text-xs",
+        size === "xs" ? "h-4 px-1 text-2xs" : "h-4.5 px-1.5 text-xs",
         variant === "outline" ? "border" : "",
         TONE[tone][variant],
         className,
@@ -75,9 +75,9 @@ export function KeyBadge({ camelot, keyName, size = "sm", variant = "soft", move
       style={style}
       className={cn(
         "inline-flex shrink-0 items-center justify-center rounded-xs font-semibold tracking-tight num",
-        size === "xs" && "h-4 min-w-[26px] px-1 text-2xs",
-        size === "sm" && "h-[18px] min-w-[32px] px-1 text-xs",
-        size === "md" && "h-6 min-w-[40px] px-1.5 text-sm",
+        size === "xs" && "h-4 min-w-6.5 px-1 text-2xs",
+        size === "sm" && "h-4.5 min-w-8 px-1 text-xs",
+        size === "md" && "h-6 min-w-10 px-1.5 text-sm",
         variant === "text" && "min-w-0 px-0",
         dim && "opacity-55",
         className,
@@ -110,7 +110,7 @@ export function ScoreChip({ value, move = "?", passed = true, size = "sm", class
       }
       className={cn(
         "relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-xs font-semibold num",
-        size === "sm" ? "h-[18px] w-[30px] text-xs" : "h-6 w-9 text-sm",
+        size === "sm" ? "h-4.5 w-7.5 text-xs" : "h-6 w-9 text-sm",
         !passed && "opacity-75",
         className,
       )}
@@ -126,7 +126,7 @@ export function MoveChip({ move, size = "sm", showHelp = true, className }: { mo
   const color = moveColor(move);
   const chip = (
     <span
-      className={cn("inline-flex shrink-0 items-center gap-1 rounded-xs font-medium whitespace-nowrap", size === "xs" ? "h-4 px-1 text-2xs" : "h-[18px] px-1.5 text-xs", className)}
+      className={cn("inline-flex shrink-0 items-center gap-1 rounded-xs font-medium whitespace-nowrap", size === "xs" ? "h-4 px-1 text-2xs" : "h-4.5 px-1.5 text-xs", className)}
       style={{ color, background: `color-mix(in srgb, ${color} 12%, transparent)` }}
     >
       <span className="size-1.5 rounded-full" style={{ background: color }} />
@@ -149,7 +149,7 @@ export function StatusDot({ tone = "neutral", pulse, label, className }: { tone?
   };
   return (
     <span className={cn("inline-flex items-center gap-1.5", className)}>
-      <span className={cn("size-[7px] shrink-0 rounded-full", bg[tone], pulse && "animate-pulse-soft")} />
+      <span className={cn("size-1.75 shrink-0 rounded-full", bg[tone], pulse && "animate-pulse-soft")} />
       {label}
     </span>
   );

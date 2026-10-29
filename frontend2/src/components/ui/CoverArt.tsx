@@ -61,9 +61,9 @@ export function CoverArt({ src, size = 32, alt = "", camelot, rounded = "sm", cl
         draggable={false}
         onLoad={() => setLoaded(true)}
         onError={() => setFailed(true)}
-        className={cn("relative size-full object-cover transition-opacity duration-200", loaded ? "opacity-100" : "opacity-0")}
+        className={cn("relative size-full object-cover transition-opacity duration-base", loaded ? "opacity-100" : "opacity-0")}
       />
-      <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]" />
+      <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-hairline" />
     </div>
   );
 }

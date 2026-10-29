@@ -2,8 +2,8 @@
 
 > Copied from `frontend/DESIGN.md` when `frontend2/` was forked (#36). The tokens, components and conventions apply
 > as written. The sections on Seedbox 1's pages, mock mode and `deno task screenshot` describe `frontend/` only:
-> frontend2 has no mock mode yet, its dev server is on :5174 and it proxies `/api` to 127.0.0.1:8766. Design
-> language v2 (#71) replaces this file with `DESIGN2.md`.
+> frontend2 has no mock mode yet, its dev server is on :5174 and it proxies `/api` to 127.0.0.1:8766. The design
+> language (tokens, sizes, motion, colour roles) is in `DESIGN2.md` (#71), which replaces the Tokens section here.
 
 React 19 + TypeScript (strict) + Vite 8 + Tailwind 4, built with **Deno 2.9** (no Node). Read this before adding screens.
 
@@ -69,23 +69,10 @@ Route components and their props are fixed (the router in `App.tsx` renders them
 
 ## Tokens (`src/index.css` `@theme`)
 
-Tailwind's default palette is **removed** — only these colours exist (plus `white`/`black`):
-
-| Group | Utilities (`bg-*`, `text-*`, `border-*`, `fill-*`…) |
-|---|---|
-| Surfaces (dark→light) | `bg` window · `panel` sidebar/topbar/player/table header · `surface` page/cards/table body · `raised` inputs, hover · `overlay` menus/dialogs/toasts · `hover` row hover · `selected` selected row |
-| Lines | `line` default 1px · `line-strong` inputs/emphasis |
-| Text | `fg` primary · `fg-muted` secondary · `fg-subtle` labels/meta · `fg-faint` disabled/hints |
-| Accent | `accent`, `accent-hover`, `accent-soft`, `accent-fg`, `focus` (indigo — never a move colour) |
-| Status | `ok`, `warn`, `danger`, `info` |
-| Moves | `move-same` green · `move-step` cyan (±1) · `move-relative` yellow · `move-boost` magenta (+2/+7/diagonal) · `move-clash` red · `move-unknown` |
-| Waveform | `wave-low` blue · `wave-mid` amber · `wave-high` white · `wave-played` · `playhead` |
-
-Opacity modifiers work (`bg-danger/12`). Type: system font (SF Pro), **13 px base**; sizes `text-2xs` 10 ·
-`xs` 11 · `sm` 12 · `base` 13 · `md` 14 · `lg` 16 · `xl` 20 · `2xl` 26. Utilities: `num` (tabular numerals —
-use on every BPM/time/score/count), `label-caps` (10 px uppercase section label), `scroll-thin`. Radii `rounded-xs`
-2 · `sm` 3 · `md` 5 · `lg` 8. Shadows `shadow-card`, `shadow-pop`. Animations `animate-pulse-soft`,
-`animate-indeterminate`. For `<canvas>`, read resolved values with `cssVar()` (`lib/theme.ts`).
+See `DESIGN2.md`: type, spacing, control heights, radii, elevation and z-index, motion, and the colour roles
+(surfaces, text, accent, status, music). `src/design-tokens.test.ts` rejects arbitrary values and hex colours
+outside `index.css`. Utilities: `num` (tabular numerals — use on every BPM/time/score/count), `label-caps`,
+`scroll-thin`. For `<canvas>`, read resolved values with `cssVar()` (`lib/theme.ts`) or `wavePalette()`.
 
 ## Camelot & moves (single source: `lib/camelot.ts`, `lib/moves.ts`)
 

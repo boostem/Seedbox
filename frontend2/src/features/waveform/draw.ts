@@ -4,6 +4,7 @@
  * 1 + pitch%/100 for a pitched deck B). A View maps mix time → CSS px. Callers scale the context by the DPR.
  */
 import type { CuePoint, TrackAnalysis } from "@/api/types";
+import { textPx } from "@/lib/theme";
 import { alpha, cueColor, edgeColor, edgeWords, SECTION_LABEL, sectionColor, type WavePalette, wavePalette } from "./palette";
 import type { WaveData } from "./prepare";
 
@@ -28,7 +29,7 @@ export const xOf = (view: View, m: number) => (m - view.start) * view.pxPerSec;
 export const mixAt = (view: View, x: number) => view.start + x / view.pxPerSec;
 
 function font(p: WavePalette, size: number, weight = 600): string {
-  return `${weight} ${size}px ${p.font}`;
+  return `${weight} ${textPx(size)}px ${p.font}`;
 }
 
 // ------------------------------------------------------------------------------------------------ waveform
@@ -146,7 +147,7 @@ export function drawGrid(ctx: CanvasRenderingContext2D, lane: Lane, view: View, 
     if (x < -1 || x > view.width + 1) continue;
     if (isPhrase(k) && k >= off) {
       if (barPx * 8 < 6) continue;
-      ctx.fillStyle = alpha(p.fg, 0.3);
+      ctx.fillStyle = alpha(p.phrase, 0.3);
       ctx.fillRect(x, y, 1, h);
     } else if (barPx >= 6) {
       ctx.fillStyle = alpha(p.fg, barPx >= 18 ? 0.15 : 0.09);
@@ -154,7 +155,7 @@ export function drawGrid(ctx: CanvasRenderingContext2D, lane: Lane, view: View, 
     }
   }
   if (opts.labels) {
-    ctx.font = font(p, 9, 600);
+    ctx.font = font(p, 10, 600);
     ctx.textBaseline = "top";
     const every = [1, 2, 4, 8, 16, 32, 64].find((n) => barPx * n >= 30);
     if (every) {
@@ -162,7 +163,7 @@ export function drawGrid(ctx: CanvasRenderingContext2D, lane: Lane, view: View, 
         if ((((k - off) % every) + every) % every !== 0) continue;
         const x = xOf(view, toMix(lane, fd + k * an.bar_s));
         if (x < -20 || x > view.width) continue;
-        ctx.fillStyle = alpha(p.fg, isPhrase(k) ? 0.72 : 0.42);
+        ctx.fillStyle = isPhrase(k) ? alpha(p.phrase, 0.72) : alpha(p.fg, 0.42);
         ctx.fillText(String(k + 1), x + 3, opts.labelY ?? y + 2);
       }
     }
@@ -178,7 +179,7 @@ export function drawSections(ctx: CanvasRenderingContext2D, lane: Lane, view: Vi
   if (!an?.sections?.length) return;
   const p = wavePalette();
   ctx.save();
-  ctx.font = font(p, 9, 650);
+  ctx.font = font(p, 10, 650);
   ctx.textBaseline = "middle";
   for (const s of an.sections) {
     const x0 = xOf(view, toMix(lane, s.start_s));
@@ -226,7 +227,7 @@ export function drawEdges(ctx: CanvasRenderingContext2D, lane: Lane, view: View,
   if (!an) return boxes;
   const p = wavePalette();
   ctx.save();
-  ctx.font = font(p, 9, 650);
+  ctx.font = font(p, 10, 650);
   ctx.textBaseline = "top";
   for (const [name, e] of [["INTRO", an.intro], ["OUTRO", an.outro]] as const) {
     if (!e || e.bars <= 0 || e.end_s <= e.start_s) continue;
@@ -246,10 +247,10 @@ export function drawEdges(ctx: CanvasRenderingContext2D, lane: Lane, view: View,
       if (x1 - x0 >= tw + 10) {
         const lx = name === "INTRO" ? Math.max(x0 + 4, 4) : Math.min(x1 - tw - 4, view.width - tw - 4);
         ctx.fillStyle = alpha(p.bg, 0.72);
-        ctx.fillRect(lx - 3, y + 3, tw + 6, 12);
+        ctx.fillRect(lx - 3, y + 3, tw + 6, 13);
         ctx.fillStyle = col;
         ctx.fillText(text, lx, y + 4.5);
-        boxes.push({ x0: lx - 3, x1: lx + tw + 3, y0: y + 3, y1: y + 15 });
+        boxes.push({ x0: lx - 3, x1: lx + tw + 3, y0: y + 3, y1: y + 16 });
       }
     }
   }
@@ -283,8 +284,8 @@ interface CueMark {
   color: string;
 }
 
-const CUE_ROW_H = 14;
-const CUE_LABEL_H = 12;
+const CUE_ROW_H = 15;
+const CUE_LABEL_H = 13;
 
 /**
  * Row layout for cue labels: `rows[i]` holds the [x0, x1] spans taken in row i. Seeded with the boxes of labels drawn
@@ -324,7 +325,7 @@ export function drawCues(ctx: CanvasRenderingContext2D, lane: Lane, view: View, 
     marks.push({ x, label: c.label, color: cueColor(c.label, p) });
   }
   ctx.save();
-  ctx.font = font(p, 9.5, 600);
+  ctx.font = font(p, 10, 600);
   ctx.textBaseline = "middle";
   const top = y + (opts.topOffset ?? 0);
   const rows = cueLabelRows(opts.avoid ?? [], top);
@@ -356,7 +357,7 @@ export function drawCues(ctx: CanvasRenderingContext2D, lane: Lane, view: View, 
     ctx.fillStyle = m.color;
     ctx.fillRect(lx, ly, 2, CUE_LABEL_H);
     ctx.fillStyle = alpha(p.fg, 0.9);
-    ctx.fillText(m.label, lx + 5, ly + 6.5);
+    ctx.fillText(m.label, lx + 5, ly + CUE_LABEL_H / 2);
   }
   ctx.restore();
 }
@@ -386,7 +387,7 @@ export function drawTimeRuler(ctx: CanvasRenderingContext2D, view: View, y: numb
   const m0 = Math.max(opts.from ?? -Infinity, Math.floor(view.start / step) * step);
   const m1 = Math.min(opts.to ?? Infinity, mixAt(view, view.width));
   ctx.save();
-  ctx.font = font(p, 9, 500);
+  ctx.font = font(p, 10, 500);
   ctx.textBaseline = "middle";
   for (let m = m0; m <= m1; m += step) {
     const x = Math.round(xOf(view, m)) + 0.5;
