@@ -141,7 +141,12 @@ CREATE TABLE ratings (
 CREATE INDEX ratings_test ON ratings (test, subject);
 """
 
-MIGRATIONS: list[Migration] = [_V1]
+# v2 (#39): what a finished job returned (JSON), for the jobs that don't write it to the library themselves
+_V2 = """
+ALTER TABLE jobs ADD COLUMN result TEXT;
+"""
+
+MIGRATIONS: list[Migration] = [_V1, _V2]
 SCHEMA_VERSION = len(MIGRATIONS)
 
 

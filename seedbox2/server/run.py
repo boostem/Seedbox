@@ -62,12 +62,13 @@ def start_server(
     log_level: str = "warning",
     timeout: float = 15.0,
     library_path: Path | None = None,
+    start_jobs: bool = False,
 ) -> ServerHandle:
     """Start the API (and the built frontend) on a daemon thread; return once it accepts connections.
 
-    `port=0` picks a free port (read it from handle.port / handle.url). `library_path`: see create_app.
+    `port=0` picks a free port (read it from handle.port / handle.url). `library_path`, `start_jobs`: see create_app.
     """
-    app = create_app(static_dir, dev=dev, library_path=library_path)
+    app = create_app(static_dir, dev=dev, library_path=library_path, start_jobs=start_jobs)
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
