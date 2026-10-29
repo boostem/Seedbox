@@ -12,7 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from seedbox2 import __version__, app, shell
+from musicreco import paths as mpaths
+from seedbox2 import __version__, app, paths, shell
 from seedbox2.server import DEFAULT_PORT, start_server
 from seedbox2.server.routers import ROUTERS
 
@@ -25,18 +26,130 @@ def test_version_flag():
     assert out.stdout.strip() == f"Seedbox 2 {__version__}"
 
 
-def test_data_dirs_are_separate_from_seedbox1(tmp_path):
-    dirs = app.data_dirs(tmp_path)
+def test_data_dirs_are_separate_from_seedbox1():
+    dirs = app.data_dirs()
     assert set(dirs) == {"SEEDBOX_SUPPORT_DIR", "SEEDBOX_CACHE_DIR", "SEEDBOX_LOG_DIR"}
-    assert all(p.name == "Seedbox 2" for p in dirs.values())
+    assert all({"Seedbox 2", "seedbox2"} & set(p.parts) for p in dirs.values())
 
 
 def test_apply_data_dirs_keeps_overrides():
     env = {"SEEDBOX_CACHE_DIR": "/somewhere/else"}
     app.apply_data_dirs(env)
     assert env["SEEDBOX_CACHE_DIR"] == "/somewhere/else"
-    assert env["SEEDBOX_SUPPORT_DIR"].endswith("Seedbox 2")
-    assert env["SEEDBOX_LOG_DIR"].endswith("Seedbox 2")
+    assert env["SEEDBOX_SUPPORT_DIR"] == str(app.data_dirs()["SEEDBOX_SUPPORT_DIR"])
+    assert env["SEEDBOX_LOG_DIR"] == str(app.data_dirs()["SEEDBOX_LOG_DIR"])
+
+
+# ---------------------------------------------------------------- folders, binaries and the window per OS (#37)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="platformdirs' macOS and XDG rules, computed on a POSIX home")
+def test_data_dirs_follow_macos_and_xdg_conventions(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for var in ("XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME", "XDG_CONFIG_HOME"):
+        monkeypatch.delenv(var, raising=False)
+    lib = tmp_path / "Library"
+    assert paths.data_dirs("darwin") == {
+        "SEEDBOX_SUPPORT_DIR": lib / "Application Support" / "Seedbox 2",
+        "SEEDBOX_CACHE_DIR": lib / "Caches" / "Seedbox 2",
+        "SEEDBOX_LOG_DIR": lib / "Logs" / "Seedbox 2",
+    }
+    assert paths.data_dirs("linux") == {
+        "SEEDBOX_SUPPORT_DIR": tmp_path / ".local" / "share" / "seedbox2",
+        "SEEDBOX_CACHE_DIR": tmp_path / ".cache" / "seedbox2",
+        "SEEDBOX_LOG_DIR": tmp_path / ".local" / "state" / "seedbox2" / "log",
+    }
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
+    assert paths.data_dirs("linux")["SEEDBOX_CACHE_DIR"] == tmp_path / "xdg-cache" / "seedbox2"
+    assert paths.default_music_dir("darwin") == tmp_path / "Music" / "MusicReco"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows known folders")
+def test_data_dirs_on_windows_live_in_local_appdata():
+    local = Path(os.environ["LOCALAPPDATA"])
+    dirs = paths.data_dirs()
+    assert dirs["SEEDBOX_SUPPORT_DIR"] == local / "Seedbox 2"
+    assert dirs["SEEDBOX_CACHE_DIR"] == local / "Seedbox 2" / "Cache"
+    assert dirs["SEEDBOX_LOG_DIR"] == local / "Seedbox 2" / "Logs"
+    assert paths.default_music_dir().name == "MusicReco"
+
+
+def test_folders_take_the_environment_overrides(tmp_path):
+    env = {"SEEDBOX_SUPPORT_DIR": str(tmp_path / "s"), "SEEDBOX_LOG_DIR": " ", "MUSICRECO_OUTPUT_ROOT": str(tmp_path / "m")}
+    got = paths.folders(env)
+    assert got["settings"] == tmp_path / "s" and got["music"] == tmp_path / "m"
+    assert got["logs"] == paths.data_dirs()["SEEDBOX_LOG_DIR"]  # blank counts as unset
+    assert got["cache"] == paths.data_dirs()["SEEDBOX_CACHE_DIR"]
+
+
+def test_reveal_command_per_os(tmp_path):
+    f = tmp_path / "set.json"
+    f.write_text("{}")
+    assert paths.reveal_command(tmp_path, "darwin") == ["open", str(tmp_path)]
+    assert paths.reveal_command(f, "darwin") == ["open", "-R", str(f)]
+    assert paths.reveal_command(tmp_path, "win32") == ["explorer", str(tmp_path)]
+    assert paths.reveal_command(f, "win32") == ["explorer", f"/select,{f}"]
+    assert paths.reveal_command(tmp_path, "linux") == ["xdg-open", str(tmp_path)]
+    linux_file = paths.reveal_command(f, "linux")  # FileManager1 over gdbus selects the file, else its folder opens
+    assert linux_file == ["xdg-open", str(tmp_path)] or (linux_file[0] == "gdbus" and f.as_uri() in linux_file[-2])
+    assert [paths.reveal_label(p) for p in ("darwin", "win32", "linux")] == [
+        "Show in Finder", "Show in Explorer", "Show in file manager"]
+
+
+def test_reveal_endpoint_only_shows_seedbox2_folders(server, tmp_path, monkeypatch):
+    shown = []
+    monkeypatch.setattr(paths, "reveal", lambda p: shown.append(Path(p)))
+    monkeypatch.setenv("SEEDBOX_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("MUSICRECO_OUTPUT_ROOT", str(tmp_path / "music"))
+
+    def post(path: str) -> int:
+        req = urllib.request.Request(f"{server.url}/api/system/reveal", json.dumps({"path": path}).encode(),
+                                     {"content-type": "application/json"})  # fmt: skip
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:  # noqa: S310
+                return resp.status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    assert post(str(tmp_path / "cache")) == 200 and (tmp_path / "cache").is_dir()  # our folder: created
+    assert post(str(tmp_path / "elsewhere")) == 403
+    assert post(str(tmp_path / "cache" / ".." / "..")) == 403
+    assert shown == [tmp_path / "cache"]
+    monkeypatch.setattr(paths, "reveal", lambda p: (_ for _ in ()).throw(FileNotFoundError(str(p))))
+    assert post(str(tmp_path / "music" / "crate")) == 404
+
+
+def test_system_lists_the_folders(server, tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDBOX_SUPPORT_DIR", str(tmp_path / "support"))
+    info = json.loads(_get(f"{server.url}/api/system")[1])
+    assert set(info["folders"]) == {"settings", "cache", "logs", "music"}
+    assert info["folders"]["settings"] == str(tmp_path / "support")
+    assert info["reveal_label"] == paths.reveal_label()
+
+
+def test_gui_backend_per_os():
+    assert shell.gui_backend("darwin") == "cocoa"
+    assert shell.gui_backend("win32") == "edgechromium"
+    assert shell.gui_backend("linux", {}) == "gtk"
+    assert shell.gui_backend("linux", {"KDE_FULL_SESSION": "true"}) == "qt"
+    assert shell._colorref("#0b0d10") == 0x100D0B
+
+
+def test_ffmpeg_lookup_needs_no_homebrew(tmp_path, monkeypatch):
+    assert mpaths.exe_name("ffmpeg", "win32") == "ffmpeg.exe"
+    assert mpaths.exe_name("ffmpeg.exe", "win32") == "ffmpeg.exe"
+    assert mpaths.exe_name("ffmpeg", "darwin") == "ffmpeg"
+    mac = mpaths.extra_dirs("darwin", {})
+    assert Path("/opt/homebrew/bin") in mac and Path("/usr/local/bin") in mac  # Apple silicon and Intel Homebrew
+    win = mpaths.extra_dirs("win32", {"LOCALAPPDATA": str(tmp_path), "ProgramFiles": str(tmp_path / "pf")})
+    assert tmp_path / "Microsoft" / "WinGet" / "Links" in win and tmp_path / "pf" / "ffmpeg" / "bin" in win
+    assert not any("homebrew" in str(d) for d in win + mpaths.extra_dirs("linux", {}))
+    # a binary in $SEEDBOX_BIN_DIR wins, with this OS's file name
+    exe = tmp_path / mpaths.exe_name("ffmpeg")
+    exe.write_text("")
+    exe.chmod(0o755)
+    monkeypatch.setenv(mpaths.BIN_DIR_ENV, str(tmp_path))
+    assert mpaths.ffmpeg_path() == str(exe)
 
 
 # ---------------------------------------------------------------- server and shell (#36)

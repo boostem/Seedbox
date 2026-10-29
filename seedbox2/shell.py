@@ -1,8 +1,8 @@
 """Seedbox 2's window: the API (seedbox2.server) on a background thread inside a native pywebview window.
 
-Ported from seedbox/app.py. pywebview picks its platform backend (Cocoa on macOS, WebView2 on Windows, GTK/Qt on
-Linux); the macOS-only touches (dark appearance, menu name) are skipped elsewhere. Without pywebview the default
-browser opens instead.
+Ported from seedbox/app.py. The pywebview backend is Cocoa on macOS, EdgeChromium (WebView2) on Windows and GTK or
+Qt on Linux (gui_backend), with a dark title bar on each where the platform allows it. Without pywebview (or a GUI
+toolkit) the default browser opens instead.
 """
 
 from __future__ import annotations
@@ -64,7 +64,9 @@ def icon_path() -> Path | None:
 
 def setup_logging(console: bool, debug: bool = False) -> Path:
     """Rotating log file in $SEEDBOX_LOG_DIR (+ stderr when `console`); returns the log file path."""
-    log_dir = Path(os.environ.get(LOG_DIR_ENV) or Path.home() / "Library" / "Logs" / APP_NAME).expanduser()
+    from seedbox2.paths import data_dirs
+
+    log_dir = Path(os.environ.get(LOG_DIR_ENV, "").strip() or data_dirs()[LOG_DIR_ENV]).expanduser()
     log_dir.mkdir(parents=True, exist_ok=True)
     path = log_dir / "seedbox2.log"
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(threadName)s %(name)s: %(message)s")
@@ -154,24 +156,87 @@ def run_server_only(args: argparse.Namespace) -> int:
 
 # ---------------------------------------------------------------- window
 
-def _dark_window(window: Any) -> None:
-    """macOS, on the main thread before the window shows: dark appearance and a dark webview backdrop."""
-    if sys.platform != "darwin":
-        return
-    try:
-        import AppKit
-        from webview.platforms.cocoa import BrowserView
+def gui_backend(platform: str = sys.platform, environ: Any = os.environ) -> str:
+    """pywebview's backend: Cocoa (WKWebView) on macOS, EdgeChromium (WebView2) on Windows, GTK (WebKitGTK) on
+    Linux, or Qt on KDE. pywebview falls back from GTK to Qt and back when one is missing."""
+    if platform == "darwin":
+        return "cocoa"
+    if platform == "win32":
+        return "edgechromium"
+    return "qt" if "KDE_FULL_SESSION" in environ else "gtk"
 
-        AppKit.NSApplication.sharedApplication().setAppearance_(
-            AppKit.NSAppearance.appearanceNamed_(AppKit.NSAppearanceNameDarkAqua))
-        view = BrowserView.instances.get(window.uid)
-        if view is not None:
-            view.webview.setValue_forKey_(False, "drawsBackground")  # the dark window shows until first paint
-            color = AppKit.NSColor.colorWithSRGBRed_green_blue_alpha_(0x0B / 255, 0x0D / 255, 0x10 / 255, 1.0)
-            if hasattr(view.webview, "setUnderPageBackgroundColor_"):
-                view.webview.setUnderPageBackgroundColor_(color)
+
+def _dark_window(window: Any) -> None:
+    """Before the window shows (on the GUI thread): a dark title bar and backdrop where the platform allows it."""
+    try:
+        if sys.platform == "darwin":
+            _dark_cocoa(window)
+        elif sys.platform == "win32":
+            _dark_title_bar_windows(window)
+        else:
+            _dark_gtk()
     except Exception:  # noqa: BLE001 - cosmetic only
         log.debug("dark window tweaks failed", exc_info=True)
+
+
+def _dark_cocoa(window: Any) -> None:
+    """macOS, on the main thread: dark appearance and a dark webview backdrop until the first paint."""
+    import AppKit
+    from webview.platforms.cocoa import BrowserView
+
+    AppKit.NSApplication.sharedApplication().setAppearance_(
+        AppKit.NSAppearance.appearanceNamed_(AppKit.NSAppearanceNameDarkAqua))
+    view = BrowserView.instances.get(window.uid)
+    if view is not None:
+        view.webview.setValue_forKey_(False, "drawsBackground")  # the dark window shows until first paint
+        color = AppKit.NSColor.colorWithSRGBRed_green_blue_alpha_(0x0B / 255, 0x0D / 255, 0x10 / 255, 1.0)
+        if hasattr(view.webview, "setUnderPageBackgroundColor_"):
+            view.webview.setUnderPageBackgroundColor_(color)
+
+
+def _dark_gtk() -> None:
+    """GTK: ask the theme for its dark variant (title bar included). Qt follows the desktop's theme by itself."""
+    import webview
+
+    if webview.guilib is None or "gtk" not in webview.guilib.__name__:
+        return
+    import gi
+
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    if (settings := Gtk.Settings.get_default()) is not None:
+        settings.set_property("gtk-application-prefer-dark-theme", True)
+
+
+DWMWA_USE_IMMERSIVE_DARK_MODE = 20  # 19 before Windows 10 20H1
+DWMWA_CAPTION_COLOR = 35  # Windows 11
+
+
+def _colorref(hex_color: str) -> int:
+    """'#rrggbb' as a Windows COLORREF (0x00bbggrr)."""
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+    return r | g << 8 | b << 16
+
+
+def _dark_title_bar_windows(window: Any) -> None:
+    """Windows, on the UI thread: a dark title bar (Windows 10 20H1+), in the app's colour on Windows 11.
+    (pywebview only darkens it when the system theme is dark; Seedbox 2 is always dark.)"""
+    import ctypes
+
+    from webview.platforms.winforms import BrowserView
+
+    form = BrowserView.instances.get(window.uid)
+    if form is None:
+        return
+    hwnd = ctypes.c_void_p(form.Handle.ToInt64())
+    dwm = ctypes.windll.dwmapi  # type: ignore[attr-defined]
+    on = ctypes.c_int(1)
+    for attr in (DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_USE_IMMERSIVE_DARK_MODE - 1):
+        if dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(on), ctypes.sizeof(on)) == 0:
+            break
+    color = ctypes.c_int(_colorref(BACKGROUND))
+    dwm.DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, ctypes.byref(color), ctypes.sizeof(color))
 
 
 def _rename_menu_app() -> None:
@@ -246,7 +311,7 @@ def run_window(args: argparse.Namespace, log_file: Path) -> int:
     window.events.before_show += _dark_window
     window.events.closing += shutdown
     icon = icon_path()
-    webview.start(gui="cocoa" if sys.platform == "darwin" else None, debug=bool(args.dev or args.debug),
+    webview.start(gui=gui_backend(), debug=bool(args.dev or args.debug),
                   private_mode=False, icon=str(icon) if icon else None)  # fmt: skip
     shutdown()
     return _finish(0)

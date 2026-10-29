@@ -73,9 +73,9 @@
   --color-wave-played: #6f7682;
   --color-playhead: #ffffff;
 
-  /* type: system UI font (SF Pro in the macOS webview), 13px dense base, nothing under 10px (canvas included) */
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+  /* type: the system UI font (SF Pro on macOS, Segoe UI on Windows, the desktop's font on Linux), 13px dense base */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", "Inter", system-ui, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "Cascadia Mono", Consolas, "JetBrains Mono", Menlo, monospace;
   --text-2xs: 10px;
   --text-2xs--line-height: 14px;
   --text-xs: 11px;

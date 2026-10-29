@@ -2,7 +2,7 @@
 // The analysis and transition shapes below are Seedbox 1's (musicreco), kept for the waveform code until the
 // Seedbox 2 analysis (#43–#49) and mix plan (#51) tickets replace them.
 
-// ---- System: GET /api/health, GET /api/system ----
+// ---- System: GET /api/health, GET /api/system, POST /api/system/reveal ----
 
 export interface Health {
   ok: boolean;
@@ -18,6 +18,15 @@ export interface SystemInfo {
   ffmpeg: string | null;
   deno: string | null;
   frontend: string | null; // the dist/ folder the server serves
+  folders: SystemFolders; // this OS's folders (seedbox2/paths.py), or the $SEEDBOX_* overrides
+  reveal_label: string; // "Show in Finder" / "Show in Explorer" / "Show in file manager"
+}
+
+export interface SystemFolders {
+  settings: string;
+  cache: string;
+  logs: string;
+  music: string; // the music library shared with Seedbox 1
 }
 
 // ---- Server-sent events: GET /api/events (text/event-stream, one JSON object per `data:` line) ----
