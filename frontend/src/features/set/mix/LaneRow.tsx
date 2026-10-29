@@ -9,7 +9,7 @@ import { LANE_PAD, paintLane, valueY, yValue } from "./paint";
 import { useRowCanvas } from "./rows";
 import { hitKeyframe, moveSelection } from "./selection";
 
-export const LaneLabel = memo(function LaneLabel({ k, kfs, height, deck, dim }: { k: LaneKey; kfs: Keyframe[]; height: number; deck?: DeckId; dim?: boolean }) {
+export const LaneLabel = memo(function LaneLabel({ k, kfs, height, deck, dim, label }: { k: LaneKey; kfs: Keyframe[]; height: number; deck?: DeckId; dim?: boolean; label?: string }) {
   const meta = metaOf(k);
   const beat = useCursor((s) => s.hover ?? s.play);
   const v = laneValue(kfs, beat ?? kfs[0]?.beat ?? 0);
@@ -17,7 +17,7 @@ export const LaneLabel = memo(function LaneLabel({ k, kfs, height, deck, dim }: 
     <div style={{ height }} className={cn("flex items-center gap-1.5 border-b border-line/60 pr-2 pl-3", dim && "opacity-55")}>
       {deck && <span className="w-2 text-2xs font-bold text-fg-faint">{deck.toUpperCase()}</span>}
       <span className="size-1.5 shrink-0 rounded-full" style={{ background: meta.color }} />
-      <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">{meta.label}</span>
+      <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">{label ?? meta.label}</span>
       <span className={cn("text-2xs num", beat != null ? "text-fg" : "text-fg-subtle")}>{meta.fmt(v)}</span>
     </div>
   );

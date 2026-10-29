@@ -1,7 +1,8 @@
 import { CircleArrowUp, FolderOpen, FolderSearch, HardDrive, RotateCcw, Save } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/api/client";
-import type { MixLength, Settings } from "@/api/types";
+import type { MixLength, MixView, Settings } from "@/api/types";
+import { MIX_VIEWS } from "@/features/set/mix/views";
 import { usePageTitle } from "@/components/shell/pageTitle";
 import { Badge, Button, Field, InfoRow, Input, Kbd, Page, PageBody, PageHeader, Panel, PanelHeader, ProgressBar, Slider, Spinner, Switch, Tabs } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -20,6 +21,7 @@ const DEFAULTS: Settings = {
   preview_cache_mb: 500,
   pretick_all: true,
   mix_length: "normal",
+  mix_view: "simple",
 };
 
 const MIX_LENGTHS: { id: MixLength; label: string; hint: string }[] = [
@@ -412,6 +414,16 @@ export function SettingsPage() {
                   <span className="flex shrink-0 items-center gap-2 pt-0.5">
                     {form.mix_length === DEFAULTS.mix_length && <span className="text-xs text-fg-faint">default</span>}
                     <Tabs variant="segmented" value={form.mix_length} onChange={(v) => set("mix_length", v)} items={MIX_LENGTHS.map(({ id, label }) => ({ id, label }))} />
+                  </span>
+                </div>
+                <div className="flex items-start justify-between gap-6 border-t border-line/60 px-4 py-4">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-fg">Transition editor</div>
+                    <p className="mt-1 text-xs text-fg-subtle">{MIX_VIEWS.find((m) => m.id === form.mix_view)?.hint}</p>
+                  </div>
+                  <span className="flex shrink-0 items-center gap-2 pt-0.5">
+                    {form.mix_view === DEFAULTS.mix_view && <span className="text-xs text-fg-faint">default</span>}
+                    <Tabs variant="segmented" value={form.mix_view} onChange={(v) => set("mix_view", v as MixView)} items={MIX_VIEWS.map(({ id, label }) => ({ id, label }))} />
                   </span>
                 </div>
               </Panel>

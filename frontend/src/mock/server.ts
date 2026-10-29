@@ -32,6 +32,7 @@ const settings: Settings = {
   preview_cache_mb: 500,
   pretick_all: true,
   mix_length: "normal",
+  mix_view: "simple",
 };
 
 const system: SystemStatus = {

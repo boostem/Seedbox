@@ -2,19 +2,40 @@
  * The v4 mix editor for one transition: technique / bars (re-generate), Edited badge, Save / Revert, undo/redo,
  * the rendered-preview transport (render progress, loop, LUFS/peak/warnings), the automation DAW, and (only with
  * `details`) the plan's notes + markers. Space plays/stops the rendered transition.
+ *
+ * The view (settings.mix_view, switchable here): "simple" = style, length and amounts over a read-only overview;
+ * "advanced" = the main lanes, the filter's resonance following it; "manual" = every lane.
  */
 import { AlertTriangle, Play, Redo2, Repeat, RotateCcw, Save, Square, Undo2 } from "lucide-react";
-import { useCallback } from "react";
-import type { MixPlan, MixTechnique, SetTrack, TrackAnalysis } from "@/api/types";
-import { Badge, Button, IconButton, ProgressBar, Select, Spinner, Tabs, Tooltip } from "@/components/ui";
+import { useCallback, useRef } from "react";
+import { api } from "@/api/client";
+import type { MixPlan, MixTechnique, MixView, SetTrack, TrackAnalysis } from "@/api/types";
+import { Badge, Button, IconButton, ProgressBar, Select, Slider, Spinner, Tabs, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { useHotkey } from "@/lib/hotkeys";
+import { useApp } from "@/store/app";
 import { barLabel, BAR_OPTIONS, TECHNIQUES } from "./lanes";
 import { MixDaw } from "./MixDaw";
 import { usePlayRequests } from "./pending";
 import { markerColor } from "./paint";
 import type { MixPlanApi } from "./useMixPlan";
 import { useMixRender } from "./useMixRender";
+import { AMOUNTS, amountOf, followFilter, MIN_AMOUNT, MIX_VIEWS, setAmount, STYLE_HINTS } from "./views";
+
+/** The editor view from settings; switching it saves the setting (the settings page shows the same choice). */
+function useMixView(): [MixView, (v: MixView) => void] {
+  const view = useApp((s) => s.settings?.mix_view ?? "simple");
+  const setSettings = useApp((s) => s.setSettings);
+  const set = useCallback(
+    (v: MixView) => {
+      const cur = useApp.getState().settings;
+      if (cur) setSettings({ ...cur, mix_view: v }); // switch right away, the server copy follows
+      void api.saveSettings({ mix_view: v }).then(setSettings, () => cur && setSettings(cur));
+    },
+    [setSettings],
+  );
+  return [view, set];
+}
 
 export interface MixEditorProps {
   folder: string;
@@ -34,6 +55,20 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
   const playFrom = useCallback((beat: number) => void r.play(beat), [r]);
   const { toggle } = r;
   usePlayRequests(`${a.track.id}>${b.track.id}`, true, toggle);
+
+  const [view, setView] = useMixView();
+  // advanced: an edit to a filter lane re-draws that deck's resonance to follow it
+  const planRef = useRef(plan);
+  planRef.current = plan;
+  const { update } = mp;
+  const advancedUpdate = useCallback(
+    (p: MixPlan, opts?: { transient?: boolean }) => {
+      const next = followFilter(planRef.current, p);
+      planRef.current = next;
+      update(next, opts);
+    },
+    [update],
+  );
 
   const rendering = r.status === "rendering";
   return (
@@ -79,6 +114,7 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
         </Select>
         <Tabs variant="segmented" value={String(plan.bars)} onChange={(v) => void mp.regenerate(plan.technique, Number(v))} items={BAR_OPTIONS.map((n) => ({ id: String(n), label: `${n} bars` }))} />
         <span className="flex-1" />
+        <Tabs variant="segmented" value={view} onChange={(v) => setView(v as MixView)} items={MIX_VIEWS.map(({ id, label, hint }) => ({ id, label, title: hint }))} />
         {mp.dirty ? <Badge tone="warn">Unsaved edits</Badge> : plan.edited ? <Badge tone="accent">Edited</Badge> : null}
         <IconButton icon={Undo2} label="Undo (⌘Z)" size="md" onClick={mp.undo} disabled={!mp.canUndo} />
         <IconButton icon={Redo2} label="Redo (⇧⌘Z)" size="md" onClick={mp.redo} disabled={!mp.canRedo} />
@@ -90,9 +126,12 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
         </Button>
       </div>
 
+      {view === "simple" && <SimplePanel plan={plan} mp={mp} />}
+
       <MixDaw
+        view={view}
         plan={plan}
-        update={mp.update}
+        update={view === "advanced" ? advancedUpdate : mp.update}
         checkpoint={mp.checkpoint}
         undo={mp.undo}
         redo={mp.redo}
@@ -135,5 +174,48 @@ export function MixEditor({ folder, a, b, anA, anB, mp, details }: MixEditorProp
       </div>
       )}
     </div>
+  );
+}
+
+/** Simple view: what the style does (the plan's headline) and an amount slider per effect the style uses. */
+function SimplePanel({ plan, mp }: { plan: MixPlan; mp: MixPlanApi }) {
+  const start = useRef<MixPlan | null>(null); // the plan before a slider drag (one undo step per drag)
+  const planRef = useRef(plan);
+  planRef.current = plan;
+  const change = (id: (typeof AMOUNTS)[number]["id"], v: number) => {
+    start.current ??= planRef.current;
+    mp.update(setAmount(planRef.current, id, v), { transient: true });
+  };
+  const commit = () => {
+    if (start.current) mp.checkpoint(start.current);
+    start.current = null;
+  };
+  return (
+    <section className="flex flex-wrap items-start gap-x-8 gap-y-3 rounded-md border border-line bg-surface px-4 py-3">
+      <div className="min-w-[240px] flex-1">
+        <h3 className="label-caps mb-1 !text-fg-muted">
+          <span className="capitalize">{plan.technique}</span> · {plan.bars} bars
+        </h3>
+        <p className="text-sm text-fg select-text">{STYLE_HINTS[plan.technique]}</p>
+        {plan.notes[0] && <p className="mt-1 text-xs text-fg-subtle select-text">{plan.notes[0]}</p>}
+      </div>
+      <div className="flex flex-wrap gap-x-6 gap-y-2">
+        {AMOUNTS.map((m) => {
+          const v = amountOf(plan, m.id);
+          const used = v >= 1e-3;
+          return (
+            <Tooltip key={m.id} content={used ? m.hint : `This style doesn't use the ${m.label.toLowerCase()}`}>
+              <label className={cn("flex w-36 flex-col gap-1", !used && "opacity-50")}>
+                <span className="flex items-center justify-between text-xs text-fg-muted">
+                  {m.label}
+                  <span className="text-2xs text-fg-subtle num">{used ? `${Math.round(v * 100)}%` : "off"}</span>
+                </span>
+                <Slider label={`${m.label} amount`} value={used ? v : 0} min={MIN_AMOUNT} max={1} step={0.01} disabled={!used} onChange={(x) => change(m.id, x)} onCommit={commit} />
+              </label>
+            </Tooltip>
+          );
+        })}
+      </div>
+    </section>
   );
 }

@@ -8,6 +8,7 @@ export interface TabItem<T extends string> {
   icon?: LucideIcon;
   count?: number;
   disabled?: boolean;
+  title?: string; // native tooltip
 }
 
 export interface TabsProps<T extends string> {
@@ -24,12 +25,13 @@ export function Tabs<T extends string>({ items, value, onChange, variant = "unde
   if (variant === "segmented") {
     return (
       <div role="tablist" className={cn("inline-flex items-center gap-px rounded-sm border border-line-strong bg-bg/60 p-px", className)}>
-        {items.map(({ id, label, icon: Icon, count, disabled }) => (
+        {items.map(({ id, label, icon: Icon, count, disabled, title }) => (
           <button
             key={id}
             role="tab"
             type="button"
             aria-selected={value === id}
+            title={title}
             disabled={disabled}
             onClick={() => onChange(id)}
             className={cn(
@@ -48,12 +50,13 @@ export function Tabs<T extends string>({ items, value, onChange, variant = "unde
   }
   return (
     <div role="tablist" className={cn("flex items-end gap-4 border-b border-line", className)}>
-      {items.map(({ id, label, icon: Icon, count, disabled }) => (
+      {items.map(({ id, label, icon: Icon, count, disabled, title }) => (
         <button
           key={id}
           role="tab"
           type="button"
           aria-selected={value === id}
+          title={title}
           disabled={disabled}
           onClick={() => onChange(id)}
           className={cn(
