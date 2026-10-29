@@ -21,8 +21,9 @@ const IMAGE = "seedbox2-screenshots";
 const SIZES = [[1440, 900], [1280, 720]] as const;
 /** A pixel has changed when a channel moved by more than this (0-255)… */
 const PIXEL_THRESHOLD = 24;
-/** …and a screenshot has changed when more than this share of its pixels did. */
-const MAX_CHANGED = 0.001;
+/** …and a screenshot has changed when more pixels than this did. The image renders the same pixels every time, so
+ * this only absorbs stray anti-aliasing: a changed word is about 70 pixels. */
+const MAX_CHANGED = 16;
 
 /** What the stub /api answers: `live` an engine that works, `loading` one that never answers, `offline` none. */
 type ApiState = "live" | "loading" | "offline";
@@ -376,7 +377,7 @@ async function compare(file: string, png: Uint8Array): Promise<{ outcome: Outcom
   try {
     const d = diffImages(await decodePng(baseline), await decodePng(png), PIXEL_THRESHOLD);
     detail = `${d.changed} px (${((d.changed / d.total) * 100).toFixed(3)} %)`;
-    if (d.changed / d.total <= MAX_CHANGED) return { outcome: "same", detail };
+    if (d.changed <= MAX_CHANGED) return { outcome: "same", detail };
     if (!update) {
       await Deno.writeFile(`${OUT}/diff/${file}`, await encodePng(d.image));
       await Deno.writeFile(`${OUT}/expected/${file}`, baseline);

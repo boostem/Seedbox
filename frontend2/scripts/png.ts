@@ -138,7 +138,7 @@ export function diffImages(a: Image, b: Image, threshold = 24): DiffResult {
       changed++;
       out.set([255, 0, 64, 255], i);
     } else {
-      const grey = (b.data[i] * 0.3 + b.data[i + 1] * 0.59 + b.data[i + 2] * 0.11) * 0.35;
+      const grey = (b.data[i] * 0.3 + b.data[i + 1] * 0.59 + b.data[i + 2] * 0.11) * 0.5 + 24;
       out.set([grey, grey, grey, 255], i);
     }
   }
