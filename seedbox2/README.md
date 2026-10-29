@@ -28,7 +28,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
 
 Seedbox 2 keeps its own settings, caches and logs in `~/Library/{Application Support,Caches,Logs}/Seedbox 2`
 (`$SEEDBOX_SUPPORT_DIR`, `$SEEDBOX_CACHE_DIR` and `$SEEDBOX_LOG_DIR` override them), so trying it never touches
@@ -38,6 +38,36 @@ platform's conventions.
 **What's there so far** (#36): the server (`seedbox2/server/`: `/api/health`, `/api/system`, the `/api/events`
 stream and one empty router per area) and the `frontend2/` app shell (sidebar, hash router, a placeholder page per
 area, `#/system`, and `#/ui` with the design tokens and the waveform). The other tickets fill in the areas.
+
+## Evaluating the analysis
+
+`seedbox2/eval/` (#50) scores analysers against labelled real audio, so every analysis ticket has a number to beat.
+It needs `mir_eval` (in `requirements-dev.txt`).
+
+```sh
+.venv/bin/python -m seedbox2.eval fetch giantsteps-tempo giantsteps-key --limit 50   # annotations + previews
+.venv/bin/python -m seedbox2.eval analysis                    # every dataset found, a table per dataset
+.venv/bin/python -m seedbox2.eval analysis --dataset giantsteps-tempo --analyser seedbox1 --analyser <yours>
+```
+
+- **Datasets:** GiantSteps Tempo and Key (EDM previews, downloaded and md5-checked), the Harmonix Set (beats,
+  downbeats, sections; bring your own audio as `audio/<id>.<ext>` or `$SEEDBOX2_HARMONIX_AUDIO`) and our own corpus,
+  `$SEEDBOX2_CORPUS`: audio files with a `<name>.json` annotation next to them (the format is in
+  `seedbox2/eval/annotate.py`). They live in `$SEEDBOX2_EVAL_DATA` (default: `eval-data` in the cache folder);
+  `--dataset NAME=FOLDER` points at another copy.
+- **Annotating:** `python -m seedbox2.eval annotate song.mp3 [--rekordbox out.xml]` writes `song.json` from an
+  analysis; correct it by hand, or in Rekordbox (import the XML, fix the grid and memory cues, export the collection,
+  `python -m seedbox2.eval import-rekordbox exported.xml --verified`).
+- **Metrics** (points, 0-100): beat and downbeat F-measure (±70 ms), tempo Accuracy1 (±4 %) and Accuracy2 (octave
+  errors allowed) and the octave-error rate, MIREX weighted key score, section boundary hit rate at ±1 bar, vocal
+  frame F-measure.
+- **Analysers** register in `seedbox2/eval/analysers.py`; `seedbox1` (`musicreco/structure.py` without the tunebat
+  BPM hint) is the baseline. It has no key detection, and finds the tempo of 59 % of the first 50 GiantSteps tracks
+  (it reads most drum & bass at 2/3 of its tempo).
+- **Runs** are saved as JSON (`$SEEDBOX2_EVAL_RESULTS`, default `eval-results` in the cache folder) with every
+  track's scores. `--baseline FILE --max-drop 2` exits 1 when a metric is more than 2 points worse. The nightly
+  workflow (`.github/workflows/eval-nightly.yml`) does that on the first 50 GiantSteps tracks against
+  `seedbox2/eval/baseline.json`: an analysis ticket that improves a number refreshes it with `--write-baseline`.
 
 ## Architecture (target)
 

@@ -1,0 +1,29 @@
+{
+ "format": "seedbox2-eval-analysis/1",
+ "created": "2026-10-29T16:01:02+00:00",
+ "commit": "fd5069b",
+ "analysers": [
+  "seedbox1"
+ ],
+ "datasets": {
+  "giantsteps-tempo": 49,
+  "giantsteps-key": 50
+ },
+ "summary": {
+  "giantsteps-tempo": {
+   "seedbox1": {
+    "tempo_acc1": 59.18,
+    "tempo_acc2": 61.22,
+    "octave_err": 2.04,
+    "tracks": 49,
+    "errors": 0
+   }
+  },
+  "giantsteps-key": {
+   "seedbox1": {
+    "tracks": 50,
+    "errors": 0
+   }
+  }
+ }
+}
