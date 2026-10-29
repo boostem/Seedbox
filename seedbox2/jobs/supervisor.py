@@ -341,6 +341,7 @@ class Supervisor:
             if not w.dead and (w.process.sentinel in ready or not w.process.is_alive()):
                 self._read(w)  # whatever it sent before it died
                 if not w.dead:
+                    w.process.join(1)  # the sentinel can fire before the process is reaped (exitcode still None)
                     self._worker_died(w, f"worker process crashed (exit code {w.process.exitcode})")
             if not w.dead and w.kill_at is not None and time.monotonic() >= w.kill_at:
                 log.info("job %s didn't stop within %.1fs of cancel: killing its worker", w.job and w.job.id,
