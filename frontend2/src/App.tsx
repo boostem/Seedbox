@@ -5,6 +5,7 @@ import { AppShell } from "@/components/shell/AppShell";
 import { Button, EmptyState } from "@/components/ui";
 import { navigate, useRoute } from "@/lib/router";
 import { AreaPage } from "@/pages/AreaPage";
+import { BenchPage } from "@/pages/BenchPage";
 import { HomePage } from "@/pages/HomePage";
 import { SystemPage } from "@/pages/SystemPage";
 import { UiPage } from "@/pages/UiPage";
@@ -25,6 +26,8 @@ function Routes() {
       return <SystemPage />;
     case "ui":
       return <UiPage />;
+    case "bench":
+      return <BenchPage />;
     case "notFound":
       return (
         <EmptyState

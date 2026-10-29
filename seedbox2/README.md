@@ -28,7 +28,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
 
 Seedbox 2 keeps its own settings, caches and logs in `~/Library/{Application Support,Caches,Logs}/Seedbox 2`
 (`$SEEDBOX_SUPPORT_DIR`, `$SEEDBOX_CACHE_DIR` and `$SEEDBOX_LOG_DIR` override them), so trying it never touches
@@ -83,7 +83,7 @@ It needs `mir_eval` (in `requirements-dev.txt`).
 | Set planning | `seedbox2/sets/` | Ordering on our own analysis with energy arcs and lookahead; multi-crate sets; an optional Claude-powered assistant (#60–#64) |
 | UI | `frontend2/` | React 19 + Vite + Tailwind 4 + zustand (forked from `frontend/`). Design language v2 (#71). WebGL2 waveforms (#74). A WebAudio AudioWorklet engine that plays plans live (#65–#67) |
 | Evaluation | `seedbox2/eval/` | `python -m seedbox2.eval analysis/mixes/golden` and the `#/listen` blind A/B page (#50, #54, #86, #87) |
-| Benchmarks | `seedbox2/bench/` | `python -m seedbox2.bench` checks the budgets below (#68) |
+| Benchmarks | `seedbox2/bench/` | `python -m seedbox2.bench` checks the budgets below, nightly in CI and on real laptops ([how](bench/README.md)) (#68) |
 
 Seedbox 1's `musicreco` stays importable: tunebat, YouTube and tagging are reused, not forked.
 

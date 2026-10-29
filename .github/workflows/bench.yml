@@ -1,0 +1,108 @@
+# Nightly Seedbox 2 benchmark (seedbox2/bench/README.md): runs `python -m seedbox2.bench run --frontend`, compares
+# with the previous night's results and comments on the "Nightly benchmark regressions" issue when a metric got worse
+# by more than 10 %. The results of each night are kept as an artifact (90 days) and as the baseline in the cache.
+name: Nightly benchmark
+
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: nightly-benchmark
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      SEEDBOX_BENCH_DIR: ${{ github.workspace }}/.bench-cache
+      SEEDBOX_BENCH_LABEL: github-ubuntu-24.04
+      CHROME: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Install
+        run: pip install -r requirements-dev.txt
+
+      - name: Build frontend2
+        working-directory: frontend2
+        run: deno install && deno task build
+
+      - name: Corpus (downloaded once)
+        uses: actions/cache@v4
+        with:
+          path: .bench-cache/corpus
+          key: bench-corpus-incompetech-10-v1
+
+      - name: Last night's results
+        uses: actions/cache/restore@v4
+        with:
+          path: bench-last
+          key: bench-results-${{ github.run_id }}
+          restore-keys: bench-results-
+
+      - name: Benchmark
+        run: |
+          python -m seedbox2.bench run --frontend -o bench-out/results.json
+          python -m seedbox2.bench report bench-out/results.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Compare
+        id: compare
+        run: |
+          if [ ! -f bench-last/results.json ]; then
+            echo "No earlier results to compare with." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if python -m seedbox2.bench compare bench-last/results.json bench-out/results.json > bench-out/compare.md; then
+            echo "regressed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "regressed=true" >> "$GITHUB_OUTPUT"
+          fi
+          cat bench-out/compare.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on regressions
+        if: steps.compare.outputs.regressed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: Nightly benchmark regressions
+        run: |
+          echo "" >> bench-out/compare.md
+          echo "[Run ${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}), results in its artifacts." >> bench-out/compare.md
+          issue=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
+            --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")
+          if [ -z "$issue" ]; then
+            gh issue create --title "$TITLE" --body "The nightly benchmark (.github/workflows/bench.yml) comments here when a metric gets worse by more than 10 %."
+            issue=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
+              --jq "map(select(.title == \"$TITLE\")) | .[0].number")
+          fi
+          gh issue comment "$issue" --body-file bench-out/compare.md
+
+      - name: Keep tonight's results as the baseline
+        run: mkdir -p bench-last && cp bench-out/results.json bench-last/results.json
+
+      - uses: actions/cache/save@v4
+        with:
+          path: bench-last
+          key: bench-results-${{ github.run_id }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-${{ github.run_id }}
+          path: bench-out
+          retention-days: 90

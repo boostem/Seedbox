@@ -1,5 +1,6 @@
 /**
- * Tiny hash router. Routes: #/ (home), #/library, #/sets, #/mixes, #/system, #/ui (design tokens and the waveform).
+ * Tiny hash router. Routes: #/ (home), #/library, #/sets, #/mixes, #/system, #/ui (design tokens and the waveform),
+ * #/bench (the waveform alone, for `python -m seedbox2.bench frontend`).
  * Path segments are URI-encoded. Areas get their sub-routes as their tickets land.
  */
 import { type AnchorHTMLAttributes, useSyncExternalStore } from "react";
@@ -11,6 +12,7 @@ export type Route =
   | { name: "mixes" }
   | { name: "system" }
   | { name: "ui" }
+  | { name: "bench" }
   | { name: "notFound"; path: string };
 
 export type RouteName = Route["name"];
@@ -40,6 +42,7 @@ export function parseHash(hash: string): Route {
     case "mixes":
     case "system":
     case "ui":
+    case "bench":
       return { name: segs[0] };
     default:
       return { name: "notFound", path: segs.join("/") };
