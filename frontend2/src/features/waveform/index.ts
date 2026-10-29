@@ -2,6 +2,7 @@
 export { TrackWaveform, type TrackWaveformProps } from "./TrackWaveform";
 export { MixWaveform, type MixClock, type MixWaveformProps } from "./MixWaveform";
 export { mixGeometry, type MixGeometry } from "./mix";
-export { prepareWave, type WaveData } from "./prepare";
+export { decodeWaveBinary, prepareWave, type WaveData } from "./prepare";
+export { loadWave, prepareWaveAsync, useWave } from "./waveData";
 export { cueColor, edgeColor, edgeWords, SECTION_LABEL, sectionColor, wavePalette } from "./palette";
 export { barBeat, fmtPrecise, mergeCues } from "./draw";

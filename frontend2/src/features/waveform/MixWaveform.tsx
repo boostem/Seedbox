@@ -5,21 +5,25 @@
  * Unheard parts (A after it's out, B before its cue) are dimmed.
  *
  * Playheads: the global player when it plays A or B, plus an optional external clock (the audition's mix time).
+ * Zoom, scroll, hover and the playheads redraw from refs on the next animation frame, without React renders
+ * (PERFORMANCE.md).
  */
 import { Minus, Plus, Scan } from "lucide-react";
-import { type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { TrackAnalysis, Transition } from "@/api/types";
-import { usePlayer } from "@/audio/player";
+import { player, usePlayer } from "@/audio/player";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { barBeat, drawCues, drawEdges, drawGrid, drawSections, drawTimeRuler, drawWave, fmtPrecise, setupCanvas, shade, toFile, toMix, type View, xOf } from "./draw";
-import { useTimeView, useWaveformKeys, useWidth } from "./hooks";
+import { useFrame, useWaveformKeys, useViewCtl, useViewFact, useWidthRef } from "./hooks";
 import { type MixGeometry, mixGeometry } from "./mix";
 import { alpha, wavePalette } from "./palette";
+import { useWave } from "./waveData";
 
 /** External playhead source (e.g. the audition): current mix time or null. */
 export interface MixClock {
   get: () => number | null;
+  /** Called when the clock starts, stops or jumps; while it runs, the playhead reads `get()` every frame. */
   subscribe: (cb: () => void) => () => void;
 }
 
@@ -48,7 +52,9 @@ const MID = 32; // mix ruler between decks
 const RULE_B = 15; // time ruler (B) at the bottom
 
 export function MixWaveform({ a, b, aId, bId, aBpm, transition, clock, onSeek, laneHeight = 92, toolbar, labelA, labelB, hotkeys, className }: MixWaveformProps) {
-  const g = useMemo(() => mixGeometry(transition, a, b, aBpm), [transition, a, b, aBpm]);
+  const waveA = useWave(a);
+  const waveB = useWave(b);
+  const g = useMemo(() => mixGeometry(transition, a, b, aBpm, { a: waveA, b: waveB }), [transition, a, b, aBpm, waveA, waveB]);
   const LH = laneHeight;
   const H = RULE_T + SEC + LH + MID + LH + SEC + RULE_B;
   const yA = RULE_T + SEC; // A wave band top
@@ -59,34 +65,41 @@ export function MixWaveform({ a, b, aId, bId, aBpm, transition, clock, onSeek, l
   const min = g?.min ?? 0;
   const max = g?.max ?? 1;
   const initial = g ? { start: g.out - 12 * barA, span: g.overlapS + 28 * barA } : undefined;
-  const tv = useTimeView(min, max, 4 * barA, initial);
-  const tvRef = useRef(tv);
-  tvRef.current = tv;
-  const tview = tv.view;
+  const ctl = useViewCtl(min, max, 4 * barA, initial);
+  const visibleBars = useViewFact(ctl, (v) => Math.round(v.span / barA));
 
   const boxRef = useRef<HTMLDivElement>(null);
-  const width = useWidth(boxRef);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const headRef = useRef<HTMLCanvasElement>(null);
-  const [hover, setHover] = useState<number | null>(null);
-  const view: View = useMemo(() => ({ start: tview.start, pxPerSec: width / tview.span || 1, width }), [tview, width]);
+  const hoverLineRef = useRef<HTMLDivElement>(null);
+  const hoverTipRef = useRef<HTMLDivElement>(null);
+  const hoverX = useRef<number | null>(null);
 
-  useLayoutEffect(() => {
+  const viewOf = (w: number): View => {
+    const v = ctl.get();
+    return { start: v.start, pxPerSec: w / v.span || 1, width: w };
+  };
+
+  const paintBase = () => {
     const c = baseRef.current;
+    const width = widthRef.current;
     if (!c || !width || !g) return;
     const s = setupCanvas(c, width, H);
-    if (!s) return;
-    paint(s.ctx, s.dpr, g, view, transition, { H, LH, yA, yMid, yB });
-  }, [g, view, width, H, LH, yA, yMid, yB, transition]);
+    if (s) paint(s.ctx, s.dpr, g, viewOf(width), transition, { H, LH, yA, yMid, yB });
+    paintHover();
+    paintHeads();
+  };
 
   // ---- playheads
-  const drawHeads = useCallback(() => {
+  const paintHeads = (): boolean => {
     const c = headRef.current;
-    if (!c || !width || !g) return;
+    const width = widthRef.current;
+    if (!c || !width || !g) return false;
     const s = setupCanvas(c, width, H);
-    if (!s) return;
+    if (!s) return false;
     const { ctx } = s;
     const p = wavePalette();
+    const view = viewOf(width);
     const line = (m: number, y0: number, y1: number, color: string) => {
       const x = Math.round(xOf(view, m)) + 0.5;
       if (x < 0 || x > width) return;
@@ -105,44 +118,98 @@ export function MixWaveform({ a, b, aId, bId, aBpm, transition, clock, onSeek, l
     if (m != null) line(m, 0, H, p.playhead);
     const st = usePlayer.getState();
     if (st.status !== "idle" && st.status !== "error") {
-      if (st.currentId === aId) line(st.position, RULE_T, yMid, p.playhead);
-      else if (st.currentId === bId) line(toMix(g.laneB, st.position), yMid, H - RULE_B, p.playhead);
+      if (st.currentId === aId) line(player.time(), RULE_T, yMid, p.playhead);
+      else if (st.currentId === bId) line(toMix(g.laneB, player.time()), yMid, H - RULE_B, p.playhead);
     }
-  }, [g, view, width, H, yMid, clock, aId, bId]);
+    // keep animating while something moves
+    return m != null || (st.status === "playing" && (st.currentId === aId || st.currentId === bId));
+  };
 
-  useLayoutEffect(() => drawHeads(), [drawHeads]);
+  /** The hover line and the A/B time readout: DOM writes through refs, no state. */
+  const paintHover = () => {
+    const line = hoverLineRef.current;
+    const tip = hoverTipRef.current;
+    if (!line || !tip || !g) return;
+    const hx = hoverX.current;
+    const width = widthRef.current;
+    line.hidden = tip.hidden = hx == null;
+    if (hx == null) return;
+    const view = viewOf(width);
+    const hm = view.start + hx / view.pxPerSec;
+    const tb = toFile(g.laneB, hm);
+    line.style.left = `${hx}px`;
+    if (hx > width - 150) {
+      tip.style.left = "";
+      tip.style.right = `${width - hx + 6}px`;
+    } else {
+      tip.style.right = "";
+      tip.style.left = `${hx + 6}px`;
+    }
+    const [rowA, rowB] = [tip.children[0] as HTMLElement, tip.children[1] as HTMLElement];
+    const bbA = barBeat(a, hm);
+    rowA.children[1].textContent = fmtPrecise(hm);
+    rowA.children[2].textContent = bbA ? `bar ${bbA}` : "";
+    rowB.hidden = !(tb >= 0);
+    const bbB = barBeat(b, tb);
+    rowB.children[1].textContent = fmtPrecise(tb);
+    rowB.children[2].textContent = bbB ? `bar ${bbB}` : "";
+  };
+
+  const frameBase = useFrame(paintBase);
+  const frameHover = useFrame(paintHover);
+  const widthRef = useWidthRef(boxRef, frameBase);
+  useLayoutEffect(() => paintBase());
+  useEffect(() => ctl.subscribe(frameBase), [ctl, frameBase]);
+
+  // a rAF loop while the player plays A or B or the external clock runs; idle otherwise
+  const headsFn = useRef(paintHeads);
+  headsFn.current = paintHeads;
   useEffect(() => {
+    let raf = 0;
+    const loop = () => {
+      raf = headsFn.current() ? requestAnimationFrame(loop) : 0;
+    };
+    const kick = () => {
+      if (!raf) raf = requestAnimationFrame(loop);
+    };
     const un1 = usePlayer.subscribe((s, prev) => {
-      if (s.currentId === aId || s.currentId === bId || prev.currentId === aId || prev.currentId === bId) drawHeads();
+      if (s.currentId === aId || s.currentId === bId || prev.currentId === aId || prev.currentId === bId) kick();
     });
-    const un2 = clock?.subscribe(drawHeads);
+    const un2 = clock?.subscribe(kick);
+    kick();
     return () => {
       un1();
       un2?.();
+      cancelAnimationFrame(raf);
     };
-  }, [drawHeads, clock, aId, bId]);
+  }, [clock, aId, bId]);
 
   // ---- interaction
   const drag = useRef<{ x: number; start: number; moved: boolean } | null>(null);
   const onDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { x: e.clientX, start: tview.start, moved: false };
+    drag.current = { x: e.clientX, start: ctl.get().start, moved: false };
   };
   const onMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
-    setHover(e.clientX - r.left);
+    hoverX.current = e.clientX - r.left;
+    frameHover();
     const d = drag.current;
     if (!d) return;
     const dx = e.clientX - d.x;
     if (!d.moved && Math.abs(dx) > 3) d.moved = true;
-    if (d.moved) tv.set({ start: d.start - dx / view.pxPerSec, span: tview.span });
+    if (d.moved) {
+      const v = ctl.get();
+      ctl.set({ start: d.start - dx / (widthRef.current / v.span || 1), span: v.span });
+    }
   };
   const onUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = drag.current;
     drag.current = null;
     if (d && !d.moved && onSeek) {
       const r = e.currentTarget.getBoundingClientRect();
+      const view = viewOf(widthRef.current);
       onSeek(view.start + (e.clientX - r.left) / view.pxPerSec);
     }
   };
@@ -150,36 +217,33 @@ export function MixWaveform({ a, b, aId, bId, aBpm, transition, clock, onSeek, l
     const el = boxRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      const tv = tvRef.current;
+      const v = ctl.get();
       const r = el.getBoundingClientRect();
-      const t = tv.view.start + (e.clientX - r.left) / (r.width / tv.view.span);
+      const t = v.start + (e.clientX - r.left) / (r.width / v.span);
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
-        tv.zoom(Math.exp(-e.deltaY * 0.012), t);
+        ctl.zoom(Math.exp(-e.deltaY * 0.012), t);
       } else if (Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.shiftKey) {
         e.preventDefault();
         const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-        tv.scroll((d / r.width) * tv.view.span);
+        ctl.scroll((d / r.width) * v.span);
       }
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
-  const reset = () => initial && tv.set(initial);
-  useWaveformKeys(!!hotkeys, (f) => tv.zoom(f), reset);
+  }, [ctl]);
+  const reset = () => initial && ctl.set(initial);
+  useWaveformKeys(!!hotkeys, (f) => ctl.zoom(f), reset);
 
   if (!g) return null;
-  const hm = hover == null ? null : view.start + hover / view.pxPerSec;
-  const tb = hm == null ? null : toFile(g.laneB, hm);
-  const visibleBars = Math.round(tview.span / barA);
 
   return (
     <div className={cn("flex flex-col", className)}>
       <div className="mb-1.5 flex h-6 items-center gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">{toolbar}</div>
         <span className="mr-0.5 text-2xs text-fg-subtle num">{visibleBars} bars visible</span>
-        <IconButton icon={Minus} label="Zoom out (−)" size="sm" onClick={() => tv.zoom(1 / 1.6)} />
-        <IconButton icon={Plus} label="Zoom in (=)" size="sm" onClick={() => tv.zoom(1.6)} />
+        <IconButton icon={Minus} label="Zoom out (−)" size="sm" onClick={() => ctl.zoom(1 / 1.6)} />
+        <IconButton icon={Plus} label="Zoom in (=)" size="sm" onClick={() => ctl.zoom(1.6)} />
         <IconButton icon={Scan} label="Back to the transition (0)" size="sm" onClick={reset} />
       </div>
       <div
@@ -189,32 +253,31 @@ export function MixWaveform({ a, b, aId, bId, aBpm, transition, clock, onSeek, l
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
-        onPointerLeave={() => setHover(null)}
+        onPointerLeave={() => {
+          hoverX.current = null;
+          frameHover();
+        }}
       >
         <canvas ref={baseRef} className="absolute inset-0 h-full w-full" />
         <canvas ref={headRef} className="pointer-events-none absolute inset-0 h-full w-full" />
         {labelA && <div className="pointer-events-none absolute left-2 flex items-center gap-1.5" style={{ top: yA + 4 }}>{labelA}</div>}
         {labelB && <div className="pointer-events-none absolute left-2 flex items-center gap-1.5" style={{ top: yB + LH - 22 }}>{labelB}</div>}
-        {hover != null && hm != null && (
-          <>
-            <div className="pointer-events-none absolute top-0 bottom-0 w-px bg-white/35" style={{ left: hover }} />
-            <div
-              className="pointer-events-none absolute rounded-xs bg-overlay/95 px-1.5 py-1 text-2xs whitespace-nowrap text-fg shadow-pop num"
-              style={{ top: yMid + 2, ...(hover > width - 150 ? { right: width - hover + 6 } : { left: hover + 6 }) }}
-            >
-              <div>
-                <span className="font-semibold text-fg-subtle">A</span> {fmtPrecise(hm)}
-                {barBeat(a, hm) && <span className="ml-1 text-fg-subtle">bar {barBeat(a, hm)}</span>}
-              </div>
-              {tb != null && tb >= 0 && (
-                <div>
-                  <span className="font-semibold text-fg-subtle">B</span> {fmtPrecise(tb)}
-                  {barBeat(b, tb) && <span className="ml-1 text-fg-subtle">bar {barBeat(b, tb)}</span>}
-                </div>
-              )}
-            </div>
-          </>
-        )}
+        <div ref={hoverLineRef} hidden className="pointer-events-none absolute top-0 bottom-0 w-px bg-white/35" />
+        <div
+          ref={hoverTipRef}
+          hidden
+          className="pointer-events-none absolute rounded-xs bg-overlay/95 px-1.5 py-1 text-2xs whitespace-nowrap text-fg shadow-pop num"
+          style={{ top: yMid + 2 }}
+        >
+          <div>
+            <span className="font-semibold text-fg-subtle">A</span> <span />
+            <span className="ml-1 text-fg-subtle empty:hidden" />
+          </div>
+          <div>
+            <span className="font-semibold text-fg-subtle">B</span> <span />
+            <span className="ml-1 text-fg-subtle empty:hidden" />
+          </div>
+        </div>
       </div>
     </div>
   );

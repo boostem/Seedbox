@@ -1,11 +1,13 @@
-import { type PointerEvent, useMemo, useRef } from "react";
+import { type PointerEvent, useEffect, useMemo, useRef } from "react";
+import { player, usePlayer } from "@/audio/player";
 import { cn } from "@/lib/cn";
 
 export interface PeaksWaveformProps {
   /** ~200 values 0-1 (PreviewStatus.peaks). */
   peaks: number[] | null | undefined;
-  /** Playhead 0-1 (null = not playing). */
-  progress?: number | null;
+  /** Shows the played part and the playhead while the global player plays this id. They move from a
+   * requestAnimationFrame loop that writes to the SVG, not from props: no React render per frame (PERFORMANCE.md). */
+  trackId?: string | null;
   height?: number;
   /** Unplayed bar colour (CSS). */
   color?: string;
@@ -24,11 +26,49 @@ export interface PeaksWaveformProps {
  * Compact mirrored-bar waveform for 20 s preview clips (crate rows, mini player). For full-track 3-band
  * waveforms use the set builder's waveform feature.
  */
-export function PeaksWaveform({ peaks, progress, height = 28, color = "var(--color-fg-faint)", playedColor = "var(--color-accent)", onSeek, loading, className, bars }: PeaksWaveformProps) {
+export function PeaksWaveform({ peaks, trackId, height = 28, color = "var(--color-fg-faint)", playedColor = "var(--color-accent)", onSeek, loading, className, bars }: PeaksWaveformProps) {
   const ref = useRef<SVGSVGElement>(null);
   const values = useMemo(() => resample(peaks ?? [], Math.min(bars ?? peaks?.length ?? 0, 240)), [peaks, bars]);
   const n = values.length;
   const clipId = useMemo(() => `pk${Math.random().toString(36).slice(2, 9)}`, []);
+  const clipRef = useRef<SVGRectElement>(null);
+  const playedRef = useRef<SVGGElement>(null);
+  const headRef = useRef<SVGRectElement>(null);
+  const w = n * 3;
+
+  useEffect(() => {
+    if (!trackId || !n) return;
+    let raf = 0;
+    const draw = () => {
+      const st = usePlayer.getState();
+      const on = st.currentId === trackId && st.status !== "idle" && st.status !== "error" && st.duration > 0;
+      const x = on ? Math.max(0, Math.min(1, player.time() / st.duration)) * w : 0;
+      playedRef.current?.setAttribute("visibility", on ? "visible" : "hidden");
+      headRef.current?.setAttribute("visibility", on ? "visible" : "hidden");
+      clipRef.current?.setAttribute("width", String(x));
+      headRef.current?.setAttribute("x", String(x - 0.5));
+      return on && st.status === "playing";
+    };
+    const loop = () => {
+      raf = draw() ? requestAnimationFrame(loop) : 0;
+    };
+    const kick = () => {
+      if (!raf) raf = requestAnimationFrame(loop);
+    };
+    loop();
+    const un = usePlayer.subscribe((st, prev) => {
+      if (st.currentId === trackId || prev.currentId === trackId) kick();
+    });
+    return () => {
+      un();
+      cancelAnimationFrame(raf);
+    };
+  }, [trackId, n, w]);
+  const bar = (fill: string) =>
+    values.map((v, i) => {
+      const h = Math.max(1.2, v * height);
+      return <rect key={i} x={i * 3} y={(height - h) / 2} width={2} height={h} rx={0.6} fill={fill} />;
+    });
 
   const seek = (e: PointerEvent<SVGSVGElement>) => {
     if (!onSeek || !ref.current) return;
@@ -43,13 +83,6 @@ export function PeaksWaveform({ peaks, progress, height = 28, color = "var(--col
       </div>
     );
   }
-  const w = n * 3;
-  const p = progress == null ? null : Math.max(0, Math.min(1, progress));
-  const bar = (fill: string) =>
-    values.map((v, i) => {
-      const h = Math.max(1.2, v * height);
-      return <rect key={i} x={i * 3} y={(height - h) / 2} width={2} height={h} rx={0.6} fill={fill} />;
-    });
   return (
     <svg
       ref={ref}
@@ -65,13 +98,13 @@ export function PeaksWaveform({ peaks, progress, height = 28, color = "var(--col
       onPointerMove={(e) => e.buttons === 1 && seek(e)}
     >
       <g>{bar(color)}</g>
-      {p != null && (
+      {trackId && (
         <>
           <clipPath id={clipId}>
-            <rect x={0} y={0} width={p * w} height={height} />
+            <rect ref={clipRef} x={0} y={0} width={0} height={height} />
           </clipPath>
-          <g clipPath={`url(#${clipId})`}>{bar(playedColor)}</g>
-          <rect x={p * w - 0.5} y={0} width={1} height={height} fill="var(--color-playhead)" opacity={0.9} />
+          <g ref={playedRef} visibility="hidden" clipPath={`url(#${clipId})`}>{bar(playedColor)}</g>
+          <rect ref={headRef} visibility="hidden" x={0} y={0} width={1} height={height} fill="var(--color-playhead)" opacity={0.9} />
         </>
       )}
     </svg>

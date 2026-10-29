@@ -17,4 +17,5 @@ export { StarRating, type StarRatingProps } from "./StarRating";
 export { nextSort, Table, TableScroll, TBody, Td, Th, THead, Tr, type SortDir, type TdProps, type ThProps, type TrProps } from "./Table";
 export { Switch, type SwitchProps } from "./Switch";
 export { Tabs, type TabItem, type TabsProps } from "./Tabs";
+export { ROW_H, VirtualList, VirtualRows, type VirtualListProps, type VirtualRowsProps } from "./Virtual";
 export { Tooltip, type TooltipProps, type TooltipSide } from "./Tooltip";

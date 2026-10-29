@@ -113,7 +113,7 @@ It needs `mir_eval` (in `requirements-dev.txt`).
 | Analysis | `seedbox2/analysis/` | beat_this beats and downbeats with a piecewise grid; HTDemucs stems; our own key detection; sections and phrases from the stems; vocal activity; energy; CLAP embeddings; 150 points/s binary waveforms (#43–#49), measured by #50 |
 | Mix engine | `seedbox2/mix/` | One plan schema with per-stem lanes and piecewise grids (#51). The offline renderer and the live engine execute the same plan. Stem-aware transitions, learnt cue points, audio-shaped automation, styles as data, master chain (#52–#59) |
 | Set planning | `seedbox2/sets/` | Ordering on our own analysis with energy arcs and lookahead; multi-crate sets; an optional Claude-powered assistant (#60–#64) |
-| UI | `frontend2/` | React 19 + Vite + Tailwind 4 + zustand (forked from `frontend/`). Design language v2 (#71). WebGL2 waveforms (#74). A WebAudio AudioWorklet engine that plays plans live (#65–#67) |
+| UI | `frontend2/` | React 19 + Vite + Tailwind 4 + zustand (forked from `frontend/`). Design language v2 (#71). Performance rules in `frontend2/PERFORMANCE.md`: no React render per frame, narrow selectors, virtualised lists, waveform data in a worker (#84). WebGL2 waveforms (#74). A WebAudio AudioWorklet engine that plays plans live (#65–#67) |
 | Evaluation | `seedbox2/eval/` | `python -m seedbox2.eval analysis/mixes/golden` and the `#/listen` blind A/B page (#50, #54, #86, #87) |
 | Benchmarks | `seedbox2/bench/` | `python -m seedbox2.bench` checks the budgets below, nightly in CI and on real laptops ([how](bench/README.md)) (#68) |
 

@@ -8,7 +8,7 @@ The numbers that count come from the two reference laptops, on battery; please r
 | Command | What |
 |---|---|
 | `run` | **analysis** (each track), **stems** (each track), **plan** and **render** (each consecutive pair, a 32-bar transition) on the corpus. Each stage runs in its own process: wall time, peak RSS of the process and its children (psutil, plus the OS's own peak), and the peak of Python's heap (tracemalloc, in a second run of the stage, since tracing slows allocation-heavy code down by about a quarter). Analysis and stems are also given per 4 minutes of audio. |
-| `frontend` | `frontend2/dist` in headless Chrome on `#/bench`: frames per second, 95th-percentile frame time and long tasks (> 50 ms) while ⌘/ctrl-wheel zooming the waveform, scrolling it, and playing with the waveform following the playhead. |
+| `frontend` | `frontend2/dist` in headless Chrome on `#/bench`: frames per second, 95th-percentile frame time, long tasks (> 50 ms) and React commits per second while ⌘/ctrl-wheel zooming the waveform, scrolling it, moving the mouse over it, playing with the waveform following the playhead, and scrolling a 10,000-row virtualised table. The waveform scenarios may cause at most 5 React commits a second ([`frontend2/PERFORMANCE.md`](../../frontend2/PERFORMANCE.md)). |
 | `compare OLD NEW` | Every metric both files have; a regression is a metric that got worse by more than 10 % (and by more than a small noise floor). Markdown on stdout, exit code 1 if anything regressed. |
 | `report FILE` | A results file as markdown: the machine, each budget with ✅/❌, and a table per stage. |
 
@@ -76,7 +76,8 @@ the laptops check the budgets.
   },
   "frontend": {"browser": "…", "cpu_throttle": 1, "viewport": [1440, 900],
                "scenarios": {"zoom": {"seconds": 5, "frames": 300, "fps": 60, "frame_p95_ms": 16.8,
-                                      "frame_max_ms": 17, "long_tasks": 0, "long_task_ms_max": 0}}},
+                                      "frame_max_ms": 17, "long_tasks": 0, "long_task_ms_max": 0,
+                                      "react_commits": 10, "react_commits_per_s": 2.0}}},
   "budgets": [{"section": "analysis", "field": "per_4min_s_max", "value": 1.4, "limit": 15, "unit": "s",
                "what": "beats + key + waveform per 4-minute track", "ok": true}]
 }

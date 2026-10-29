@@ -2,6 +2,7 @@
   "version": "5",
   "specifiers": {
     "npm:@tailwindcss/vite@^4.1.0": "4.3.3_vite@8.3.2",
+    "npm:@tanstack/react-virtual@^3.14.23": "3.14.23_react@19.3.0_react-dom@19.3.0",
     "npm:@types/react-dom@^19.2.0": "19.3.0_@types+react@19.3.0",
     "npm:@types/react@^19.2.0": "19.3.0",
     "npm:@vitejs/plugin-react@6": "6.1.1_vite@8.3.2",
@@ -219,6 +220,17 @@
         "tailwindcss",
         "vite"
       ]
+    },
+    "@tanstack/react-virtual@3.14.23_react@19.3.0_react-dom@19.3.0": {
+      "integrity": "sha512-Oyy58qQwdaQieA+A4WUDtnh9D1rv5FZvGdw8og9Xeyh88V6HH94vMSyV5i9ATIbYNe9t5Ix0WXRo9NOTpHDkYw==",
+      "dependencies": [
+        "@tanstack/virtual-core",
+        "react",
+        "react-dom"
+      ]
+    },
+    "@tanstack/virtual-core@3.19.8": {
+      "integrity": "sha512-Oz/SYBo/aVPyQkwtOw7Q23myITUgFIof2glQqydYJAPL6mH2SkJDkvDKZTklB+7gv5jGLZQhyTcd7SO1A1EODQ=="
     },
     "@types/chai@5.2.3": {
       "integrity": "sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==",
@@ -754,6 +766,7 @@
     "packageJson": {
       "dependencies": [
         "npm:@tailwindcss/vite@^4.1.0",
+        "npm:@tanstack/react-virtual@^3.14.23",
         "npm:@types/react-dom@^19.2.0",
         "npm:@types/react@^19.2.0",
         "npm:@vitejs/plugin-react@6",

@@ -5,6 +5,9 @@
  *   player.play(id, url, { startAt, title, subtitle })   any audio URL; title/subtitle show in the transport strip
  *   player.toggle(id?) / playPause() / stop() / pause() / resume() / seek(s) / setVolume(v)
  *   usePlayer((s) => s.currentId === id && s.status === "playing")   reactive state
+ *   player.time()   the exact position now, for per-frame drawing (canvas playheads read it in their own rAF loop)
+ *
+ * `position` in the store updates at 25 Hz for coarse readouts; never draw a playhead from a React render of it.
  */
 import { create } from "zustand";
 import { resolveMediaUrl } from "@/api/client";
@@ -174,6 +177,8 @@ export const player = {
     }
   },
   isCurrent,
+  /** The playing position right now (s), straight from the audio element: for per-frame drawing. */
+  time: (): number => (audio && usePlayer.getState().currentId ? audio.currentTime : usePlayer.getState().position),
 };
 
 /** True while `id` is the current track and playing or loading. */

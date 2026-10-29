@@ -6,7 +6,7 @@
  */
 import type { TrackAnalysis, Transition } from "@/api/types";
 import { type Lane, laneOf, toFile, toMix } from "./draw";
-import { prepareWave } from "./prepare";
+import { prepareWave, type WaveData } from "./prepare";
 
 export interface MixGeometry {
   laneA: Lane;
@@ -30,13 +30,14 @@ export interface MixGeometry {
 
 const VOCAL_ON = 0.5;
 
-export function mixGeometry(t: Transition, a: TrackAnalysis | null, b: TrackAnalysis | null, aBpm: number): MixGeometry | null {
+/** `waves`: the prepared waveforms (`useWave`); prepared here, on the main thread, when not given. */
+export function mixGeometry(t: Transition, a: TrackAnalysis | null, b: TrackAnalysis | null, aBpm: number, waves?: { a: WaveData | null; b: WaveData | null }): MixGeometry | null {
   if (t.out_start_s == null || t.in_start_s == null) return null;
   const rate = 1 + (t.pitch_pct || 0) / 100;
   const out = t.out_start_s;
   const inStart = t.in_start_s;
-  const laneA = laneOf(a, a ? prepareWave(a) : null, 0, 1);
-  const laneB = laneOf(b, b ? prepareWave(b) : null, out - inStart / rate, rate);
+  const laneA = laneOf(a, waves ? waves.a : a ? prepareWave(a) : null, 0, 1);
+  const laneB = laneOf(b, waves ? waves.b : b ? prepareWave(b) : null, out - inStart / rate, rate);
   const barA = a?.bar_s && a.bar_s > 0 ? a.bar_s : 240 / (aBpm || 120);
   const bars = Math.max(0, t.overlap_bars ?? 0);
   const overlapS = bars * barA;
