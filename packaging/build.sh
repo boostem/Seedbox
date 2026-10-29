@@ -172,7 +172,7 @@ if [[ $SKIP_SMOKE == 0 ]]; then
   PORT="$("$PYTHON" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
   T0="$("$PYTHON" -c 'import time; print(time.time())')"
   env MUSICRECO_OUTPUT_ROOT="$SMOKE/crates" SEEDBOX_SUPPORT_DIR="$SMOKE/support" SEEDBOX_CACHE_DIR="$SMOKE/cache" \
-      SEEDBOX_LOG_DIR="$SMOKE/logs" SEEDBOX_NO_UPDATE_CHECK=1 SEEDBOX_NO_MIGRATE=1 \
+      SEEDBOX_LOG_DIR="$SMOKE/logs" SEEDBOX_NO_UPDATE_CHECK=1 \
       "$APP/Contents/MacOS/Seedbox" --server-only --port "$PORT" > "$SMOKE/server.out" 2>&1 &
   PID=$!
   trap 'kill $PID 2>/dev/null || true' EXIT

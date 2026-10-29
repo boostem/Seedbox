@@ -1,6 +1,6 @@
 # Seedbox — desktop app spec (v3, user-approved 2026-10-03)
 
-Seedbox turns the existing `musicreco` engine (SPEC.md v1+v2: tunebat seed → "r" recs → YouTube Music → MP3 192
+Seedbox turns the existing `musicreco` engine (v1+v2, see "Engine" at the end: tunebat seed → "r" recs → YouTube Music → MP3 192
 → ID3 tags → per-seed crate folders) into a modern **macOS desktop app** shared as a `.dmg` with friends.
 
 ## Decisions (do not change without the lead)
@@ -9,9 +9,7 @@ Seedbox turns the existing `musicreco` engine (SPEC.md v1+v2: tunebat seed → "
   (friends right-click → Open once). `python -m seedbox` runs it from source.
 - **Look:** dark DJ-software style (rekordbox/AutoPilot-like): dense, high contrast, Camelot colours, 3-band
   waveforms. Name: **Seedbox**.
-- **Crates folder:** `~/Music/MusicReco` (configurable in Settings). On first launch, crates in the project's legacy
-  `downloads/` are moved there and `downloads/` is replaced by a symlink to the new root (so paths AutoPilot already
-  imported keep resolving).
+- **Crates folder:** `~/Music/MusicReco` (configurable in Settings).
 - **Previews:** when a crate opens, 20 s clips for the seed + every rec are **preloaded in the background**
   (3 at a time, ticked/high-score first, disk cache shared across sessions). Clicking play is instant.
 - **New features:** interactive **set builder** (drag reorder, live transition scores, energy/BPM chart, Camelot
@@ -20,7 +18,6 @@ Seedbox turns the existing `musicreco` engine (SPEC.md v1+v2: tunebat seed → "
   tunebat BPM locks the grid).
 - **Unchanged rules:** only tunebat `r` (never `er`), pre-tick = `mixing.passes_rule`, YT Music first ±15 s,
   MP3 192, key/BPM tags from tunebat, Beatport extras, energy POPM stars, set order TRCK, playlists `.m3u8` + `.xml`.
-  The terminal CLI (`tunebat_dl.py`) keeps working.
 - **Bundled binaries:** ffmpeg from `imageio-ffmpeg` (static, system libs only), `deno` copied from Homebrew (system
   libs only). **yt-dlp must be updatable at runtime** (a frozen copy breaks within weeks).
 
@@ -32,8 +29,8 @@ musicreco/                      engine
   previews.py            (new)  PREVIEWS agent
   structure.py           (new)  STRUCTURE agent
   transitions.py         (new)  TRANSITIONS agent
-  tunebat.py, genres*.py, tagging.py, audition.py   frozen (bug fixes only via the lead)
-tunebat_dl.py                   CORE agent (CLI keeps working, uses shared helpers)
+  tunebat.py, genres*.py, tagging.py   frozen (bug fixes only via the lead)
+_archive/                       the retired terminal tool (tunebat_dl.py, audition.py, SPEC.md), not used by the app
 seedbox/
   server.py, jobs.py, events.py, analysis_queue.py, __main__.py?   SERVER agent  (__main__ → PACKAGING)
   app.py, updater.py, __main__.py                                   PACKAGING agent
@@ -64,8 +61,7 @@ def deno_path() -> str | None
 def bundled() -> bool
 ```
 - `library.downloads_root()` replaces the hard-coded `DOWNLOADS_ROOT` everywhere (keep `DOWNLOADS_ROOT` as a
-  backwards-compatible alias resolved at call time if feasible). `library.migrate_legacy_downloads(old, new) -> list[Path]`
-  moves crate folders (never overwrites; skips name clashes and reports them), then replaces `old` with a symlink.
+  backwards-compatible alias resolved at call time if feasible).
 - `youtube.find_match` memoised per (track.id, tolerance) for the process lifetime (thread-safe, 1 h TTL) so previews
   and downloads share one search. `youtube`/`analysis` resolve ffmpeg/deno via `paths`.
 - `mixing.passes_rule(..., tol=0.10)` / `score(..., tol=0.10)` accept the BPM tolerance (default unchanged).
@@ -75,8 +71,8 @@ def bundled() -> bool
   dict[str, Track]` (crate.json, falling back to rebuilding from tracks.csv for old crates).
 - `library.apply_order(seed_dir, ordered_ids: list[str]) -> None` — TRCK n/total on the files, rewrite `.m3u8` +
   `.xml` + tracks.csv `order` column. `library.list_crates(root) -> list[dict]` (CrateSummary-shaped).
-- `pipeline.complete_batch(seed, recs, scores, ticked_ids, seed_dir, results) -> CompletedBatch` — everything the CLI
-  does after run_batch (finalize incl. earlier-run files, CSV, skipped.txt, .m3u8, .xml, crate.json). CLI + server share it.
+- `pipeline.complete_batch(seed, recs, scores, ticked_ids, seed_dir, results) -> CompletedBatch` — everything that
+  happens after run_batch (finalize incl. earlier-run files, CSV, skipped.txt, .m3u8, .xml, crate.json). The server uses it.
 
 ### PREVIEWS — `musicreco/previews.py`
 ```python
@@ -179,7 +175,7 @@ event loop never blocks. Crate `{folder}` path params are URL-encoded folder nam
   (`--headless --screenshot=<png> --window-size=1440,900 --virtual-time-budget=4000 <url>`); look at your screenshots.
 
 ## Rules for every agent
-- Read SPEC.md (v1/v2 behaviour), this file, `frontend/src/api/types.ts`, and the code you touch.
+- Read this file (the v1/v2 engine contracts are at the end), `frontend/src/api/types.ts`, and the code you touch.
 - Python: `.venv/bin/python` (deps installed; ask the lead rather than pip-installing). Style as in musicreco
   (`from __future__ import annotations`, type hints, short docstrings, sparse comments, no prints in library code).
 - Scratch files go in your scratch dir, never in the project. Never modify `downloads/` or `~/Music/MusicReco` in
@@ -227,3 +223,194 @@ def plan_hash(plan: dict, a_path: Path, b_path: Path) -> str
 | DELETE | same | drop saved edits → generated MixPlan |
 | POST | `/api/crates/{folder}/mix/{from_id}/{to_id}/render` (optional body: MixPlan to render unsaved edits) | MixRender (cached by plan_hash; SSE `{type:"render", data:{render_id, state, progress}}` while it runs) |
 | GET | `/api/renders/{render_id}.m4a` | rendered audio (Range) |
+
+---
+
+# Engine — v1 + v2 behaviour and contracts
+
+Folded in from the terminal-era SPEC.md (the original is in `_archive/`). The flow the app drives:
+
+1. Search → `GET https://api.tunebat.com/api/tracks/search?term=<q>&page=<n>` (50/page). Results must
+   disambiguate versions: title, artists, album, release date, duration, Camelot, BPM.
+2. Picked track = **seed**.
+3. `GET https://api.tunebat.com/api/tracks?trackId=<id>` → use **only `data.r`** (ignore `data.er` entirely).
+4. Recommendations: seed first, every `r` track shown, pre-ticked iff it passes the rule
+   (Camelot classic-adjacent AND BPM ±10% incl. half/double-time) unless the user pre-ticks all. Show why.
+5. Download ticked tracks, **2 in parallel**: YouTube Music search first, fallback regular YouTube; accept the candidate
+   whose duration is within **±15 s** of the Spotify duration (closest wins, prefer ytmusic). No candidate within
+   tolerance → **skip** and log to `skipped.txt`. Output **MP3 192 kbps** (re-encoded from YouTube's lossy stream).
+6. Tag each MP3 (ID3v2.3) from tunebat data + genre, write `tracks.csv` + `skipped.txt`.
+
+Sample responses (parsed): `frontend/src/mock/fixtures/tunebat.json`.
+
+## Output layout
+```
+<crates folder>/                     # library.downloads_root(), ~/Music/MusicReco by default
+  <Artists - Title of seed>/          # sanitized seed.display_name
+    <Artists - Title>.mp3              # sanitized track.display_name
+    tracks.csv
+    skipped.txt
+```
+- **Skip existing**: target file already in this seed folder (same Spotify ID) → status `exists`, no download.
+- **Cross-seed duplicate**: track already downloaded under another seed folder → **copy** that file in (no YouTube hit),
+  retag Grouping with the new seed → status `copied`.
+
+## Tags (ID3v2.3, via mutagen) — strip any tags yt-dlp/YouTube put there first
+| Frame | Value |
+|---|---|
+| TIT2 | track.name |
+| TPE1 | track.artist_str |
+| TALB | track.album |
+| TYER (v2.3) | track.year |
+| TBPM | str(round(track.bpm)) |
+| TKEY | track.camelot (e.g. `1A`) |
+| TIT1 (Grouping) | seed.display_name |
+| TCON | genre (single most specific, Title Case) if found |
+| APIC | front cover JPEG from track.cover_url (640px Spotify art) |
+| TXXX:SPOTIFY_TRACK_ID | track.id (used for skip-existing / cross-seed copy detection) |
+
+No comment tag, no M3U, no rekordbox XML.
+
+v2 adds more frames (below); v3 adds the rekordbox `.xml` and `.m3u8` playlists per crate.
+
+## Shared types — `musicreco/models.py` (DONE, do not change without telling the lead)
+`Track` (with `.from_api(dict)`, `.artist_str`, `.display_name`, `.duration_s`, `.duration_str`, `.year`, `.spotify_url`),
+`SearchPage`, `TrackDetail`, `YTCandidate`, `MatchResult`, `DownloadResult`.
+
+## Module contracts (each module owned by exactly one agent)
+
+### `musicreco/tunebat.py`
+```python
+class TunebatError(Exception): ...
+class TunebatClient:
+    def __init__(self, scraper=None): ...               # cloudscraper.create_scraper(); headers Origin/Referer https://tunebat.com/
+    def search(self, term: str, page: int = 1) -> SearchPage: ...
+    def get_track(self, track_id: str) -> TrackDetail: ...   # recommended = data["r"] only
+```
+Retry 429/5xx with backoff (3 tries). Raise `TunebatError` with a readable message otherwise.
+
+### `musicreco/mixing.py`
+```python
+def camelot_adjacent(seed: str, other: str) -> bool        # same key; ±1 same letter (12↔1 wraps); same number other letter
+def bpm_compatible(seed_bpm: float, other_bpm: float, tol: float = 0.10) -> bool   # also other*2 and other/2
+def passes_rule(seed: Track, other: Track) -> tuple[bool, str]   # (ok, short human reason e.g. "1B ✓ 128 ✓" / "5A ✗ key")
+```
+
+### `musicreco/youtube.py`
+```python
+def find_match(track: Track, tolerance_s: float = 15.0) -> MatchResult
+def download(candidate: YTCandidate, dest: Path) -> Path   # dest = full target path ending in .mp3; returns final path
+```
+YouTube Music first (`https://music.youtube.com/search?q=...` songs), fallback `ytsearch` — query `"<artists> - <title>"`.
+Thread-safe (new `YoutubeDL` per call), quiet (no console spam), MP3 192 via FFmpegExtractAudio.
+
+### `musicreco/genres_beatport.py`
+```python
+def beatport_genre(track: Track) -> str | None   # sub-genre if present else genre; None if no confident match
+```
+
+### `musicreco/genres_musicbrainz.py`
+```python
+def musicbrainz_genre(track: Track) -> str | None  # recording genres, else artist genres; highest vote count
+```
+Global 1 req/s lock (thread-safe), User-Agent `MusicReco/0.1 (personal DJ library tool)`.
+
+### `musicreco/genres.py`
+```python
+def find_genre(track: Track) -> tuple[str | None, str | None]   # (genre Title Case, source "beatport"|"musicbrainz"|None)
+```
+Beatport first, MusicBrainz fallback. In-memory cache by track.id. Never raises (log + return (None, None)).
+Catch-all genres ("Dance / Pop", "Electronic", …) are only kept if no other source has something more specific.
+
+### `musicreco/tagging.py`
+```python
+def write_tags(path: Path, track: Track, seed: Track, genre: str | None) -> None   # full tag set above; fetches cover
+def set_grouping(path: Path, seed: Track) -> None
+def read_spotify_id(path: Path) -> str | None
+```
+
+### `musicreco/library.py`
+```python
+DOWNLOADS_ROOT: Path   # v3: library.downloads_root() (the crates folder from settings)
+def sanitize_filename(s: str) -> str
+def seed_dir(seed: Track, root: Path = DOWNLOADS_ROOT) -> Path            # creates it
+def track_path(seed_dir: Path, track: Track) -> Path                      # unique .mp3 path (suffix [<id6>] on name clash w/ other ID)
+def find_existing(track: Track, root: Path = DOWNLOADS_ROOT) -> list[Path]   # all mp3s whose TXXX:SPOTIFY_TRACK_ID == track.id
+def write_tracks_csv(seed_dir: Path, seed: Track, rows: list["CsvRow"]) -> Path
+def append_skipped(seed_dir: Path, seed: Track, results: list[DownloadResult]) -> Path | None   # skipped + failed only
+```
+`CsvRow` dataclass (define in library.py): track, role ("seed"|"r"), passed_rule, rule_reason, ticked, result (DownloadResult|None).
+CSV columns: role, ticked, passed_rule, rule_reason, spotify_id, artists, title, album, release_date, duration, key, camelot,
+bpm, energy, danceability, popularity, genre, genre_source, status, youtube_url, file, reason.
+`skipped.txt`: append a timestamped block per run; per entry: artists, title, Camelot, BPM, Spotify length, Spotify link,
+status/reason, closest YouTube candidate (title, length, URL) if any.
+
+### `musicreco/pipeline.py`
+```python
+def process_track(track: Track, seed: Track, seed_dir: Path) -> DownloadResult
+def run_batch(tracks: list[Track], seed: Track, seed_dir: Path, workers: int = 2,
+              on_update: Callable[[Track, str], None] | None = None) -> list[DownloadResult]
+```
+Order: exists in seed_dir → `exists`; exists elsewhere → copy + `set_grouping` → `copied`; else `find_match` → none →
+`skipped`; `download` → `find_genre` → `write_tags` → `downloaded`. Any exception → `failed` with reason (never crash the batch).
+
+## v2 — features + fixes (user-approved 2026-10-02)
+
+Approved: (1) reliability bug fixes, (2) ranked + colour-coded recommendations, (3) 20 s preview clips,
+(4) order the crate into a set, (5) energy 1–10 as **POPM star rating** + ReplayGain loudness tags, (6) Beatport extra tags.
+Rejected in v2 (v3 later added packaging, the preview disk cache and rekordbox/M3U playlists): tunebat advanced search, using ~/Music/DJ, disk cache, tooling/packaging, SoundCloud,
+download verification, comment tag, rekordbox/M3U, `er`, Spotify API. **Key/BPM tags always come from tunebat** —
+Beatport key/BPM go to tracks.csv only (with mismatch flags). The pre-tick gate stays `mixing.passes_rule` exactly.
+
+New shared types are in `musicreco/models.py` (lead-owned): `MatchResult.alternatives`, `ProviderUnavailable`,
+`BeatportInfo`, `Score`, `Loudness`, and `DownloadResult.beatport/loudness/energy_rating/order`.
+
+### v2 contracts
+
+### `youtube.py` + `tunebat.py` (reliability)
+- `find_match` fills `MatchResult.alternatives` (other in-tolerance candidates, best first, max 4).
+- `download(candidate, dest)`: retry transient failures (HTTP 403/429/5xx, timeouts, "fragment"/"unable to download")
+  up to 3 attempts with a fresh `YoutubeDL` and 2–5 s jitter. `YouTubeError` gets attribute `transient: bool`.
+- New `fetch_clip(candidate: YTCandidate, start_s: float, length_s: float, dest: Path) -> Path` — short audio clip
+  (yt-dlp `download_ranges`), any audio container afplay can play (m4a/mp3). Used by previews.
+- `tunebat.py`: a malformed item in search/r is skipped + logged, not fatal for the page.
+
+### `genres_beatport.py` + `genres.py` + `genres_musicbrainz.py`
+- `beatport_lookup(track) -> BeatportInfo | None` (keep `beatport_genre` as a thin wrapper). Fill every field available
+  from the hit (label, catalog_number, isrc, mix_name, remixers, bpm, key + camelot conversion, url, track_id, publish_date).
+- Transient failures (timeouts, 429/5xx, Cloudflare 403/pause) raise `ProviderUnavailable` instead of returning None
+  — in both providers.
+- `genres.find_metadata(track) -> tuple[str | None, str | None, BeatportInfo | None]` (genre, source, beatport).
+  `find_genre` stays (returns first two). Never raises. Never caches a result affected by `ProviderUnavailable`.
+  Genre choice logic unchanged (weak catch-alls fall through).
+
+### `mixing.py`
+- `score(seed, other) -> Score` — 0–100; Camelot move label; BPM delta as pitch % (half/double aware); energy &
+  danceability deltas; `passed == passes_rule(seed, other)[0]`. `passes_rule` unchanged.
+- `energy_ratings(tracks: list[Track]) -> dict[str, int]` — 1–10 per track id, crate-relative (spread e/da/lo/h).
+- `order_set(seed: Track, tracks: list[Track]) -> list[Track]` — playable running order, seed first; minimise Camelot
+  distance + BPM drift, gentle energy build to a peak ~2/3 through then ease off.
+
+### `analysis.py` (new) + `tagging.py`
+- `analysis.measure_loudness(path) -> Loudness | None` — one ffmpeg `ebur128=peak=true` pass; RG2 gain = -18 - LUFS.
+- `tagging.write_tags(path, track, seed, genre, beatport: BeatportInfo | None = None, loudness: Loudness | None = None)`
+  adds: TPUB label, TSRC isrc, TIT3 mix name, TPE4 remixers, WOAF beatport url, TXXX:BEATPORT_TRACK_ID,
+  TXXX:CATALOGNUMBER, TXXX:REPLAYGAIN_TRACK_GAIN ("-3.21 dB") / REPLAYGAIN_TRACK_PEAK ("0.987654").
+  TKEY/TBPM unchanged (tunebat). Existing callers with 4 args must keep working.
+- `tagging.set_energy(path, rating: int)` — 1–10 → 1–5 stars as POPM (research which POPM email/byte mapping
+  rekordbox, Serato, Traktor, Apple Music/Finder actually read; write the frame(s) that maximise compatibility).
+- `tagging.set_track_number(path, n: int, total: int)` — TRCK "n/total".
+- `tagging.read_tags_summary(path) -> dict` — genre, energy stars, track number etc. (for exists/copied rows).
+
+### `pipeline.py` + `library.py`
+- Atomic per-track work: download + genre/beatport + loudness + tagging happen in `seed_dir/.tmp-<id>/`, then
+  `os.replace` to the final path. Sweep stale `.tmp-*` dirs on batch start. No untagged files ever at the final name.
+- On `YouTubeError` for the match, try `alternatives` in order before giving up.
+- `finalize_crate(seed, seed_dir, results) -> list[DownloadResult]` (new, called by the UI after run_batch): for all
+  files in the crate (downloaded/copied/exists) compute `mixing.energy_ratings` → `tagging.set_energy`, and
+  `mixing.order_set` → `tagging.set_track_number`; fill `energy_rating`/`order` on results.
+- exists/copied rows: fill genre/energy etc. from `tagging.read_tags_summary` so the CSV isn't blank.
+- `library.write_tracks_csv`: atomic (temp + os.replace) and **merge** with the existing CSV by spotify_id (a re-run
+  must not blank earlier downloaded rows). New columns: score, move, energy_rating, order, lufs, replaygain_db,
+  beatport_url, label, catalog_number, isrc, mix_name, beatport_key, beatport_camelot, beatport_bpm, key_mismatch,
+  bpm_mismatch. `CsvRow` gains `score: Score | None = None`.

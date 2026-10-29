@@ -59,15 +59,14 @@ uses `.venv`'s Homebrew Python, and the app only runs on this Mac's macOS versio
 
 | What | Where |
 |---|---|
-| Crates: MP3s, `tracks.csv`, `skipped.txt`, `.xml`, `.m3u8` | `~/Music/MusicReco/<Artists - Title of seed>/` (change it under Settings). The project's `downloads/` is a symlink to it: the first launch from source moved the old crates there. |
+| Crates: MP3s, `tracks.csv`, `skipped.txt`, `.xml`, `.m3u8` | `~/Music/MusicReco/<Artists - Title of seed>/` (change it under Settings) |
 | Crate metadata, analysis cache | `<crate>/.seedbox/` (`crate.json`, `analysis/<track id>.json`) |
 | Settings, downloaded yt-dlp updates | `~/Library/Application Support/Seedbox/` (`settings.json`, `pydeps/`) |
 | Preview clips (safe to delete) | `~/Library/Caches/Seedbox/previews/` (capped at 500 MB by default) |
 | Log | `~/Library/Logs/Seedbox/seedbox.log` |
 
 For tests and scratch runs, `MUSICRECO_OUTPUT_ROOT` overrides the crates folder (it's never saved).
-`SEEDBOX_SUPPORT_DIR`, `SEEDBOX_CACHE_DIR` and `SEEDBOX_LOG_DIR` move the other folders. The terminal tool below
-reads the same settings and writes to the same crates folder.
+`SEEDBOX_SUPPORT_DIR`, `SEEDBOX_CACHE_DIR` and `SEEDBOX_LOG_DIR` move the other folders.
 
 ### Sharing the .dmg
 
@@ -77,12 +76,12 @@ time, where files go and updating yt-dlp from Settings. It's included in the DMG
 
 ---
 
-# MusicReco: tunebat → yt-dlp DJ crate builder
+# How crates are built
 
-An interactive terminal tool for building practice crates. You search [tunebat](https://tunebat.com), pick the
-exact version of a track (the **seed**), and it ranks tunebat's recommended tracks by how well they mix with it.
-You audition and tick the ones you want, and it downloads them from YouTube as tagged MP3s into a folder named
-after the seed. The tracks are numbered in a suggested set order and rated for energy.
+Seedbox runs the `musicreco/` engine: you search [tunebat](https://tunebat.com), pick the exact version of a track
+(the **seed**), and it ranks tunebat's recommended tracks by how well they mix with it. You tick the ones you
+want, and it downloads them from YouTube as tagged MP3s into a folder named after the seed. The tracks are
+numbered in a suggested set order and rated for energy.
 
 > This is a personal archival / DJ-practice tool. Only download what you have the right to, and buy the
 > tracks you actually play out. The MP3s are re-encoded from YouTube's lossy audio, so they aren't club masters.
@@ -93,40 +92,6 @@ after the seed. The tracks are numbered in a suggested set order and rated for e
 brew install ffmpeg deno          # ffmpeg for MP3 encoding + loudness, deno for yt-dlp's YouTube JS challenges
 /opt/homebrew/bin/python3.14 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
-
-## Run
-
-```sh
-.venv/bin/python tunebat_dl.py
-```
-
-1. **Search**: type a search term. An empty search or Ctrl-C quits.
-2. **Pick the seed**: use the arrow-key list of results (50 per page). Each row shows title, artists, album,
-   release date, length, Camelot key and BPM, so you can tell the single, extended mix and remixes apart.
-   Type to filter. *Next page*, *Previous page* and *New search* are at the bottom (↑ from the top jumps there).
-3. **Recommendations**: a table of the seed and every tunebat recommendation, best match first, with its score,
-   key, BPM, length and the reasons behind the score (see [Score and colours](#score-and-colours)).
-4. **Checklist**: the same ranking as a checklist. By default every track starts ticked (Seedbox's **Pre-tick all
-   recommendations** setting). With that setting off, the seed and every track that passes the mixing rule start
-   ticked, and tracks that fail it start unticked, but you can tick them anyway. The line under the list gives the
-   highlighted track's musical key, the rule verdict and the full reasons. Untick everything to go back to search.
-   You're asked to confirm before anything downloads.
-
-   | Key | Action |
-   |---|---|
-   | ↑ ↓ (or j k) | move |
-   | space | tick / untick |
-   | a | tick all (press again to untick all) |
-   | i | invert the ticks |
-   | p | play a 20 s clip of the highlighted track (see [Auditioning](#auditioning)) |
-   | s | stop the clip |
-   | ↵ | confirm |
-
-5. **Download**: two tracks download at a time, with live progress. Next come a summary and the
-   [set order](#set-order-and-energy). Then `tracks.csv` and `skipped.txt` are written and you're back at search.
-
-Ctrl-C at any step returns to search. During downloads, Ctrl-C cancels the tracks that haven't started yet
-and lets the running ones finish. Press Ctrl-C again to stop waiting.
 
 ## The mixing rule
 
@@ -139,7 +104,7 @@ With **Pre-tick all recommendations** off, a recommendation is pre-ticked only w
 
 ## Score and colours
 
-Every recommendation gets a **score from 0 to 100** that ranks the table and the checklist. The score combines
+Every recommendation gets a **score from 0 to 100** that ranks the recommendations. The score combines
 the key move, how far the tempo has to be pitched (half/double time counts, with a small penalty), and how
 close the energy and danceability are to the seed. Tracks that pass the rule always score 48 or more, and
 tracks that fail it always score lower, so rule matches are always on top. The rule decides the ticks (when
@@ -155,26 +120,16 @@ The score and the key are coloured by the **Camelot move** from the seed:
 | magenta | energy boosts and diagonals: +2, +7, or ±1 with the other letter |
 | red | clash (anything else) |
 
-Rows that fail the rule are dimmed, and an unknown key shows as `?`. The **Why** column lists the reasons
-behind the score, for example `relative · -1.5% pitch · energy +0.07` (pitch is the tempo change needed to match
+Tracks that fail the rule are dimmed, and an unknown key shows as `?`. Each track also lists the reasons
+behind its score, for example `relative · -1.5% pitch · energy +0.07` (pitch is the tempo change needed to match
 the seed).
-
-## Auditioning
-
-In the checklist, **p** plays a 20-second clip of the highlighted track, starting about 35% of the way in,
-through `afplay`. The line under the list shows what's loading or playing, or why a clip couldn't be
-played. The first play of a track takes a few seconds while the clip is found and fetched from YouTube. Clips are
-cached for the session, so replays are instant. Pressing **p** on another row switches to that track, and **s** stops.
-Playback stops when the checklist closes, and the cached clips are deleted when you quit.
 
 ## Set order and energy
 
 After each download, every track in the batch is given an **energy rating from 1 to 10**. The ratings are
 relative to the crate and come from tunebat's energy, loudness, danceability and happiness values. The tracks are also
 arranged into a **running order** that starts with the seed and keeps key moves and BPM drift small. Energy
-builds gently to a peak about two-thirds of the way through, then eases off. The order is printed as a table
-with each track's number, Camelot key, BPM and energy stars. Each key is coloured by the move from the track
-before it. Two small curves show how energy and BPM change across the set.
+builds gently to a peak about two-thirds of the way through, then eases off.
 
 - **Track numbers**: the order is written to each file's track number (`TRCK`, e.g. `3/12`), so sorting by
   track number in your DJ software plays the crate in that order.
@@ -195,7 +150,7 @@ that you didn't tick this time, so track numbers never collide.
 ## Output
 
 ```
-~/Music/MusicReco/               # the crates folder from Seedbox's settings (the project's downloads/ links here)
+~/Music/MusicReco/               # the crates folder from Seedbox's settings
   <Artists - Title of seed>/
     <Artists - Title>.mp3        # MP3 192 kbps
     <Artists - Title of seed>.xml   # the crate in set order, rekordbox XML format (import into AutoPilot)

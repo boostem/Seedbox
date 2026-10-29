@@ -4,7 +4,6 @@
   --server-only   no window; serve until Ctrl-C (tests, bundles, headless use)
   --port N        fixed port (default: a free one; 8765 with --dev, where Vite proxies /api)
   --dev           the window loads the Vite dev server (http://localhost:5173) instead of the built frontend
-  --no-migrate    never move the legacy project downloads/ folder (see maybe_migrate_legacy)
   --self-test     print a JSON report (binaries, modules, yt-dlp, one YouTube Music search + format probe), exit
   --update-ytdlp  download + verify the newest yt-dlp (same as the UI button), print the result, exit
 
@@ -44,7 +43,6 @@ MIN_SIZE = (1100, 680)
 HEALTH_TIMEOUT_S = 30.0
 LOG_DIR_ENV = "SEEDBOX_LOG_DIR"
 STATIC_DIR_ENV = "SEEDBOX_STATIC_DIR"
-NO_MIGRATE_ENV = "SEEDBOX_NO_MIGRATE"
 SELF_TEST_QUERY = "Daft Punk - One More Time"
 SELF_TEST_MODULES = ("numpy", "scipy.signal", "scipy.ndimage", "mutagen.id3", "uvicorn", "fastapi", "AppKit", "WebKit",
                      "webview.platforms.cocoa", "musicreco.previews", "musicreco.structure", "musicreco.transitions", "musicreco.mixplan", "musicreco.mixrender", "pedalboard",
@@ -123,49 +121,6 @@ def _redirect_std_streams(log_file: Path) -> None:
     sys.stdout = sys.stderr = stream
 
 
-# ---------------------------------------------------------------- legacy downloads/ migration
-
-def legacy_downloads_dir() -> Path:
-    """The project's old downloads/ folder (library.LEGACY_DOWNLOADS_ROOT; only meaningful from source)."""
-    from musicreco import library
-
-    return Path(getattr(library, "LEGACY_DOWNLOADS_ROOT", project_root() / "downloads"))
-
-
-def migration_allowed(args: argparse.Namespace) -> bool:
-    """Only from source, never when the crates folder is overridden by env (tests/dev) or disabled."""
-    from musicreco import settings as msettings
-
-    return not (frozen() or args.no_migrate or os.environ.get(NO_MIGRATE_ENV) == "1"
-                or msettings.env_output_root() is not None)
-
-
-def maybe_migrate_legacy(output_root: Path, legacy: Path | None = None) -> list[Path] | None:
-    """Move crates from the project's legacy downloads/ (a real folder) into `output_root` via the CORE helper.
-
-    Returns None when there was nothing to do, else library.migrate_legacy_downloads's list of entries left
-    behind (name clashes). `legacy` defaults to <project>/downloads; tests pass temp folders.
-    """
-    legacy = Path(legacy) if legacy is not None else legacy_downloads_dir()
-    root = Path(output_root).expanduser()
-    if legacy.is_symlink() or not legacy.is_dir():
-        return None
-    if root.exists() and root.resolve() == legacy.resolve():
-        return None
-    if root.resolve().is_relative_to(legacy.resolve()):
-        log.warning("crates folder %s is inside the legacy %s; not migrating", root, legacy)
-        return None
-    from musicreco import library
-
-    left = library.migrate_legacy_downloads(legacy, root)
-    if left:
-        log.warning("moved legacy crates to %s; %d entries stayed behind: %s", root, len(left),
-                    ", ".join(str(p) for p in left))
-    else:
-        log.info("moved legacy crates from %s to %s (%s is now a symlink)", legacy, root, legacy)
-    return left
-
-
 # ---------------------------------------------------------------- server
 
 def _get_json(url: str, timeout: float = 2.0) -> Any:
@@ -190,16 +145,11 @@ def wait_healthy(base_url: str, timeout: float = HEALTH_TIMEOUT_S, alive: Any = 
 
 
 def start_api(args: argparse.Namespace) -> Any:
-    """Load settings, migrate legacy crates if allowed, start the API thread; returns seedbox.server's handle."""
+    """Load settings, start the API thread; returns seedbox.server's handle."""
     from musicreco import settings as msettings
     from seedbox.server import start_server
 
     settings = msettings.load_settings()
-    if migration_allowed(args):
-        try:
-            maybe_migrate_legacy(settings.output_root)
-        except Exception:  # noqa: BLE001 - never block startup on it
-            log.exception("legacy downloads/ migration failed")
     port = args.port if args.port is not None else (DEV_PORT if args.dev else 0)
     static = None if args.dev else static_dir()
     if static is None and not args.dev:
@@ -498,7 +448,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--server-only", action="store_true", help="run the API without a window")
     p.add_argument("--port", type=int, default=None, help="API port (default: free port; 8765 with --dev)")
     p.add_argument("--dev", action="store_true", help=f"load the Vite dev server ({DEV_URL}) in the window")
-    p.add_argument("--no-migrate", action="store_true", help="don't move the legacy project downloads/ folder")
     p.add_argument("--debug", action="store_true", help="verbose logs, web inspector")
     p.add_argument("--self-test", action="store_true", help="print a diagnostics report and exit")
     p.add_argument("--self-test-query", default=SELF_TEST_QUERY, help=argparse.SUPPRESS)

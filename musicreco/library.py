@@ -27,8 +27,6 @@ from .settings import load_settings
 
 log = logging.getLogger(__name__)
 
-# Where crates lived before Seedbox (the project's downloads/); migrate_legacy_downloads moves them out.
-LEGACY_DOWNLOADS_ROOT: Path = Path(__file__).resolve().parent.parent / "downloads"
 SEEDBOX_DIR = ".seedbox"  # per-crate app data (crate.json; structure analyses live here too)
 CRATE_JSON = "crate.json"
 CRATE_JSON_VERSION = 1
@@ -865,66 +863,3 @@ def list_crates(root: Path | None = None) -> list[dict]:
         })  # fmt: skip
     out.sort(key=lambda c: c["updated_at"], reverse=True)
     return out
-
-
-# --- one-off move out of the legacy downloads/ folder ----------------------------------------------------------------
-
-_JUNK = {".DS_Store"}
-
-
-def migrate_legacy_downloads(old: Path, new: Path) -> list[Path]:
-    """Move everything in `old` (the project's legacy downloads/) into `new`, then make `old` a symlink to `new`.
-
-    Never overwrites: an entry whose name already exists in `new` stays behind (as does one that fails to
-    move); `old` is then renamed to `<old>.unmigrated` so it can still become the symlink. Returns where the
-    entries left behind ended up ([] = everything moved). A no-op returning [] when `old` is missing, already a
-    symlink, or the same folder as `new`; ValueError if `new` is inside `old`. Each moved crate's rekordbox
-    .xml is rewritten (it holds absolute paths). Not for use while a batch is writing into either folder.
-    """
-    old, new = Path(old).expanduser(), Path(new).expanduser()
-    if old.is_symlink() or not old.is_dir():
-        return []
-    old_real, new_real = old.resolve(), new.resolve()
-    if new_real == old_real:
-        return []
-    if new_real.is_relative_to(old_real):
-        raise ValueError(f"{new} is inside {old}")
-    new.mkdir(parents=True, exist_ok=True)
-
-    moved: list[Path] = []
-    for entry in sorted(old.iterdir(), key=lambda p: p.name):
-        if entry.name in _JUNK:
-            entry.unlink(missing_ok=True)
-            continue
-        target = new / entry.name
-        if target.exists() or target.is_symlink():
-            log.warning("not moving %s: %s already exists", entry.name, target)
-            continue
-        try:
-            os.rename(entry, target)  # same volume: atomic, keeps everything
-        except OSError:
-            try:
-                shutil.move(entry, target)
-            except (OSError, shutil.Error) as e:
-                log.warning("couldn't move %s to %s: %s", entry, new, e)
-                continue
-        moved.append(target)
-    for crate in moved:
-        if crate.is_dir() and (crate / f"{sanitize_filename(crate.name)}.xml").is_file():
-            try:
-                write_rekordbox_xml(crate)
-            except Exception as e:  # noqa: BLE001 - the old XML still works through the symlink
-                log.warning("couldn't rewrite the rekordbox XML of %s: %s", crate.name, e)
-
-    left: list[Path] = []
-    try:
-        old.rmdir()
-    except OSError:  # something stayed behind: park it next to the symlink
-        aside = old.with_name(f"{old.name}.unmigrated")
-        n = 2
-        while aside.exists() or aside.is_symlink():
-            aside, n = old.with_name(f"{old.name}.unmigrated-{n}"), n + 1
-        os.rename(old, aside)
-        left = sorted(aside.iterdir(), key=lambda p: p.name)
-    old.symlink_to(new_real, target_is_directory=True)
-    return left
