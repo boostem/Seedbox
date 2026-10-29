@@ -249,11 +249,11 @@ palette ranks what `search` returns with `lib/fuzzy.ts` (words in any order, wor
   An `it.skip` there marks a known component bug.
 - **Screenshot tests:** `deno task screenshot` builds `dist/`, then runs `scripts/screenshot.ts` in the Docker image of
   `scripts/screenshot.Dockerfile` (a pinned Chrome, Inter and JetBrains Mono, so a laptop and CI render the same
-  pixels). It serves `dist/` with a stub `/api` (a working engine, one that never answers, or none), shoots every
-  route and state in its `SHOTS` list at 1440×900 and 1280×720 with animations off, and compares each with
-  `visual-baselines/`: a screenshot fails when more than 16 of its pixels moved by more than 24/255 (it renders the same
-  pixels every time; a changed word is about 70). The new
-  screenshots go to `screenshots/actual/`, and for each failure `expected/` and `diff/` (changed pixels in red);
+  pixels). It serves `dist/` with a stub `/api` (a working engine with a small library, one that never answers, or
+  none; a shot can override any GET response), shoots every route and state in its `SHOTS` list at 1440×900 and
+  1280×720 with animations off, and compares each with `visual-baselines/`. A screenshot fails when more than 16 of
+  its pixels moved by more than 24/255: it renders the same pixels every time, and a changed word is about 70. The
+  new screenshots go to `screenshots/actual/`, and for each failure `expected/` and `diff/` (changed pixels in red);
   CI uploads that folder as an artifact. When the change is intended, `UPDATE_SCREENSHOTS=1 deno task screenshot`
   rewrites the baselines (commit them with the change). `--only=home,settings` shoots a few, `--no-build` reuses
   `dist/`, `--no-docker` uses this machine's Chrome (quick to look at, but it won't match the baselines). A new

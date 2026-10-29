@@ -36,27 +36,9 @@ interface Shot {
   keys?: string[];
   /** How long the page settles before the screenshot (ms). */
   settle?: number;
+  /** GET responses that differ from `API` for this shot, by path. */
+  data?: Record<string, unknown>;
 }
-
-// Every route, and the states each one has so far. Area tickets add their screens' states (empty, loading,
-// analysing, error) here as they land.
-const SHOTS: Shot[] = [
-  { name: "home", hash: "#/" },
-  { name: "home-loading", hash: "#/", api: "loading" },
-  { name: "library", hash: "#/library" },
-  { name: "crates", hash: "#/crates" },
-  { name: "sets", hash: "#/sets" },
-  { name: "discover", hash: "#/discover" },
-  { name: "mixes", hash: "#/mixes" },
-  { name: "settings", hash: "#/settings" },
-  { name: "settings-loading", hash: "#/settings", api: "loading" },
-  { name: "settings-offline", hash: "#/settings", api: "offline", settle: 5000 }, // offline after 4 failed reconnects (~3.5 s)
-  { name: "ui", hash: "#/ui" },
-  { name: "bench", hash: "#/bench" },
-  { name: "not-found", hash: "#/no-such-page" },
-  { name: "command-palette", hash: "#/", keys: ["Mod+k"] },
-  { name: "shortcuts", hash: "#/", keys: ["?"] },
-];
 
 const SYSTEM = {
   app: "Seedbox 2",
@@ -76,6 +58,66 @@ const SYSTEM = {
   },
   reveal_label: "Show in file manager",
 };
+
+const LIBRARY = { path: "/home/dj/.local/share/seedbox2/library.sqlite3", tracks: 12, track_paths: 12, crates: 2, sets: 1 };
+
+const TRACKS = [
+  ["Losing It", "FISHER", "Losing It", 233, 125, "mp3", "rekordbox"],
+  ["Favour", "FISHER, Tones And I", "Favour", 191, 126, "flac", "local"],
+  ["Rumble", "Skrillex, Fred again.., Flowdan", "Rumble", 160, 140, "aiff", "local"],
+  ["Turn On The Lights again..", "Fred again.., Swedish House Mafia", "Turn On The Lights again..", 222, 128, "wav", "itunes"],
+  ["Shiver", "John Summit, HAYLA", "Shiver", 199, 126, "mp3", "local"],
+  ["Where You Are", "John Summit, HAYLA", "Where You Are", 221, 126, "mp3", "rekordbox"],
+  ["Stay With Me", "Calvin Harris, Justin Timberlake, Halsey, Pharrell", "Stay With Me", 213, 125, "m4a", "itunes"],
+  ["Body Language", "Dom Dolla", "Body Language", 365, 124, "flac", "local"],
+  ["Miracle Maker", "Dom Dolla, Clementine Douglas", "Miracle Maker", 168, 126, "mp3", "seedbox1"],
+  ["Eat Your Man", "Dom Dolla, Nelly Furtado", "Eat Your Man", 172, 128, "mp3", "seedbox1"],
+  ["Children", "Robert Miles", "Dreamland", 459, 137, "flac", "local"],
+  ["Strings of Life", "Rhythim Is Rhythim", "Strings of Life", 371, 124, "wav", "rekordbox"],
+].map(([title, artist, album, duration, bpm, format, source], i) => ({
+  hash: `${i}`.padStart(40, "0"),
+  title,
+  artist,
+  album,
+  duration,
+  tags: { file: { bpm, format } },
+  source,
+  added_at: "2026-10-01T12:00:00Z",
+}));
+
+/** What the stub /api answers to a GET in the `live` state (a shot's `data` overrides these). */
+const API: Record<string, unknown> = {
+  "/api/health": { ok: true },
+  "/api/system": SYSTEM,
+  "/api/library": LIBRARY,
+  "/api/library/tracks": { total: TRACKS.length, items: TRACKS },
+  "/api/library/folders": { folders: [{ path: "/home/dj/Music/Techno 2026", exists: true }, { path: "/media/usb/Old crates", exists: false }], scanning: null },
+  "/api/library/import": { state: "idle" },
+};
+
+// Every route, and the states each one has so far. Area tickets add their screens' states (empty, loading,
+// analysing, error) here as they land.
+const SHOTS: Shot[] = [
+  { name: "home", hash: "#/" },
+  { name: "home-loading", hash: "#/", api: "loading" },
+  { name: "library", hash: "#/library" },
+  { name: "library-empty", hash: "#/library", data: { "/api/library": { ...LIBRARY, tracks: 0, track_paths: 0, crates: 0 }, "/api/library/tracks": { total: 0, items: [] } } },
+  { name: "library-loading", hash: "#/library", api: "loading" },
+  { name: "library-importing", hash: "#/library", data: { "/api/library/import": { state: "running", kind: "files", label: "Techno 2026", done: 37, total: 120, file: "/home/dj/Music/Techno 2026/Track 38.flac" } } },
+  { name: "library-import-failed", hash: "#/library", data: { "/api/library/import": { state: "failed", kind: "xml", label: "rekordbox.xml", error: "not a Rekordbox or iTunes XML file" } } },
+  { name: "crates", hash: "#/crates" },
+  { name: "sets", hash: "#/sets" },
+  { name: "discover", hash: "#/discover" },
+  { name: "mixes", hash: "#/mixes" },
+  { name: "settings", hash: "#/settings" },
+  { name: "settings-loading", hash: "#/settings", api: "loading" },
+  { name: "settings-offline", hash: "#/settings", api: "offline", settle: 5000 }, // offline after 4 failed reconnects (~3.5 s)
+  { name: "ui", hash: "#/ui" },
+  { name: "bench", hash: "#/bench" },
+  { name: "not-found", hash: "#/no-such-page" },
+  { name: "command-palette", hash: "#/", keys: ["Mod+k"] },
+  { name: "shortcuts", hash: "#/", keys: ["?"] },
+];
 
 const flags = Deno.args.filter((a) => !a.startsWith("--only="));
 const onlyArg = Deno.args.find((a) => a.startsWith("--only="));
@@ -156,8 +198,8 @@ const TYPES: Record<string, string> = {
   woff2: "font/woff2",
 };
 
-/** dist/ and a stub /api on a free port. `state()` says how the API behaves for the page being shot. */
-function serve(state: () => ApiState): { server: Deno.HttpServer<Deno.NetAddr>; close: () => void } {
+/** dist/ and a stub /api on a free port. `shot()` says how the API behaves for the page being shot. */
+function serve(shot: () => Shot): { server: Deno.HttpServer<Deno.NetAddr>; close: () => void } {
   const hanging = new Set<() => void>();
   const hang = () =>
     new Promise<Response>((resolve) => {
@@ -170,11 +212,11 @@ function serve(state: () => ApiState): { server: Deno.HttpServer<Deno.NetAddr>; 
   const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen: () => {} }, async (req) => {
     let path = decodeURIComponent(new URL(req.url).pathname);
     if (path.startsWith("/api/")) {
-      const s = state();
+      const s = shot().api ?? "live";
+      const data = { ...API, ...shot().data };
       if (s === "offline") return new Response("engine offline", { status: 503 });
       if (s === "loading") return hang();
-      if (path === "/api/health") return Response.json({ ok: true });
-      if (path === "/api/system") return Response.json(SYSTEM);
+      if (req.method === "GET" && path in data) return Response.json(data[path]);
       if (path === "/api/events") {
         // an open stream with nothing on it, until the page goes away or the server closes
         let close = () => {};
@@ -403,15 +445,15 @@ async function main(): Promise<number> {
   for (const d of ["actual", "diff", "expected"]) await Deno.mkdir(`${OUT}/${d}`, { recursive: true });
   await Deno.mkdir(BASELINES, { recursive: true });
 
-  let api: ApiState = "live";
-  const { server, close } = serve(() => api);
+  let current = shots[0];
+  const { server, close } = serve(() => current);
   const { cdp, stop } = await launchChrome(await findChrome());
   const results: { file: string; outcome: Outcome; detail: string }[] = [];
   try {
     const base = `http://127.0.0.1:${server.addr.port}/`;
     for (const shot of shots) {
       for (const size of SIZES) {
-        api = shot.api ?? "live";
+        current = shot;
         const file = `${shot.name}-${size[0]}x${size[1]}.png`;
         const png = await shoot(cdp, base + shot.hash, shot, size);
         close(); // end the page's hanging requests and event stream
