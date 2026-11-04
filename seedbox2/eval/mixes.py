@@ -4,7 +4,7 @@
     python -m seedbox2.eval mixes pairs.toml          # your own pairs
     python -m seedbox2.eval mixes pairs.toml --engines seedbox1 --json out.json --keep renders/
 
-pairs.toml (paths relative to the file; audio stays local, #87 builds the golden corpus on this):
+pairs.toml (paths relative to the file; audio stays local; the golden corpus, #87, is in golden.py):
 
     [[pair]]
     name = "house into house"      # optional

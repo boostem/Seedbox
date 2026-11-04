@@ -28,7 +28,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_listen.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_listen.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -199,6 +199,35 @@ each two versions head to head. A trial only counts in a table when its two rend
 writes a ratings file to the listening folder (ratings only, no audio) and Import merges one; ratings have a uid, so
 importing a file twice adds nothing. Everyone rating needs the same renders: share the folder itself. Levels aren't
 matched between renders, so a louder one may be favoured.
+
+**The golden corpus** (#87): `seedbox2/eval/golden.toml` is 44 real track pairs across house, techno, drum & bass,
+hip-hop, pop, disco/funk with live drums and halftime, with tempo gaps of 0-8 %, key clashes and vocal-heavy pairs. Only
+hashes and metadata are committed. The audio stays on the machine and is found by its library hash, wherever the file is
+and whatever it is called: most of it is the owner's library, the rest (each with a `source` URL) is free to download.
+
+```sh
+export SEEDBOX2_GOLDEN_AUDIO=/mnt/media/MUSIC:$HOME/golden-free       # folders with the audio (or --audio DIR)
+.venv/bin/python -m seedbox2.eval golden check                        # the corpus's coverage; which audio is here
+.venv/bin/python -m seedbox2.eval golden                              # render everything, write the report
+.venv/bin/python -m seedbox2.eval golden --only dnb --only key-clash  # by tag or pair id
+.venv/bin/python -m seedbox2.eval golden compare OLD_RUN NEW_RUN      # side by side; exits 1 on regressions
+.venv/bin/python -m seedbox2.eval golden compare RUN:seedbox1 RUN:seedbox2
+```
+
+- **A run** is a folder in `$SEEDBOX2_EVAL_RESULTS/golden/` with `run.json`, the renders and `report.html`: a player,
+  the waveforms of both decks and the mix (click to seek, overlap shaded), the plan's automation and notes, the checks
+  and the metrics for each pair. 44 pairs take about 2 minutes at the default jobs on a 12-thread machine. A pair
+  whose audio isn't here is reported as not rendered.
+- **Comparing:** to compare old code, render it from a `git worktree` of that commit and compare the two runs. Every
+  metric from `mixmetrics` has a tolerance (`METRICS` in `golden.py`), and half of it applies to the mean over all pairs,
+  so slow drift shows too. Also flagged: a check that got worse, a pair that fails or no longer renders. A metric
+  that stops applying isn't (a cut has no beat alignment), so also read the technique in the report when a pair changes.
+  Render time is recorded but not flagged, as it depends on what else the machine is doing.
+- **Nightly:** `seedbox2/eval/golden-nightly.sh` renders origin/main in its own worktree, compares it with the accepted
+  baseline (the first run; `golden accept RUN` moves it, after a change you've listened to and want to keep), posts the
+  summary to a results ticket on the board and keeps the last 14 runs. How to schedule it is at the top of the script.
+- **Adding tracks:** `golden track FILE...` prints the `[[track]]` entries; give them a genre and add `[[pair]]`s. Pair
+  ids must stay stable, as comparisons go by id.
 
 ## Architecture (target)
 
