@@ -82,3 +82,26 @@ def local_music(app: Any) -> Any:
 
 
 LocalMusicDep = Annotated[Any, Depends(get_local_music)]
+
+
+def get_models(request: Request) -> Any:
+    return models(request.app)
+
+
+def models(app: Any) -> Any:
+    """The app's ModelManager (#42), made on first use: the models in the cache folder, their downloads (events on
+    the app's bus) and the `models` settings in settings.json next to the library file."""
+    from seedbox2.library.service import SETTINGS_FILE, Settings
+    from seedbox2.models.manager import ModelManager
+
+    state = app.state
+    if state.models is None:
+        with _open_lock:
+            if state.models is None:
+                folder = Path(state.library_path).parent if state.library_path else default_path().parent
+                state.models = ModelManager(state.models_dir, settings=Settings(folder / SETTINGS_FILE),
+                                            publish=state.events.publish)  # fmt: skip
+    return state.models
+
+
+ModelsDep = Annotated[Any, Depends(get_models)]

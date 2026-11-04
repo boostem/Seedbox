@@ -29,6 +29,46 @@ export interface SystemFolders {
   music: string; // the music library shared with Seedbox 1
 }
 
+// ---- Models: GET /api/models, POST /api/models/{name}/download|cancel, DELETE /api/models/{name} (#42) ----
+
+export type ModelState = "installed" | "missing" | "downloading" | "failed";
+
+export interface ModelInfo {
+  name: string; // "beat_this"
+  version: string;
+  title: string;
+  file: string;
+  url: string;
+  sha256: string;
+  size: number; // bytes
+  licence: string;
+  attribution: string;
+  homepage: string;
+  used_for: string;
+  fallback: string; // what runs while the model isn't there
+  inputs: string;
+  state: ModelState;
+  installed: boolean;
+  path: string | null;
+  done: number; // bytes downloaded (a partial download resumes from here)
+  error: string | null;
+}
+
+export interface ModelSettings {
+  accelerator: boolean; // CoreML on macOS, DirectML on Windows (the CPU is always the fallback)
+  auto_download: boolean; // download missing models when the app starts
+}
+
+export interface ModelsStatus {
+  dir: string;
+  models: ModelInfo[];
+  missing: { name: string; title: string; used_for: string; fallback: string }[];
+  offline: boolean; // some analysis runs on the Seedbox 1 heuristics
+  installed_bytes: number;
+  total_bytes: number;
+  settings: ModelSettings;
+}
+
 // ---- Library: GET /api/library, /api/library/tracks, /api/library/folders, /api/library/import (#38, #40) ----
 
 export interface LibrarySummary {

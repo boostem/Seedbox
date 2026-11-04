@@ -28,7 +28,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_models.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -95,6 +95,25 @@ every playlist becomes a crate named by its folder path, and Rekordbox's cues an
 Seedbox 1 importer, so tunebat downloads into the music folder land in the library with their crate. Every new
 track queues the job types registered `per_track=True`: the light ones at library priority, the heavy ones (stems)
 at background priority. Progress is the `library.import` event.
+
+**Models** (#42, `seedbox2/models/`): every model runs through onnxruntime (no torch in the app). The weights aren't
+bundled: `registry.py` lists each model with a version, a URL pinned to an upstream revision, its SHA-256, size,
+licence and attribution, and what Seedbox 2 uses without it. When the app starts it downloads the missing ones into
+`models/<name>/<version>/` in the cache folder, in the background (Settings → Models → "Download missing models when
+Seedbox 2 starts"). Downloads resume from a `.part` file with an HTTP Range request, and only a file whose SHA-256
+matches is moved into place. A new version replaces the old one once it is verified. Without a model the app works
+as before: `ctx.session_or_none(name)` gives a job None and the job uses the Seedbox 1 heuristics, and
+`GET /api/models` and Settings → Models list what is missing and what is used instead. A job's
+`ctx.session(name)` is one `InferenceSession` per worker process with inter-op threads = 1 and intra-op threads =
+the physical cores of its pool's share, divided between the pool's workers (light: all the cores; heavy, which runs
+beside it: half). With the `accelerator` setting it uses CoreML on macOS or DirectML on Windows
+(`onnxruntime-directml`), with the CPU after it and on its own if the accelerator can't take the graph. Changing the
+setting affects workers started after the change. `/api/models` lists the models and starts, cancels and deletes
+downloads; progress is `model.progress`, then `model.done`, `model.failed` or `model.cancelled`, and a `models`
+event with the new status. `seedbox2/models/export/` (dev-only, the one place torch is allowed) rebuilds the ONNX
+files from the upstream checkpoints and checks any file against torch:
+`python -m seedbox2.models.export beat_this --check FILE` (the registry's file differs from torch by at most 2e-6
+in its logits). The first model is Beat This! (`final0`, MIT; Foscarin, Schlüter and Widmer, ISMIR 2024).
 
 ## Evaluating the analysis
 

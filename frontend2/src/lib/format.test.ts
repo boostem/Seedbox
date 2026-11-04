@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { energyStars, fmtBpm, fmtDateTime, fmtMb, fmtPitch, fmtRelative, fmtTime, pitchTone, plural, tildify } from "./format";
+import { energyStars, fmtBpm, fmtBytes, fmtDateTime, fmtMb, fmtPitch, fmtRelative, fmtTime, pitchTone, plural, tildify } from "./format";
 
 describe("fmtTime", () => {
   it("formats minutes and hours", () => {
@@ -101,5 +101,11 @@ describe("small helpers", () => {
     expect(fmtMb(500)).toBe("500 MB");
     expect(fmtMb(1500)).toBe("1.5 GB");
     expect(fmtMb(2000)).toBe("2 GB");
+  });
+  it("fmtBytes", () => {
+    expect(fmtBytes(300_000)).toBe("300 KB");
+    expect(fmtBytes(4_469_774)).toBe("4.5 MB");
+    expect(fmtBytes(82_098_846)).toBe("82 MB");
+    expect(fmtBytes(1_250_000_000)).toBe("1.3 GB");
   });
 });

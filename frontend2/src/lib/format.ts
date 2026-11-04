@@ -74,3 +74,10 @@ export function tildify(path: string | null | undefined): string {
 export function fmtMb(mb: number): string {
   return mb >= 1000 ? `${(mb / 1000).toFixed(mb % 1000 ? 1 : 0)} GB` : `${mb} MB`;
 }
+
+/** Bytes → "820 KB" / "82.1 MB" / "1.2 GB" (decimal units, as the OS's file managers show sizes). */
+export function fmtBytes(bytes: number): string {
+  if (bytes < 1e6) return `${Math.max(0, Math.round(bytes / 1e3))} KB`;
+  if (bytes < 1e9) return `${(bytes / 1e6).toFixed(bytes < 1e7 ? 1 : 0)} MB`;
+  return `${(bytes / 1e9).toFixed(1)} GB`;
+}

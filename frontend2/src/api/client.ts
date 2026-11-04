@@ -3,7 +3,7 @@
  * show an error toast, unless `{ quiet: true }` (then the caller handles it).
  */
 import { toast } from "@/store/toasts";
-import type { Health, ImportStatus, LibrarySummary, LibraryTrack, SystemInfo, WatchFolders } from "./types";
+import type { Health, ImportStatus, LibrarySummary, LibraryTrack, ModelInfo, ModelSettings, ModelsStatus, SystemInfo, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -84,6 +84,15 @@ export const api = {
   system: (opts?: RequestOptions) => get<SystemInfo>("/api/system", opts),
   /** Show a file or folder (inside Seedbox 2's folders) in Finder / Explorer / the file manager. */
   reveal: (path: string, opts?: RequestOptions) => post<{ ok: boolean }>("/api/system/reveal", { path }, opts),
+  models: {
+    status: (opts?: RequestOptions) => get<ModelsStatus>("/api/models", opts),
+    /** Download one model (`force`: delete it first, i.e. re-download). Progress comes as `model.*` events. */
+    download: (name: string, force = false, opts?: RequestOptions) => post<ModelInfo>(`/api/models/${encodeURIComponent(name)}/download`, { force }, opts),
+    downloadMissing: (opts?: RequestOptions) => post<ModelsStatus>("/api/models/download", undefined, opts),
+    cancel: (name: string, opts?: RequestOptions) => post<{ cancelled: boolean }>(`/api/models/${encodeURIComponent(name)}/cancel`, undefined, opts),
+    remove: (name: string, opts?: RequestOptions) => request<ModelInfo>("DELETE", `/api/models/${encodeURIComponent(name)}`, undefined, opts),
+    settings: (changes: Partial<ModelSettings>, opts?: RequestOptions) => post<ModelsStatus>("/api/models/settings", changes, opts),
+  },
   library: {
     summary: (opts?: RequestOptions) => get<LibrarySummary>("/api/library", opts),
     tracks: (q: { search?: string; limit?: number; offset?: number } = {}, opts?: RequestOptions) => {
