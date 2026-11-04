@@ -12,7 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.responses import FileResponse, JSONResponse, Response
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from seedbox2 import __version__
 from seedbox2.eval.listening import Trials
@@ -22,6 +22,14 @@ from seedbox2.server.routers import ROUTERS
 log = logging.getLogger(__name__)
 
 DEV_ORIGINS = ["http://localhost:5174", "http://127.0.0.1:5174"]  # frontend2's Vite (Seedbox 1's is on 5173)
+NOT_BUILT_HTML = """<!doctype html><title>Seedbox 2</title>
+<body style="background:#0b0d10;color:#e8e8e8;font:14px system-ui;padding:48px">
+<h2>The Seedbox 2 interface isn't built yet</h2>
+<p>Seedbox 2 tried to build it and couldn't (the terminal says why). It needs <a style="color:inherit" href="https://deno.com">deno</a>. In the project folder, run:</p>
+<pre style="background:#16191e;padding:12px;border-radius:6px">cd frontend2 &amp;&amp; deno install &amp;&amp; deno task build</pre>
+<p>Then start Seedbox 2 again.</p>
+</body>
+"""
 
 
 def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s: float = HEARTBEAT_S,
@@ -59,6 +67,8 @@ def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s
         app.include_router(router, prefix="/api")
     if static_dir is not None:
         _add_spa(app, Path(static_dir))
+    elif not dev:
+        _add_not_built_page(app)
     return app
 
 
@@ -98,6 +108,14 @@ def _inside(path: Path, root: Path) -> bool:
         return True
     except (OSError, ValueError):
         return False
+
+
+def _add_not_built_page(app: FastAPI) -> None:
+    """Without a built frontend the window opens on this, not on a bare {"detail":"Not Found"}."""
+
+    @app.get("/", include_in_schema=False)
+    def not_built() -> Response:
+        return HTMLResponse(NOT_BUILT_HTML)
 
 
 def _add_spa(app: FastAPI, static_dir: Path) -> None:

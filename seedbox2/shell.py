@@ -12,6 +12,7 @@ import json
 import logging
 import logging.handlers
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -28,6 +29,8 @@ BACKGROUND = "#0b0d10"  # window colour before the page paints (no white flash)
 WINDOW_SIZE = (1440, 900)
 MIN_SIZE = (1100, 680)
 HEALTH_TIMEOUT_S = 30.0
+BUILD_COMMAND = "cd frontend2 && deno install && deno task build"
+BUILD_TIMEOUT_S = 600.0
 LOG_DIR_ENV = "SEEDBOX_LOG_DIR"
 STATIC_DIR_ENV = "SEEDBOX2_STATIC_DIR"
 SELF_TEST_MODULES = ("fastapi", "uvicorn", "webview", "musicreco.paths", "musicreco.settings", "seedbox2.server")
@@ -54,6 +57,34 @@ def static_dir() -> Path | None:
     else:
         candidates = [project_root() / "frontend2" / "dist"]
     return next((d for d in candidates if (d / "index.html").is_file()), None)
+
+
+def build_frontend() -> Path | None:
+    """From source with no frontend2/dist (a fresh clone): build it with deno, and return it. None if it can't be."""
+    from musicreco import paths
+
+    if frozen() or os.environ.get(STATIC_DIR_ENV, "").strip():
+        return None
+    deno = paths.deno_path()
+    if deno is None:
+        log.warning("no built frontend and no deno to build it with: install deno, then run: %s", BUILD_COMMAND)
+        return None
+    log.info("building the frontend (only the first time, up to a few minutes): %s", BUILD_COMMAND)
+    t0 = time.monotonic()
+    for step in (["install"], ["task", "build"]):
+        try:
+            r = subprocess.run([deno, *step], cwd=project_root() / "frontend2", capture_output=True, text=True,  # noqa: S603
+                               timeout=BUILD_TIMEOUT_S, check=False)
+        except (OSError, subprocess.SubprocessError) as e:
+            log.warning("building the frontend failed (deno %s): %s", " ".join(step), e)
+            return None
+        if r.returncode != 0:
+            log.warning("building the frontend failed (deno %s):\n%s", " ".join(step), (r.stdout + r.stderr)[-2000:])
+            return None
+    built = static_dir()
+    if built is not None:
+        log.info("built the frontend in %.0f s", time.monotonic() - t0)
+    return built
 
 
 def icon_path() -> Path | None:
@@ -120,7 +151,9 @@ def start_api(args: argparse.Namespace) -> Any:
     port = args.port if args.port is not None else (DEFAULT_PORT if args.dev else 0)
     static = None if args.dev else static_dir()
     if static is None and not args.dev:
-        log.warning("no built frontend found (frontend2/dist); the window will only show the API")
+        static = build_frontend()
+    if static is None and not args.dev:
+        log.warning("no built frontend found (frontend2/dist); the window only says how to build it")
     t0 = time.monotonic()
     handle = start_server(static, port=port, dev=args.dev, log_level="debug" if args.debug else "warning",
                           start_jobs=True, watch_folders=True, download_models=True)

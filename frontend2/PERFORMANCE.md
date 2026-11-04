@@ -23,6 +23,11 @@ when the *structure* changes (another track, a panel opens), not 60 times a seco
 Measured: the benchmark counts React commits (`react_commits_per_s`). The waveform scenarios (zoom, scroll, hover,
 play) are held to 5 a second at most; they ran at 30–60 before this rule.
 
+Waveforms are drawn by one WebGL2 renderer (`features/waveform/gl/`): each is uploaded once as a texture, and zoom and
+scroll are uniforms. One context serves the whole app, copied into each view's canvas, so a screen of views doesn't
+hit the browser's limit on contexts. Without WebGL2 (or with `?wavegl=0`, or the Settings switch) `drawWave` paints
+the same modes with Canvas 2D. `python -m seedbox2.bench frontend --software-gl` runs WebGL on the CPU (SwiftShader).
+
 ## 2. Narrow zustand selectors
 
 A component re-renders whenever its selector's result changes. Select the fields you show, one per call, or wrap a
@@ -47,7 +52,8 @@ rows in view: `VirtualRows` inside a `TableScroll`, or `VirtualList` (`component
 rows that come into view. `#/ui` and `#/bench` show 10,000 rows.
 
 Something drawn in every row (the library's overview waveforms) is one canvas over the column, not a canvas per row:
-`features/library/LibraryTable.tsx` draws the visible rows' cached images into it on the next frame after a scroll.
+`features/library/LibraryTable.tsx` draws the visible rows' cached images into it on the next frame after a scroll. `features/library/overviews.ts` paints
+those images once per row with the same renderer as the track view, in the Settings mode.
 
 ## 4. Heavy data work happens in a worker
 

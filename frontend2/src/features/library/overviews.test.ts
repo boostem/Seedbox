@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { overviewColumns, OverviewStore, parseOverviews } from "./overviews";
+import { overviewWave, OverviewStore, parseOverviews } from "./overviews";
 
 function response(rows: (Uint8Array | null)[], columns = 4, bands = 3): ArrayBuffer {
   const size = 12 + rows.reduce((n, r) => n + 1 + (r ? r.length : 0), 0);
@@ -36,15 +36,23 @@ describe("parseOverviews", () => {
   });
 });
 
-describe("overviewColumns", () => {
-  it("keeps the loudest column under each pixel", () => {
-    const peaks = new Uint8Array([0, 255, 51, 102, /* mid */ 0, 0, 0, 0, /* high */ 255, 255, 255, 255]);
-    const [low, mid, high] = overviewColumns({ columns: 4, bands: 3, peaks }, 2);
-    expect(low[0]).toBe(1);
-    expect(low[1]).toBeCloseTo(0.4);
-    expect(Array.from(mid)).toEqual([0, 0]);
-    expect(Array.from(high)).toEqual([1, 1]);
-    expect(Array.from(overviewColumns({ columns: 4, bands: 3, peaks }, 8)[0]).slice(0, 4)).toEqual([0, 0, 1, 1]);
+describe("overviewWave", () => {
+  it("gives the renderer linear, normalised bands over the overview's columns", () => {
+    const peaks = new Uint8Array(12);
+    peaks.set([0, 128, 255, 255], 0); // low
+    peaks.set([255, 255, 255, 255], 4); // mid
+    const w = overviewWave({ columns: 4, bands: 3, peaks })!;
+    expect([w.n, w.pps, w.duration]).toEqual([4, 4, 1]);
+    expect(w.low[0]).toBe(0);
+    expect(w.low[1]).toBeGreaterThan(0.05); // half the 48 dB scale is -24 dB
+    expect(w.low[1]).toBeLessThan(0.08);
+    expect(w.low[3]).toBe(1);
+    expect(w.mid[0]).toBe(1);
+    expect(w.high[0]).toBe(0);
+  });
+
+  it("has nothing for an overview without three bands", () => {
+    expect(overviewWave({ columns: 2, bands: 1, peaks: new Uint8Array(2) })).toBeNull();
   });
 });
 

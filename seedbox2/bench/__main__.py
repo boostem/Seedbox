@@ -31,6 +31,8 @@ def _log(msg: str) -> None:
 def _frontend_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--fe-seconds", type=float, default=5.0, help="seconds per UI scenario (default 5)")
     p.add_argument("--cpu-throttle", type=float, default=1.0, help="slow Chrome's CPU down N times (default 1)")
+    p.add_argument("--software-gl", action="store_true",
+                   help="WebGL on the CPU (SwiftShader): a floor below any integrated GPU, for a machine with a fast one")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -74,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     from seedbox2.bench import frontend
 
     if args.cmd == "frontend":
-        fe = frontend.run(seconds=args.fe_seconds, cpu_throttle=args.cpu_throttle, log=_log)
+        fe = frontend.run(seconds=args.fe_seconds, cpu_throttle=args.cpu_throttle, software_gl=args.software_gl, log=_log)
         from seedbox2.bench.run import check_budgets, machine
 
         data = {"schema": 1, "machine": machine(), "frontend": fe}
@@ -98,7 +100,8 @@ def main(argv: list[str] | None = None) -> int:
             name += f"-first{args.tracks}"
     data = run(tracks, only, trace=not args.no_tracemalloc, log=_log, label=args.label, corpus_name=name)
     if args.frontend:
-        data["frontend"] = frontend.run(seconds=args.fe_seconds, cpu_throttle=args.cpu_throttle, log=_log)
+        data["frontend"] = frontend.run(seconds=args.fe_seconds, cpu_throttle=args.cpu_throttle,
+                                        software_gl=args.software_gl, log=_log)
         data["budgets"] = check_budgets(data)
     _write(data, args.out)
     _log(results.report_markdown(data))

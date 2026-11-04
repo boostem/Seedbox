@@ -16,6 +16,7 @@ import { cn } from "@/lib/cn";
 import { barBeat, drawCues, drawEdges, drawGrid, drawSections, drawWave, fmtPrecise, laneOf, setupCanvas, shade, type View, xOf } from "./draw";
 import { useFrame, useWaveformKeys, useViewCtl, useViewFact, useWidthRef } from "./hooks";
 import { alpha, sectionColor, wavePalette } from "./palette";
+import { useWaveLook } from "./settings";
 import { useWave } from "./waveData";
 
 export interface TrackWaveformProps {
@@ -46,9 +47,12 @@ export function TrackWaveform({ analysis, trackId, onSeek, height = 132, overvie
   const ctl = useViewCtl(0, duration, minSpan);
   const zoomed = useViewFact(ctl, (v) => v.span < duration - 0.01);
   const atMax = useViewFact(ctl, (v) => v.span <= minSpan + 0.01);
+  useWaveLook(); // a new mode re-renders, and the layout effect below repaints
 
   const boxRef = useRef<HTMLDivElement>(null);
-  const mainRef = useRef<HTMLCanvasElement>(null);
+  const baseRef = useRef<HTMLCanvasElement>(null);
+  const waveRef = useRef<HTMLCanvasElement>(null);
+  const overRef = useRef<HTMLCanvasElement>(null);
   const headRef = useRef<HTMLCanvasElement>(null);
   const ovRef = useRef<HTMLCanvasElement>(null);
   const ovHeadRef = useRef<HTMLCanvasElement>(null);
@@ -57,59 +61,90 @@ export function TrackWaveform({ analysis, trackId, onSeek, height = 132, overvie
   const hoverTipRef = useRef<HTMLDivElement>(null);
   const hoverX = useRef<number | null>(null);
   const lastManual = useRef(0);
+  /** device x of the played/unplayed split in the main view and the overview at the last paint */
+  const splitPx = useRef<[number, number]>([NaN, NaN]);
 
   const viewOf = (w: number): View => {
     const v = ctl.get();
     return { start: v.start, pxPerSec: w / v.span || 1, width: w };
   };
 
-  // ---- drawing (from refs; called on the next animation frame, never from a render driven by the view)
+  /** The playhead's file time while the player has this track, else null. */
+  const playedAt = (): number | null => {
+    const st = usePlayer.getState();
+    return st.currentId === trackId && st.status !== "idle" && st.status !== "error" ? player.time() : null;
+  };
+  /** Where the played/unplayed split falls now, in device px of the main view and of the overview. */
+  const splitNow = (t: number | null): [number, number] => {
+    const width = widthRef.current;
+    if (t == null || !width) return [NaN, NaN];
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    return [Math.round(xOf(viewOf(width), t) * dpr), Math.round((t / duration) * width * dpr)];
+  };
+
+  // ---- drawing (from refs; called on the next animation frame, never from a render driven by the view). Layers, so
+  // what moves often repaints alone: grid and edges under the waveform, the waveform, cues and sections over it, the
+  // playhead on top; the overview's waveform is static, its viewport box and playhead sit on the canvas above it.
+  const waveH = height - TOP - SECTIONS;
+
+  /** The main view's waveform layer: on zoom/scroll, and while playing when the played split moves a pixel. */
+  const paintWave = () => {
+    const width = widthRef.current;
+    const c = waveRef.current;
+    if (!c || !width) return;
+    const played = playedAt();
+    splitPx.current[0] = splitNow(played)[0];
+    const s = setupCanvas(c, width, height);
+    if (s) drawWave(s.ctx, lane, viewOf(width), TOP + 2, waveH - 4, s.dpr, { played });
+  };
+
+  /** The overview's waveform and sections: on resize, a new track or mode, and when its played split moves. */
+  const paintOverview = () => {
+    const width = widthRef.current;
+    const oc = ovRef.current;
+    if (!oc || !width || !overview) return;
+    const played = playedAt();
+    splitPx.current[1] = splitNow(played)[1];
+    const s = setupCanvas(oc, width, OVERVIEW_H);
+    if (!s) return;
+    const { ctx, dpr } = s;
+    const p = wavePalette();
+    const ovView: View = { start: 0, pxPerSec: width / duration || 1, width };
+    ctx.fillStyle = p.bg;
+    ctx.fillRect(0, 0, width, OVERVIEW_H);
+    drawWave(ctx, lane, ovView, 1, OVERVIEW_H - 6, dpr, { played });
+    for (const sec of analysis.sections ?? []) {
+      const x0 = xOf(ovView, sec.start_s);
+      const x1 = xOf(ovView, sec.end_s);
+      ctx.fillStyle = alpha(sectionColor(sec.kind, p), 0.9);
+      ctx.fillRect(x0 + 0.5, OVERVIEW_H - 3, Math.max(1, x1 - x0 - 1), 3);
+    }
+  };
+
+  /** Everything that moves with zoom and scroll. */
   const paintBase = () => {
     const width = widthRef.current;
-    const c = mainRef.current;
-    if (!c || !width) return;
+    const base = baseRef.current;
+    const over = overRef.current;
+    if (!base || !over || !width) return;
     const view = viewOf(width);
     const tv = ctl.get();
-    const s = setupCanvas(c, width, height);
-    if (s) {
-      const { ctx, dpr } = s;
-      const p = wavePalette();
-      const waveH = height - TOP - SECTIONS;
-      ctx.fillStyle = p.bg;
-      ctx.fillRect(0, 0, width, height);
-      const edgeLabels = drawEdges(ctx, lane, view, TOP, waveH, { labels: true });
-      drawGrid(ctx, lane, view, TOP, waveH, { labels: true, labelY: 2 });
-      drawWave(ctx, lane, view, TOP + 2, waveH - 4, dpr);
-      ctx.fillStyle = alpha(p.fg, 0.08);
-      ctx.fillRect(0, TOP + waveH / 2, width, 1);
-      drawCues(ctx, lane, view, TOP, waveH, { topOffset: 0, avoid: edgeLabels });
-      drawSections(ctx, lane, view, height - SECTIONS, SECTIONS);
+    const p = wavePalette();
+    const b = setupCanvas(base, width, height);
+    let edgeLabels: ReturnType<typeof drawEdges> = [];
+    if (b) {
+      b.ctx.fillStyle = p.bg;
+      b.ctx.fillRect(0, 0, width, height);
+      edgeLabels = drawEdges(b.ctx, lane, view, TOP, waveH, { labels: true });
+      drawGrid(b.ctx, lane, view, TOP, waveH, { labels: true, labelY: 2 });
     }
-    const oc = ovRef.current;
-    const ovS = oc && overview ? setupCanvas(oc, width, OVERVIEW_H) : null;
-    if (ovS) {
-      const { ctx, dpr } = ovS;
-      const p = wavePalette();
-      const ovView: View = { start: 0, pxPerSec: width / duration || 1, width };
-      ctx.fillStyle = p.bg;
-      ctx.fillRect(0, 0, width, OVERVIEW_H);
-      drawWave(ctx, lane, ovView, 1, OVERVIEW_H - 6, dpr);
-      for (const sec of analysis.sections ?? []) {
-        const x0 = xOf(ovView, sec.start_s);
-        const x1 = xOf(ovView, sec.end_s);
-        ctx.fillStyle = alpha(sectionColor(sec.kind, p), 0.9);
-        ctx.fillRect(x0 + 0.5, OVERVIEW_H - 3, Math.max(1, x1 - x0 - 1), 3);
-      }
-      // viewport (only when zoomed in)
-      if (tv.span < duration - 0.01) {
-        const x0 = xOf(ovView, tv.start);
-        const x1 = xOf(ovView, tv.start + tv.span);
-        shade(ctx, ovView, 0, tv.start, 0, OVERVIEW_H, 0.55);
-        shade(ctx, ovView, tv.start + tv.span, duration, 0, OVERVIEW_H, 0.55);
-        ctx.strokeStyle = alpha(p.fg, 0.55);
-        ctx.lineWidth = 1;
-        ctx.strokeRect(Math.round(x0) + 0.5, 0.5, Math.max(2, Math.round(x1 - x0) - 1), OVERVIEW_H - 1);
-      }
+    paintWave();
+    const o = setupCanvas(over, width, height);
+    if (o) {
+      o.ctx.fillStyle = alpha(p.fg, 0.08);
+      o.ctx.fillRect(0, TOP + waveH / 2, width, 1);
+      drawCues(o.ctx, lane, view, TOP, waveH, { topOffset: 0, avoid: edgeLabels });
+      drawSections(o.ctx, lane, view, height - SECTIONS, SECTIONS);
     }
     if (barsRef.current) {
       barsRef.current.textContent = tv.span < duration - 0.01 ? `${Math.max(1, Math.round(tv.span / (analysis.bar_s || 1)))} bars visible` : "Whole track";
@@ -118,6 +153,12 @@ export function TrackWaveform({ analysis, trackId, onSeek, height = 132, overvie
     paintHead();
   };
 
+  const paintAll = () => {
+    paintOverview();
+    paintBase();
+  };
+
+  /** The playheads, and the overview's viewport box (cheap: a few rects, every frame while playing). */
   const paintHead = () => {
     const width = widthRef.current;
     const st = usePlayer.getState();
@@ -146,12 +187,23 @@ export function TrackWaveform({ analysis, trackId, onSeek, height = 132, overvie
     const oc = ovHeadRef.current;
     if (oc && width && overview) {
       const s = setupCanvas(oc, width, OVERVIEW_H);
-      if (s && on) {
-        const x = (pos / duration) * width;
-        s.ctx.fillStyle = alpha(p.bg, 0.5);
-        s.ctx.fillRect(0, 0, x, OVERVIEW_H - 4);
-        s.ctx.fillStyle = p.playhead;
-        s.ctx.fillRect(Math.round(x), 0, 1.5, OVERVIEW_H);
+      if (!s) return;
+      const { ctx } = s;
+      const tv = ctl.get();
+      const ovView: View = { start: 0, pxPerSec: width / duration || 1, width };
+      // viewport (only when zoomed in)
+      if (tv.span < duration - 0.01) {
+        const x0 = xOf(ovView, tv.start);
+        const x1 = xOf(ovView, tv.start + tv.span);
+        shade(ctx, ovView, 0, tv.start, 0, OVERVIEW_H, 0.55);
+        shade(ctx, ovView, tv.start + tv.span, duration, 0, OVERVIEW_H, 0.55);
+        ctx.strokeStyle = alpha(p.fg, 0.55);
+        ctx.lineWidth = 1;
+        ctx.strokeRect(Math.round(x0) + 0.5, 0.5, Math.max(2, Math.round(x1 - x0) - 1), OVERVIEW_H - 1);
+      }
+      if (on) {
+        ctx.fillStyle = p.playhead;
+        ctx.fillRect(Math.round((pos / duration) * width), 0, 1.5, OVERVIEW_H);
       }
     }
   };
@@ -180,23 +232,29 @@ export function TrackWaveform({ analysis, trackId, onSeek, height = 132, overvie
   };
 
   const frameBase = useFrame(paintBase);
-  const frameHead = useFrame(paintHead);
+  const frameAll = useFrame(paintAll);
   const frameHover = useFrame(paintHover);
-  const widthRef = useWidthRef(boxRef, frameBase);
+  const widthRef = useWidthRef(boxRef, frameAll);
 
-  // props changed (another analysis, the worker delivered the waveform, a new height): redraw now
-  useLayoutEffect(() => paintBase());
+  // props changed (another analysis, the worker delivered the waveform, a new height or mode): redraw now
+  useLayoutEffect(() => paintAll());
   useEffect(() => ctl.subscribe(frameBase), [ctl, frameBase]);
 
-  // ---- playhead: its own rAF loop while this track plays, reading the audio clock (player.time()) every frame
-  const headFn = useRef(paintHead);
-  headFn.current = paintHead;
+  // ---- playhead: its own rAF loop while this track plays, reading the audio clock (player.time()) every frame. The
+  // waveform itself (brighter played part) repaints only when the split moves to another device pixel.
+  const tickFn = useRef(() => {});
+  tickFn.current = () => {
+    const [m, o] = splitNow(playedAt());
+    if (m !== splitPx.current[0]) paintWave();
+    if (o !== splitPx.current[1]) paintOverview();
+    paintHead();
+  };
   useEffect(() => {
     let raf = 0;
     const loop = () => {
       // follow the playhead while playing, unless the user just scrolled
       if (performance.now() - lastManual.current > 2500) ctl.reveal(player.time());
-      headFn.current();
+      tickFn.current();
       raf = requestAnimationFrame(loop);
     };
     const sync = () => {
@@ -206,7 +264,7 @@ export function TrackWaveform({ analysis, trackId, onSeek, height = 132, overvie
       if (!playing) {
         cancelAnimationFrame(raf);
         raf = 0;
-        frameHead();
+        frameAll();
       }
     };
     sync();
@@ -218,12 +276,12 @@ export function TrackWaveform({ analysis, trackId, onSeek, height = 132, overvie
       un();
       cancelAnimationFrame(raf);
     };
-  }, [ctl, trackId, frameHead]);
+  }, [ctl, trackId, frameAll]);
 
   // ---- interaction
   const drag = useRef<{ x: number; start: number; moved: boolean; id: number } | null>(null);
   const timeAt = (clientX: number) => {
-    const r = mainRef.current?.getBoundingClientRect();
+    const r = baseRef.current?.getBoundingClientRect();
     if (!r) return 0;
     const view = viewOf(widthRef.current);
     return view.start + (clientX - r.left) / view.pxPerSec;
@@ -325,7 +383,9 @@ export function TrackWaveform({ analysis, trackId, onSeek, height = 132, overvie
             frameHover();
           }}
         >
-          <canvas ref={mainRef} className="absolute inset-0 h-full w-full" />
+          <canvas ref={baseRef} className="absolute inset-0 h-full w-full" />
+          <canvas ref={waveRef} className="absolute inset-0 h-full w-full" />
+          <canvas ref={overRef} className="absolute inset-0 h-full w-full" />
           <canvas ref={headRef} className="pointer-events-none absolute inset-0 h-full w-full" />
           <div ref={hoverLineRef} hidden className="pointer-events-none absolute top-0 bottom-0 w-px bg-white/35" />
           <div

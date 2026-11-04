@@ -5,8 +5,10 @@
  */
 import type { CuePoint, TrackAnalysis } from "@/api/types";
 import { textPx } from "@/lib/theme";
-import { alpha, cueColor, edgeColor, edgeWords, SECTION_LABEL, sectionColor, type WavePalette, wavePalette } from "./palette";
+import { waveGL } from "./gl/renderer";
+import { alpha, cueColor, edgeColor, edgeWords, rgbOf, SECTION_LABEL, sectionColor, type WavePalette, wavePalette } from "./palette";
 import type { WaveData } from "./prepare";
+import { useWaveSettings, type WaveMode } from "./settings";
 
 export interface Lane {
   wave: WaveData | null;
@@ -34,37 +36,71 @@ function font(p: WavePalette, size: number, weight = 600): string {
 
 // ------------------------------------------------------------------------------------------------ waveform
 
+export interface WaveOptions {
+  alpha?: number;
+  /** defaults to the Settings choice */
+  mode?: WaveMode;
+  /** file time of the playhead: the part before it draws brighter, the part after it dimmer */
+  played?: number | null;
+}
+
+/** Brightness of the unplayed part while a playhead splits the waveform (the shader uses the same). */
+export const UNPLAYED = 0.55;
+
+/**
+ * The waveform of `lane` in the band [y, y + h], in the Settings mode: on the GPU (`gl/renderer.ts`, one shared
+ * WebGL2 context) when it can, else painted with Canvas 2D (`drawWave2d`). Either way it lands on `ctx`, so callers
+ * layer grid lines under it and cues over it as before.
+ */
+export function drawWave(ctx: CanvasRenderingContext2D, lane: Lane, view: View, y: number, h: number, dpr: number, opts: WaveOptions = {}): void {
+  const w = lane.wave;
+  if (!w || h <= 0 || view.width <= 0) return;
+  const mode = opts.mode ?? useWaveSettings.getState().mode;
+  const gl = waveGL();
+  if (gl) {
+    const ptsPerMix = w.pps * lane.rate;
+    const y0 = Math.round(y * dpr);
+    const split = opts.played == null ? Infinity : Math.max(0, xOf(view, toMix(lane, opts.played)) * dpr);
+    const ok = gl.drawInto(
+      ctx,
+      {
+        wave: w,
+        first: (view.start - lane.origin) * ptsPerMix,
+        ppc: ptsPerMix / (view.pxPerSec * dpr),
+        width: Math.ceil(view.width * dpr),
+        height: Math.round((y + h) * dpr) - y0,
+        dpr,
+        mode,
+        split,
+        alpha: opts.alpha ?? 1,
+      },
+      0,
+      y0 / dpr,
+    );
+    if (ok) return;
+  }
+  drawWave2d(ctx, lane, view, y, h, dpr, { ...opts, mode });
+}
+
 const BAND_GAIN = { low: 1, mid: 0.64, high: 0.34 };
 // shaping curves: mids are dense in most mixes, so compress them harder to let kicks (lows) show around them
 const CURVE = { low: 0.85, mid: 1.6, high: 1.25 };
 
-/**
- * Mirrored 3-band waveform (rekordbox-style: blue lows at the back, amber mids, white highs in front) in the band
- * [y, y + h]. Per device-pixel column it takes each band's peak over the points the column covers, or
- * interpolates between points when zoomed past one point per pixel.
- */
-export function drawWave(ctx: CanvasRenderingContext2D, lane: Lane, view: View, y: number, h: number, dpr: number, opts: { alpha?: number } = {}): void {
-  const w = lane.wave;
-  if (!w) return;
-  const p = wavePalette();
+/** Per device-pixel column of the view, each band's peak over the points the column covers, or interpolated between
+ * points when zoomed past one point per pixel. Only the columns inside the file: [c0, c1). */
+function waveColumns(lane: Lane, view: View, dpr: number) {
+  const w = lane.wave!;
   const cols = Math.ceil(view.width * dpr);
-  const mid = y + h / 2;
-  const half = h / 2 - 0.5;
   const step = 1 / dpr; // CSS px per column
   const ptsPerMix = w.pps * lane.rate; // waveform points per mix second
   const ptsPerCol = (ptsPerMix * step) / view.pxPerSec;
   const first = (view.start - lane.origin) * ptsPerMix; // point index at x = 0
-
-  // visible columns that fall inside the file
-  const xFileStart = xOf(view, lane.origin);
-  const xFileEnd = xOf(view, toMix(lane, w.n / w.pps));
-  const c0 = Math.max(0, Math.floor(xFileStart / step));
-  const c1 = Math.min(cols, Math.ceil(xFileEnd / step));
-  if (c1 <= c0) return;
-
-  const lo = new Float32Array(c1 - c0);
-  const md = new Float32Array(c1 - c0);
-  const hi = new Float32Array(c1 - c0);
+  const c0 = Math.max(0, Math.floor(xOf(view, lane.origin) / step));
+  const c1 = Math.min(cols, Math.ceil(xOf(view, toMix(lane, w.n / w.pps)) / step));
+  const len = Math.max(0, c1 - c0);
+  const lo = new Float32Array(len);
+  const md = new Float32Array(len);
+  const hi = new Float32Array(len);
   for (let c = c0; c < c1; c++) {
     const a = first + c * ptsPerCol;
     const b = a + ptsPerCol;
@@ -93,24 +129,84 @@ export function drawWave(ctx: CanvasRenderingContext2D, lane: Lane, view: View, 
     md[c - c0] = m;
     hi[c - c0] = s;
   }
+  return { c0, c1, step, lo, md, hi };
+}
 
-  ctx.save();
-  ctx.globalAlpha = opts.alpha ?? 1;
-  const band = (vals: Float32Array, gain: number, curve: number, color: string, a: number) => {
-    for (let k = 0; k < vals.length; k++) vals[k] = Math.max(0.35, Math.pow(vals[k], curve) * gain * half);
+/**
+ * The Canvas 2D painter: the fallback when WebGL2 is unavailable, with the same modes as the shader (3-band:
+ * rekordbox-style blue lows at the back, amber mids, white highs in front; RGB; stacked rows) and the same dimmer
+ * unplayed part, without the gradient and glow.
+ */
+export function drawWave2d(ctx: CanvasRenderingContext2D, lane: Lane, view: View, y: number, h: number, dpr: number, opts: WaveOptions = {}): void {
+  if (!lane.wave) return;
+  const p = wavePalette();
+  const { c0, c1, step, lo, md, hi } = waveColumns(lane, view, dpr);
+  if (c1 <= c0) return;
+  const mode = opts.mode ?? useWaveSettings.getState().mode;
+  const base = opts.alpha ?? 1;
+
+  // mirrored filled envelope of `vals` (already in px) around `mid`
+  const envelope = (vals: Float32Array, mid: number, color: string) => {
     ctx.beginPath();
     ctx.moveTo(c0 * step, mid);
     for (let k = 0; k < vals.length; k++) ctx.lineTo((c0 + k) * step, mid - vals[k]);
     ctx.lineTo(c1 * step, mid);
     for (let k = vals.length - 1; k >= 0; k--) ctx.lineTo((c0 + k) * step, mid + vals[k]);
     ctx.closePath();
-    ctx.fillStyle = alpha(color, a);
+    ctx.fillStyle = color;
     ctx.fill();
   };
-  band(lo, BAND_GAIN.low, CURVE.low, p.low, 1);
-  band(md, BAND_GAIN.mid, CURVE.mid, p.mid, 0.92);
-  band(hi, BAND_GAIN.high, CURVE.high, p.high, 0.88);
-  ctx.restore();
+  const shaped = (vals: Float32Array, gain: number, curve: number, half: number) => vals.map((v) => Math.max(0.35, Math.pow(v, curve) * gain * half));
+
+  const paint = () => {
+    if (mode === "stacked") {
+      const rowH = h / 3;
+      const half = rowH / 2 - 1;
+      [
+        [hi, 1.1, p.high],
+        [md, 1.25, p.mid],
+        [lo, 0.85, p.low],
+      ].forEach(([vals, curve, color], r) => envelope(shaped(vals as Float32Array, 1, curve as number, half), y + rowH * (r + 0.5), color as string));
+    } else if (mode === "rgb") {
+      const half = h / 2 - 0.5;
+      const mid = y + h / 2;
+      const [rl, rm, rh] = [rgbOf(p.rgbLow), rgbOf(p.rgbMid), rgbOf(p.rgbHigh)];
+      for (let k = 0; k < lo.length; k++) {
+        const wl = lo[k] ** 3 + 1e-4;
+        const wm = (md[k] * 0.72) ** 3 + 1e-4;
+        const wh = (hi[k] * 0.58) ** 3 + 1e-4;
+        const sum = wl + wm + wh;
+        const rgb = [0, 1, 2].map((i) => (wl * rl[i] + wm * rm[i] + wh * rh[i]) / sum);
+        const top = Math.max(0.4, ...rgb);
+        const amp = Math.max(0.35, Math.pow(Math.max(lo[k], md[k] * 0.9, hi[k] * 0.75), 0.9) * half);
+        ctx.fillStyle = `rgb(${rgb.map((v) => Math.round((v / top) * 255)).join(", ")})`;
+        ctx.fillRect((c0 + k) * step, mid - amp, step, amp * 2);
+      }
+    } else {
+      const half = h / 2 - 0.5;
+      const mid = y + h / 2;
+      envelope(shaped(lo, BAND_GAIN.low, CURVE.low, half), mid, alpha(p.low, 1));
+      envelope(shaped(md, BAND_GAIN.mid, CURVE.mid, half), mid, alpha(p.mid, 0.92));
+      envelope(shaped(hi, BAND_GAIN.high, CURVE.high, half), mid, alpha(p.high, 0.88));
+    }
+  };
+
+  const split = opts.played == null ? null : Math.max(0, xOf(view, toMix(lane, opts.played)));
+  const region = (x0: number, x1: number, a: number) => {
+    if (x1 <= x0) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, y - 1, x1 - x0, h + 2);
+    ctx.clip();
+    ctx.globalAlpha = a;
+    paint();
+    ctx.restore();
+  };
+  if (split == null) region(0, view.width, base);
+  else {
+    region(0, Math.min(split, view.width), base);
+    region(split, view.width, base * UNPLAYED);
+  }
 }
 
 // ------------------------------------------------------------------------------------------------ grid

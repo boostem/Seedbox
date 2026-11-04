@@ -9,9 +9,12 @@ software (the waveforms stay), on an ordinary laptop. It was planned in board ti
 Do the [Setup](../README.md#setup) in the main README first (`.venv`, `ffmpeg` and `deno`).
 
 ```sh
-(cd frontend2 && deno install && deno task build)   # once, and after frontend changes (writes frontend2/dist)
 .venv/bin/python -m seedbox2                        # opens the Seedbox 2 window
+(cd frontend2 && deno install && deno task build)   # after frontend changes (writes frontend2/dist)
 ```
+
+The first run builds `frontend2/dist` itself when it is missing, so it takes a little longer (the terminal says so).
+It doesn't notice a stale build: after pulling frontend changes, run the build line.
 
 To work on the UI with hot reload, use two terminals:
 
@@ -70,6 +73,10 @@ again (or failed, for types registered `resumable=False`). A job that ignores a 
 costs only that worker; the supervisor starts another. `/api/jobs` lists, submits and cancels; `/api/events` carries
 `job.queued`, `job.started`, `job.progress` (coalesced: a slow client only gets the latest per job) and the terminal
 `job.done`, `job.failed` and `job.cancelled`, which are never dropped.
+
+**The waveform renderer** (#74, `frontend2/src/features/waveform/gl/`): one WebGL2 context for the library overviews,
+the track view and the transition editor; `WaveOverview` is the strip for the decks when they exist. RGB, 3-band and
+stacked modes are chosen in `#/settings`, and Canvas 2D takes over when WebGL2 isn't there.
 
 **Waveforms** (#49, `seedbox2/analysis/waveform.py`): the `waveform` job (light pool, so it never waits behind
 stems) decodes a track to mono at 22,050 Hz, a second at a time, and splits it with 4th-order Bessel filters

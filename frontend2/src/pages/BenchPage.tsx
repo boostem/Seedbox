@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { player, usePlayer } from "@/audio/player";
 import { Page, PageBody, PageHeader, Panel, PanelHeader } from "@/components/ui";
-import { TrackWaveform } from "@/features/waveform";
+import { TrackWaveform, waveRendererInfo } from "@/features/waveform";
 import { demoAnalysis } from "@/lib/demo/analysis";
 import { DemoTrackTable } from "@/lib/demo/tracks";
 
@@ -12,6 +12,8 @@ export interface BenchHooks {
    * the player's status ("playing", or "error" when the browser can't play). */
   play: (startAt?: number) => Promise<string>;
   stop: () => void;
+  /** What draws the waveforms: "webgl2 (<GPU>)" or "canvas2d". */
+  gpu: () => string;
 }
 
 declare global {
@@ -56,6 +58,7 @@ export function BenchPage() {
         return usePlayer.getState().status;
       },
       stop: () => player.stop(),
+      gpu: waveRendererInfo,
     };
     return () => {
       player.stop();

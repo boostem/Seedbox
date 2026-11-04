@@ -18,6 +18,7 @@ import { barBeat, drawCues, drawEdges, drawGrid, drawSections, drawTimeRuler, dr
 import { useFrame, useWaveformKeys, useViewCtl, useViewFact, useWidthRef } from "./hooks";
 import { type MixGeometry, mixGeometry } from "./mix";
 import { alpha, wavePalette } from "./palette";
+import { useWaveLook } from "./settings";
 import { useWave } from "./waveData";
 
 /** External playhead source (e.g. the audition): current mix time or null. */
@@ -67,6 +68,7 @@ export function MixWaveform({ a, b, aId, bId, aBpm, transition, clock, onSeek, l
   const initial = g ? { start: g.out - 12 * barA, span: g.overlapS + 28 * barA } : undefined;
   const ctl = useViewCtl(min, max, 4 * barA, initial);
   const visibleBars = useViewFact(ctl, (v) => Math.round(v.span / barA));
+  useWaveLook(); // a new mode re-renders, and the layout effect below repaints
 
   const boxRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
@@ -80,12 +82,35 @@ export function MixWaveform({ a, b, aId, bId, aBpm, transition, clock, onSeek, l
     return { start: v.start, pxPerSec: w / v.span || 1, width: w };
   };
 
+  /** Where each deck has played to (file time), from the external clock or the player; null where nothing plays. */
+  const playedNow = (): Played => {
+    if (!g) return { a: null, b: null };
+    const m = clock?.get();
+    if (m != null) return { a: toFile(g.laneA, m), b: toFile(g.laneB, m) };
+    const st = usePlayer.getState();
+    if (st.status === "idle" || st.status === "error") return { a: null, b: null };
+    if (st.currentId === aId) return { a: player.time(), b: null };
+    if (st.currentId === bId) return { a: null, b: player.time() };
+    return { a: null, b: null };
+  };
+  /** The played/unplayed splits in device px, to repaint the waves only when one moves a pixel. */
+  const splitKey = (pl: Played): string => {
+    if (!g || (pl.a == null && pl.b == null)) return "";
+    const view = viewOf(widthRef.current);
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const px = (lane: MixGeometry["laneA"], t: number | null) => (t == null ? "" : Math.round(xOf(view, toMix(lane, t)) * dpr));
+    return `${px(g.laneA, pl.a)}|${px(g.laneB, pl.b)}`;
+  };
+  const lastSplit = useRef("");
+
   const paintBase = () => {
     const c = baseRef.current;
     const width = widthRef.current;
     if (!c || !width || !g) return;
     const s = setupCanvas(c, width, H);
-    if (s) paint(s.ctx, s.dpr, g, viewOf(width), transition, { H, LH, yA, yMid, yB });
+    const played = playedNow();
+    lastSplit.current = splitKey(played);
+    if (s) paint(s.ctx, s.dpr, g, viewOf(width), transition, { H, LH, yA, yMid, yB }, played);
     paintHover();
     paintHeads();
   };
@@ -162,8 +187,12 @@ export function MixWaveform({ a, b, aId, bId, aBpm, transition, clock, onSeek, l
   useEffect(() => ctl.subscribe(frameBase), [ctl, frameBase]);
 
   // a rAF loop while the player plays A or B or the external clock runs; idle otherwise
+  // the waves (brighter played part) repaint only when a split moves to another device pixel
   const headsFn = useRef(paintHeads);
-  headsFn.current = paintHeads;
+  headsFn.current = () => {
+    if (splitKey(playedNow()) !== lastSplit.current) paintBase();
+    return paintHeads();
+  };
   useEffect(() => {
     let raf = 0;
     const loop = () => {
@@ -291,7 +320,12 @@ interface Layout {
   yB: number;
 }
 
-function paint(ctx: CanvasRenderingContext2D, dpr: number, g: MixGeometry, view: View, t: Transition, L: Layout): void {
+interface Played {
+  a: number | null;
+  b: number | null;
+}
+
+function paint(ctx: CanvasRenderingContext2D, dpr: number, g: MixGeometry, view: View, t: Transition, L: Layout, played: Played): void {
   const p = wavePalette();
   const { H, LH, yA, yMid, yB } = L;
   const { laneA, laneB } = g;
@@ -321,14 +355,14 @@ function paint(ctx: CanvasRenderingContext2D, dpr: number, g: MixGeometry, view:
   drawSections(ctx, laneA, view, RULE_T, SEC);
   drawEdges(ctx, laneA, view, yA, LH, { labels: true });
   drawGrid(ctx, laneA, view, yA, LH);
-  drawWave(ctx, laneA, view, yA + 3, LH - 6, dpr);
+  drawWave(ctx, laneA, view, yA + 3, LH - 6, dpr, { played: played.a });
   drawCues(ctx, laneA, view, yA, LH, { labels: false });
   shade(ctx, view, g.outEnd, g.max + 1, RULE_T, LH + SEC, 0.66);
 
   // deck B
   drawEdges(ctx, laneB, view, yB, LH, { labels: true });
   drawGrid(ctx, laneB, view, yB, LH);
-  drawWave(ctx, laneB, view, yB + 3, LH - 6, dpr);
+  drawWave(ctx, laneB, view, yB + 3, LH - 6, dpr, { played: played.b });
   drawCues(ctx, laneB, view, yB, LH, { labels: false });
   drawSections(ctx, laneB, view, yB + LH, SEC);
   shade(ctx, view, g.min - 1, g.out, yB, LH + SEC, 0.66);
