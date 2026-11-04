@@ -5,7 +5,8 @@ Events on /api/events: `model.progress` `{name, done, total}` (coalesced per mod
 `model.failed` `{name, error}` and `model.cancelled`, each followed by a `models` event with the whole status.
 
 Settings (the `models` object in settings.json): `accelerator` (CoreML on macOS, DirectML on Windows; default off)
-and `auto_download` (default on).
+`auto_download` (default on) and `low_power` (default off: analysis uses the small models, e.g. Beat This! small0
+instead of final0).
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from seedbox2.models.registry import MODELS, ModelSpec, get
 log = logging.getLogger(__name__)
 
 SETTINGS_KEY = "models"
-DEFAULT_SETTINGS = {"accelerator": False, "auto_download": True}
+DEFAULT_SETTINGS = {"accelerator": False, "auto_download": True, "low_power": False}
 
 Publish = Callable[..., None]  # publish(type, data, key=None, terminal=False), as EventBus.publish
 

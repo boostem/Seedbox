@@ -136,14 +136,49 @@ def _deck_beat(deck: dict, beat: float | np.ndarray) -> np.ndarray:
     return u
 
 
+def _grid_index(grid: list[dict], u: np.ndarray) -> np.ndarray:
+    starts = np.array([float(g["start_beat"]) for g in grid])
+    return np.clip(np.searchsorted(starts, u, side="right") - 1, 0, len(grid) - 1)
+
+
+def grid_time(grid: list[dict], u: float | np.ndarray) -> np.ndarray:
+    """Seconds at position(s) u of a piecewise grid `[{start_beat, start_s, bpm}]` (sorted, continuous; the first
+    segment also holds before its start, the last one after it)."""
+    u = np.asarray(u, dtype=float)
+    i = _grid_index(grid, u)
+    b = np.array([float(g["start_beat"]) for g in grid])[i]
+    t = np.array([float(g["start_s"]) for g in grid])[i]
+    bpm = np.array([float(g["bpm"]) for g in grid])[i]
+    return t + (u - b) * 60.0 / bpm
+
+
 def deck_time(deck: dict, beat: float | np.ndarray) -> float | np.ndarray:
     """File time (s) of a deck at master beat(s): beat0_s + position * 60 / native_bpm, where the position is the
     master beat itself, or source_beat + ((beat - start_beat) mod length_beats) inside a loop (slip semantics: a
-    released loop leaves the deck where it would have been without it). Times before 0 or past the file's end are
-    silence."""
+    released loop leaves the deck where it would have been without it). A deck with a piecewise `grid` (positions in
+    master beats from beat0_s -> seconds, see _grid) reads its time from the grid instead. Times before 0 or past
+    the file's end are silence."""
     u = _deck_beat(deck, beat)
-    out = float(deck["beat0_s"]) + u * 60.0 / float(deck["native_bpm"])
+    if deck.get("grid"):
+        out = grid_time(deck["grid"], u)
+    else:
+        out = float(deck["beat0_s"]) + u * 60.0 / float(deck["native_bpm"])
     return float(out) if np.ndim(out) == 0 else out
+
+
+def deck_bpm(deck: dict, beat: float | np.ndarray) -> float | np.ndarray:
+    """The deck's own tempo at master beat(s): native_bpm, or the local tempo of its piecewise grid there."""
+    if not deck.get("grid"):
+        out = np.full(np.shape(beat), float(deck["native_bpm"]))
+    else:
+        u = _deck_beat(deck, beat)
+        out = np.array([float(g["bpm"]) for g in deck["grid"]])[_grid_index(deck["grid"], u)]
+    return float(out) if np.ndim(out) == 0 else out
+
+
+def grid_knots(deck: dict) -> list[float]:
+    """Positions (master beats from beat0_s) where the deck's grid changes tempo."""
+    return [float(g["start_beat"]) for g in (deck.get("grid") or [])[1:]]
 
 
 def master_seconds(tempo: list[dict], beats: float | np.ndarray, origin: float = 0.0) -> float | np.ndarray:
@@ -237,6 +272,30 @@ def _fx(raw: object, what: str) -> list[dict]:
     return out
 
 
+def _grid(raw: object, what: str) -> list[dict] | None:
+    """A deck's piecewise grid: `[{start_beat, start_s, bpm}]`, start_beat in master beats from the deck's beat0_s
+    (so it is 0 at beat0_s when the grid starts there), increasing; the segments are made continuous (each starts
+    where the one before it ends)."""
+    if raw in (None, []):
+        return None
+    if not isinstance(raw, list) or len(raw) > 512:
+        raise ValueError(f"{what}.grid must be a list of at most 512 segments")
+    segs = []
+    for g in raw:
+        if not isinstance(g, dict):
+            raise ValueError(f"{what}.grid segments must be objects")
+        seg = {k: _req_num(g, k, f"{what}.grid") for k in ("start_beat", "start_s", "bpm")}
+        if not 20.0 <= seg["bpm"] <= 400.0:
+            raise ValueError(f"{what}.grid bpm out of range")
+        segs.append(seg)
+    segs.sort(key=lambda g: g["start_beat"])
+    for prev, g in zip(segs, segs[1:]):
+        if g["start_beat"] - prev["start_beat"] < 1e-6:
+            raise ValueError(f"{what}.grid segments must start on different beats")
+        g["start_s"] = prev["start_s"] + (g["start_beat"] - prev["start_beat"]) * 60.0 / prev["bpm"]
+    return segs
+
+
 def _tap(raw: object) -> str:
     return raw if raw in SEND_TAPS else SEND_TAPS[0]
 
@@ -260,14 +319,19 @@ def _deck(raw: object, what: str) -> dict:
         kf = _keyframes(lanes_raw.get(lane), lo, hi, f"{what}.lanes.{lane}")
         lanes[lane] = kf or [{"beat": 0.0, "value": LANE_DEFAULTS[lane], "curve": "hold"}]
     echo = num(raw.get("echo_beats"), 0.75)
-    return {
-        "track_id": tid, "beat0_s": _req_num(raw, "beat0_s", what), "native_bpm": bpm,
+    grid = _grid(raw.get("grid"), what)
+    beat0 = _req_num(raw, "beat0_s", what) if grid is None else float(grid_time(grid, 0.0))
+    out = {
+        "track_id": tid, "beat0_s": beat0, "native_bpm": bpm,
         "play_from_beat": p0, "play_to_beat": p1,
         "echo_beats": min(ECHO_BEATS_RANGE[1], max(ECHO_BEATS_RANGE[0], echo)),
         "echo_tap": _tap(raw.get("echo_tap")), "reverb_tap": _tap(raw.get("reverb_tap")),
         "reverb_size": min(1.0, max(0.0, num(raw.get("reverb_size"), REVERB_SIZE))),
         "loops": _loops(raw.get("loops"), what), "fx": _fx(raw.get("fx"), what), "lanes": lanes,
     }  # fmt: skip
+    if grid is not None:
+        out["grid"] = grid
+    return out
 
 
 def validate(plan: dict) -> dict:
@@ -1152,6 +1216,34 @@ def _eq_note(tech: str, place: _Place) -> str | None:
 # --- public API ----------------------------------------------------------------------------------------------------
 
 
+def analysis_grid(an: dict | None, bar0: float, bar_s: float, native_bpm: float) -> list[dict] | None:
+    """A deck's piecewise grid from an analysis that has one (`an["grid"]`: `[{start_beat, start_s, bpm}]` in the
+    track's own beats, beat 0 on its first downbeat, as Seedbox 2's beats analysis), for a deck whose beat0 is bar
+    `bar0` of the bar grid (`bar_s` s per bar at the analysis BPM, possibly rescaled for a half/double-time pair) and
+    that plays at `native_bpm` master BPM. None without one."""
+    raw = (an or {}).get("grid")
+    bpm = float((an or {}).get("bpm") or 0)
+    if not raw or bpm <= 0 or native_bpm <= 0:
+        return None
+    beat0 = bar0 * bar_s * bpm / 60.0  # the deck's beat0 in track beats, counted on the nominal grid
+    k = native_bpm / bpm  # master beats per track beat
+    try:
+        return _grid([{"start_beat": (float(g["start_beat"]) - beat0) * k, "start_s": float(g["start_s"]),
+                       "bpm": float(g["bpm"]) * k} for g in raw], "analysis")  # fmt: skip
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _follow_grid(deck: dict, an: dict | None, bar0: float, bar_s: float) -> bool:
+    """Give the deck its analysis' piecewise grid (and the beat0_s on it); False when the analysis has none."""
+    grid = analysis_grid(an, bar0, bar_s, deck["native_bpm"])
+    if grid is None:
+        return False
+    deck["grid"] = grid
+    deck["beat0_s"] = round(float(grid_time(grid, 0.0)), 4)
+    return True
+
+
 def generate(
     a: Track,
     a_an: dict | None,
@@ -1165,7 +1257,9 @@ def generate(
 ) -> dict:
     """MixPlan (types.ts) for A → B: the engine's (or the requested) technique/blend length as beat-locked lane
     automation, tempo moves and a preview window. Works without analyses (rough plan from tag BPMs). mix_length
-    (short/normal/long, settings.mix_length) is the preferred blend length when `bars` isn't given: 8, 16 or 32."""
+    (short/normal/long, settings.mix_length) is the preferred blend length when `bars` isn't given: 8, 16 or 32.
+    An analysis with a piecewise `grid` (analysis_grid) gives its deck that grid: the deck's beats follow the
+    track's tempo changes instead of beat0_s + beat * 60 / native_bpm."""
     if technique is not None and technique not in TECHNIQUES:
         raise ValueError(f"unknown technique {technique!r}")
     if bars is not None and bars not in BARS:
@@ -1215,6 +1309,7 @@ def generate(
         "track_id": a.id, "beat0_s": round(ga.fd + place.a0 * ga.bar_s, 4), "native_bpm": m.a_bpm,
         "play_from_beat": 0.0, "play_to_beat": E, "echo_beats": 0.75, "loops": [], "fx": [], "lanes": {},
     }  # fmt: skip
+    _follow_grid(a_deck, a_an, place.a0, ga.bar_s)
     if m.a_dur > 0:  # A plays on (fader down) into its sends after it is out, while it has audio
         a_end = (m.a_dur - a_deck["beat0_s"]) * m.a_bpm / 60.0
         a_deck["play_to_beat"] = round(max(E, min(E + _SEND_TAIL, a_end)), 4)
@@ -1227,6 +1322,9 @@ def generate(
         "play_from_beat": 0.0 if xb else max(0.0, round(-b_beat0 * m.b_bpm / 60.0, 4)), "play_to_beat": 0.0,
         "echo_beats": 0.75, "loops": [], "fx": [], "lanes": {},
     }  # fmt: skip
+    if _follow_grid(b_deck, b_an, place.b0 - xb, gb.bar_s):
+        b_beat0 = b_deck["beat0_s"]
+        b_deck["play_from_beat"] = 0.0 if xb else max(0.0, round(-b_beat0 * m.b_bpm / 60.0, 4))
     if a_loop is not None:  # slip loop from where A's music runs out until it leaves
         a_deck["loops"] = [{"start_beat": 4.0 * a_loop.at, "end_beat": E, "source_beat": 4.0 * (a_loop.src - place.a0),
                             "length_beats": 4.0 * a_loop.size}]

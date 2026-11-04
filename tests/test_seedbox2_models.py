@@ -357,8 +357,9 @@ def test_manager_downloads_what_is_missing_on_first_run_and_reports_it(server, t
 def test_manager_does_not_download_when_auto_download_is_off(server, tmp_path):
     settings = FakeSettings()
     mgr = ModelManager(tmp_path, settings=settings, models={"a": spec_for(server, name="a")})
-    assert mgr.update_settings(auto_download=False, accelerator=True) == {"accelerator": True, "auto_download": False}
-    assert settings.data == {"models": {"accelerator": True, "auto_download": False}}
+    assert mgr.update_settings(auto_download=False, accelerator=True) == {"accelerator": True, "auto_download": False,
+                                                                                  "low_power": False}
+    assert settings.data == {"models": {"accelerator": True, "auto_download": False, "low_power": False}}
     mgr.start()
     mgr.wait(5)
     assert server.ranges == [] and mgr.status()["offline"]
@@ -445,7 +446,7 @@ def test_models_api(client, tmp_path):
     assert client.post("/api/models/download").json()["models"][0]["state"] in ("downloading", "installed")
     wait_state(client, "installed")
     settings = client.post("/api/models/settings", json={"accelerator": True}).json()["settings"]
-    assert settings == {"accelerator": True, "auto_download": True}
+    assert settings == {"accelerator": True, "auto_download": True, "low_power": False}
     saved = json.loads((tmp_path / "settings.json").read_text())
     assert saved["models"] == settings
     assert client.post("/api/models/nope/download").status_code == 404

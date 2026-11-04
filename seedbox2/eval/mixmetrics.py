@@ -32,7 +32,7 @@ import numpy as np
 from scipy import signal
 
 from musicreco.mixing import _parse_camelot, camelot_move
-from musicreco.mixplan import lane_value
+from musicreco.mixplan import deck_bpm, lane_value
 from musicreco.mixrender import _block_power, true_peak_db
 
 LEVEL_WIN_S, LEVEL_HOP_S = 0.4, 0.05
@@ -315,7 +315,7 @@ def key_and_stretch(r: Render) -> dict:
             if p1 <= p0:
                 continue
             beats = np.linspace(p0, p1, 128, endpoint=False)
-            ratio = np.asarray(lane_value(plan["tempo"], beats), dtype=float) / float(d["native_bpm"])
+            ratio = np.asarray(lane_value(plan["tempo"], beats), dtype=float) / np.asarray(deck_bpm(d, beats), float)
             worst = float(ratio[np.argmax(np.abs(ratio - 1))])
             out[f"{k}_stretch"] = round(worst, 4)
             devs.append(abs(worst - 1) * 100)

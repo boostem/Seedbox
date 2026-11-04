@@ -1,7 +1,8 @@
 """The analysers under test, by name. Each turns an audio file into an `Estimate`; None fields are not scored.
 
 `seedbox1` (Seedbox 1's `musicreco/structure.py`, run without the tunebat BPM hint) is the baseline every Seedbox 2
-analysis ticket has to beat. A new analyser registers itself here with `@analyser("name")`.
+analysis ticket has to beat. `seedbox2` and `seedbox2-small` are Seedbox 2's beats (#43) with Beat This! final0 and
+small0 (the models must be downloaded). A new analyser registers itself here with `@analyser("name")`.
 """
 
 from __future__ import annotations
@@ -75,3 +76,25 @@ def seedbox1(path: Path) -> Estimate:
         sections.append((a["sections"][-1]["end_s"], "end"))
     return Estimate(duration_s=duration, bpm=a["bpm"], key=None, beats=beats, downbeats=downbeats,
                     sections=sections, vocals=vocals, cues=[(c["time_s"], c["label"]) for c in a["cues"]])
+
+
+def _beat_this(path: Path, model: str) -> Estimate:
+    """Seedbox 2's beats analysis (#43) with the model from the models folder (`python -m seedbox2.models`
+    or the app downloads it), without tag hints."""
+    from seedbox2.analysis import beats as sb2  # noqa: PLC0415
+    from seedbox2.models import load_session  # noqa: PLC0415
+
+    session = load_session(model)
+    r = sb2.analyse(path, session, model=model)
+    return Estimate(duration_s=r["duration_s"], bpm=r["bpm"], beats=sb2.beat_times(r).round(4).tolist(),
+                    downbeats=sb2.beat_times(r, sb2.BEATS_PER_BAR).round(4).tolist())
+
+
+@analyser("seedbox2")
+def seedbox2_beats(path: Path) -> Estimate:
+    return _beat_this(path, "beat_this")
+
+
+@analyser("seedbox2-small")
+def seedbox2_beats_small(path: Path) -> Estimate:
+    return _beat_this(path, "beat_this_small")

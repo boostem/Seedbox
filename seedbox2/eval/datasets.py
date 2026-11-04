@@ -5,6 +5,7 @@
 | `giantsteps-tempo` | tempo (the corrected v2 annotations when present) | the 2-minute Beatport previews in `audio/` |
 | `giantsteps-key` | key | the previews in `audio/` |
 | `harmonix` | beats, downbeats, sections, tempo | not distributed: put your own copies in `audio/<id>.<ext>` |
+| `gtzan` | beats, downbeats, tempo (Marchand & Peeters) | the 1,000 30-second GTZAN excerpts, from one 1.2 GB archive |
 | `corpus` | anything in the annotation JSON (`annotate.py`) | `<name>.<ext>` next to `<name>.json` |
 
 `python -m seedbox2.eval fetch` clones the public annotation repositories and downloads the GiantSteps previews.
@@ -120,6 +121,28 @@ def load_harmonix(root: Path) -> Iterator[Reference]:
                         sections=sections)
 
 
+def load_gtzan(root: Path) -> Iterator[Reference]:
+    """GTZAN genre excerpts with the beat/downbeat annotations of Marchand & Peeters (`<time> <beat in bar>` lines).
+    Beat This!'s checkpoints (final0, small0) were trained on everything but GTZAN, which makes it the fair test."""
+    for ann in sorted((root / "beats").glob("gtzan_*.beats")):
+        _, genre, num = ann.stem.split("_", 2)  # gtzan_blues_00000 -> blues.00000.wav
+        audio = _audio_for(root / "audio", f"{genre}.{num}")
+        if audio is None:
+            continue
+        beats, downbeats = [], []
+        for line in _read_text(ann).splitlines():
+            parts = line.split()
+            if not parts:
+                continue
+            beats.append(float(parts[0]))
+            if len(parts) > 1 and parts[1] in ("1", "1.0"):
+                downbeats.append(float(parts[0]))
+        tempo = root / "tempo" / f"{ann.stem}.bpm"
+        bpm = _float_or_none(_read_text(tempo)) if tempo.is_file() else None
+        yield Reference("gtzan", f"{genre}.{num}", audio, bpm=bpm, beats=beats, downbeats=downbeats or None,
+                        extra={"genre": genre})
+
+
 def load_corpus(root: Path) -> Iterator[Reference]:
     from .annotate import read_annotation  # noqa: PLC0415 (annotate imports this module)
 
@@ -138,6 +161,9 @@ DATASETS: dict[str, Dataset] = {d.name: d for d in (
             load_giantsteps_key, "604 EDM Beatport previews, key (Knees et al. 2015)"),
     Dataset("harmonix", "SEEDBOX2_HARMONIX", "https://github.com/urinieto/harmonixset",
             load_harmonix, "912 pop/EDM tracks, beats, downbeats and sections (Nieto et al. 2019); bring your own audio"),
+    Dataset("gtzan", "SEEDBOX2_GTZAN", "https://github.com/TempoBeatDownbeat/gtzan_tempo_beat",
+            load_gtzan, "1,000 30 s excerpts of 10 genres, beats and downbeats (Tzanetakis 2002; Marchand & Peeters "
+            "2015); not in Beat This!'s training data"),
     Dataset("corpus", "SEEDBOX2_CORPUS", None, load_corpus, "our own tracks, annotated with `annotate`"),
 )}
 
@@ -199,6 +225,43 @@ def normalise_key(text: str | None) -> str | None:
 # ---------------------------------------------------------------------------------------------------------------
 # fetch
 
+# the GTZAN archive (genres/<genre>/<genre>.<n>.wav), pinned to a revision of its Hugging Face mirror
+_GTZAN_ARCHIVE = ("https://huggingface.co/datasets/marsyas/gtzan/resolve/d2146561ecc7df707d9e6b8318885fe6a39668a2/"
+                  "data/genres.tar.gz")
+_GTZAN_SHA256 = "b28cc067ff6199bd826f5d1a6931458586d64acae7f44b2e882b7a97af057531"
+
+
+def _fetch_gtzan(folder: Path, log: Callable[[str], None]) -> None:
+    import tarfile
+
+    audio = folder / "audio"
+    if audio.is_dir() and len(list(audio.glob("*.wav"))) >= 1000:
+        return
+    archive = folder / "genres.tar.gz"
+    if not archive.is_file():
+        log(f"gtzan: downloading {_GTZAN_ARCHIVE} (1.2 GB)")
+        part = archive.with_suffix(".part")
+        with urllib.request.urlopen(_GTZAN_ARCHIVE, timeout=60) as r, part.open("wb") as f:
+            shutil.copyfileobj(r, f, 1 << 20)
+        part.rename(archive)
+    h = hashlib.sha256()
+    with archive.open("rb") as f:
+        while chunk := f.read(1 << 20):
+            h.update(chunk)
+    if h.hexdigest() != _GTZAN_SHA256:
+        archive.unlink()
+        raise RuntimeError("gtzan: the archive's SHA-256 does not match; run fetch again")
+    audio.mkdir(exist_ok=True)
+    with tarfile.open(archive) as tar:
+        for m in tar:
+            name = Path(m.name).name
+            if m.isfile() and name.endswith(".wav") and not name.startswith("._"):
+                with tar.extractfile(m) as src, (audio / name).open("wb") as dst:  # type: ignore[union-attr]
+                    shutil.copyfileobj(src, dst)
+    archive.unlink()
+    log(f"gtzan: {len(list(audio.glob('*.wav')))} excerpts")
+
+
 _GIANTSTEPS_AUDIO = ("https://www.cp.jku.at/datasets/giantsteps/backup/", "https://geo-samples.beatport.com/lofi/")
 
 
@@ -213,6 +276,9 @@ def fetch(name: str, folder: Path, limit: int | None = None, log: Callable[[str]
         folder.parent.mkdir(parents=True, exist_ok=True)
         log(f"cloning {ds.repo} into {folder}")
         subprocess.run(["git", "clone", "-q", "--depth", "1", ds.repo, str(folder)], check=True)
+    if name == "gtzan":
+        _fetch_gtzan(folder, log)
+        return
     if not name.startswith("giantsteps"):
         log(f"{name}: annotations only; put the audio in {folder / 'audio'} as <id>.<ext>")
         return

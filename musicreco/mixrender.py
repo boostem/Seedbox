@@ -32,7 +32,7 @@ from pathlib import Path
 import numpy as np
 from scipy import ndimage, signal
 
-from .mixplan import deck_time, lane_value, validate
+from .mixplan import _deck_beat, deck_bpm, deck_time, grid_knots, lane_value, validate
 from .paths import ffmpeg_path
 
 RENDER_VERSION = 4  # bump whenever the output for the same plan + files changes (invalidates cached renders)
@@ -296,8 +296,9 @@ class _Clock:
 # deck source: master-beat-ordered audio with loops spliced in
 
 
-def _segments(deck: dict, b0: float, b1: float) -> list[tuple[float, float, float]]:
-    """(start_beat, end_beat, file_time_at_start) pieces of [b0, b1) on which file time runs linearly."""
+def _segments(deck: dict, b0: float, b1: float) -> list[tuple[float, float, float, float]]:
+    """(start_beat, end_beat, file_time_at_start, seconds_per_beat) pieces of [b0, b1) on which file time runs
+    linearly: cut at loop edges and repeats and, for a deck with a piecewise grid, where it changes tempo."""
     cuts = {b0, b1}
     for lp in deck["loops"]:
         s, e, n = lp["start_beat"], lp["end_beat"], lp["length_beats"]
@@ -310,18 +311,53 @@ def _segments(deck: dict, b0: float, b1: float) -> list[tuple[float, float, floa
             raise ValueError("loop too short for its length")
         cuts.update(s + k * n for k in range(k0, k1 + 1))
     pts = sorted(c for c in cuts if b0 <= c <= b1)
+    knots = grid_knots(deck)
+    if knots:  # the deck's position runs at one beat per beat inside each piece: cut where it crosses a knot
+        more = []
+        for s, e in zip(pts[:-1], pts[1:]):
+            u0 = float(_deck_beat(deck, s + 1e-9)) - 1e-9
+            more += [s + (k - u0) for k in knots if u0 < k < u0 + (e - s)]
+        pts = sorted(set(pts) | set(more))
     out = []
     for s, e in zip(pts[:-1], pts[1:]):
         if e - s > 1e-9:
-            out.append((s, e, float(deck_time(deck, s + 1e-9)) - 1e-9 * 60.0 / float(deck["native_bpm"])))
+            spb = 60.0 / float(deck_bpm(deck, s + 1e-9))
+            out.append((s, e, float(deck_time(deck, s + 1e-9)) - 1e-9 * spb, spb))
     return out
+
+
+def _interp_ext(x: np.ndarray, xp: np.ndarray, fp: np.ndarray) -> np.ndarray:
+    """np.interp, extended linearly past both ends with the end pieces' slopes."""
+    y = np.interp(x, xp, fp)
+    if xp.size >= 2:
+        lo, hi = x < xp[0], x > xp[-1]
+        y = np.where(lo, fp[0] + (x - xp[0]) * (fp[1] - fp[0]) / (xp[1] - xp[0]), y)
+        y = np.where(hi, fp[-1] + (x - xp[-1]) * (fp[-1] - fp[-2]) / (xp[-1] - xp[-2]), y)
+    return y
 
 
 def _source(audio: np.ndarray, deck: dict, b0: float, b1: float, sr: int) -> np.ndarray:
     """(2, n) audio for master beats [b0, b1) at the deck's native tempo (sample j <-> beat b0 + j / (sr * spb))."""
-    spb = 60.0 / float(deck["native_bpm"])
-    per_beat = sr * spb
-    n = int(round((b1 - b0) * per_beat))
+    return _source_mapped(audio, deck, b0, b1, sr)[0]
+
+
+def _source_mapped(audio: np.ndarray, deck: dict, b0: float, b1: float,
+                   sr: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:  # fmt: skip
+    """(audio (2, n), knot beats, knot samples): the deck's audio for master beats [b0, b1), each piece at its own
+    tempo (native_bpm, or its grid segment's), and the piecewise-linear map between master beats and source samples
+    (sample = np.interp(beat, knot beats, knot samples)). Without a piecewise grid that map is the straight line
+    sample j <-> beat b0 + j / (sr * 60 / native_bpm)."""
+    pieces = _segments(deck, b0, b1)
+    spb_native = 60.0 / float(deck["native_bpm"])
+    if not pieces:
+        pieces = [(b0, b1, float(deck_time(deck, b0)), spb_native)]
+    kb = [b0]
+    ks = [0.0]
+    for s, e, _, spb in pieces:
+        kb.append(e)
+        ks.append(ks[-1] + (e - s) * sr * spb)
+    kb_a, ks_a = np.array(kb), np.array(ks)
+    n = int(round(ks_a[-1]))
     out = np.zeros((2, n), np.float32)
     nfile = audio.shape[1]
     seam = max(8, int(round(SEAM_S * sr)))
@@ -336,8 +372,8 @@ def _source(audio: np.ndarray, deck: dict, b0: float, b1: float, sr: int) -> np.
     prev_end_file = None
     fade = np.linspace(0.0, 1.0, seam, endpoint=False) + 0.5 / seam
     f_in, f_out = np.sin(0.5 * np.pi * fade), np.cos(0.5 * np.pi * fade)
-    for s, e, ft in _segments(deck, b0, b1):
-        i0, i1 = int(round((s - b0) * per_beat)), min(n, int(round((e - b0) * per_beat)))
+    for idx, (s, e, ft, _) in enumerate(pieces):
+        i0, i1 = int(round(ks_a[idx])), min(n, int(round(ks_a[idx + 1])))
         if i1 <= i0:
             continue
         f0 = int(round(ft * sr))
@@ -346,7 +382,7 @@ def _source(audio: np.ndarray, deck: dict, b0: float, b1: float, sr: int) -> np.
             # equal-power splice ending exactly on the seam: the incoming beat's attack stays intact
             out[:, i0 - seam:i0] = out[:, i0 - seam:i0] * f_out + take(f0 - seam, seam) * f_in
         prev_end_file = f0 + (i1 - i0)
-    return out
+    return out, kb_a, ks_a
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -708,18 +744,18 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
     if p1 <= p0:
         return None
     warn: list[str] = []
-    spb = 60.0 / deck["native_bpm"]
     s0, s1 = p0 - 2.0, p1 + 1.0
-    src = _source(audio, deck, s0, s1, sr)
+    src, kb, ks = _source_mapped(audio, deck, s0, s1, sr)
     ft = np.asarray(deck_time(deck, np.linspace(p0, p1, 64, endpoint=False)), dtype=float)  # play_to is exclusive
     if ft.min() < -0.05 or ft.max() > audio.shape[1] / sr + 0.05:
         warn.append("plays outside its audio file (silence there)")
     j = np.arange(src.shape[1])
-    beats = s0 + j / (sr * spb)
+    beats = _interp_ext(j, ks, kb)
     # the padding beats around the play range are silent: stretch them as the edges are, so a deck that plays at its
     # own tempo up to (or from) a tempo jump on a cut isn't time-stretched at all
     edge = min(1.0 / 64, (p1 - p0) / 4)
-    speed = clock.bpm(np.clip(beats, p0 + edge, p1 - edge)) / deck["native_bpm"]
+    held = np.clip(beats, p0 + edge, p1 - edge)
+    speed = clock.bpm(held) / np.asarray(deck_bpm(deck, held), dtype=float)
     audible = np.abs(speed - 1)
     if audible.size and audible.max() > 0.08:
         warn.append(f"tempo changed by up to {100 * audible.max():.0f}% (may sound stretched)")
@@ -732,7 +768,7 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
     qb = min(m_total, int(math.ceil(t1)) + tail)
     q = np.arange(qa, qb)
     beats_q = clock.beat(q / sr)
-    jq = (beats_q - s0) * sr * spb
+    jq = _interp_ext(beats_q, kb, ks)
     x, note = _to_master(src, speed.astype(np.float64), jq, sr, key_lock, int(round(t0)) - qa)
     if note:
         warn.append(note)

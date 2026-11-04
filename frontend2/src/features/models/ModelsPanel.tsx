@@ -126,6 +126,7 @@ export function ModelsPanel() {
             onChange={(v) => setSetting({ accelerator: v })}
             label={accel ? `Use ${accel} for models (the CPU stays the fallback; applies to new workers)` : "Hardware acceleration: none on this OS, models run on the CPU"}
           />
+          <Switch size="sm" checked={status.settings.low_power} onChange={(v) => setSetting({ low_power: v })} label="Low-power mode: smaller, faster models (Beat This! small0 for beats)" />
         </div>
       )}
     </Panel>

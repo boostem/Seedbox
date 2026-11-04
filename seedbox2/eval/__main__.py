@@ -130,7 +130,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--data", help="folder of the public datasets (default $SEEDBOX2_EVAL_DATA or the cache folder)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    f = sub.add_parser("fetch", help="clone the annotations, download the GiantSteps previews")
+    f = sub.add_parser("fetch", help="clone the annotations, download the GiantSteps previews and the GTZAN excerpts")
     f.add_argument("names", nargs="*", choices=[n for n, d in datasets.DATASETS.items() if d.repo], metavar="NAME")
     f.add_argument("--limit", type=int, help="only the first N previews (sorted by id)")
     f.set_defaults(fn=cmd_fetch)
