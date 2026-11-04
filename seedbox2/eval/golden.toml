@@ -1,0 +1,1139 @@
+# The golden corpus (#87): real track pairs every engine version is rendered on. `python -m seedbox2.eval golden`.
+#
+# Only hashes and metadata live here; the audio stays on the machine. A track is found by `hash`, the library's hash of
+# its decoded audio (seedbox2/library/hashing.py), so a retagged or renamed file still matches. Tracks with a `source`
+# are free to download (put them in an audio folder); the others are from the owner's library.
+#
+# bpm and key describe the track, and only choose and label the pairs and give Seedbox 1 its keys: the engines do their
+# own analysis. bpm is Seedbox 1's analysis, except the drum & bass, which it reads at 2/3 of the tempo: those are from
+# onset periodicity. key is a Krumhansl-Schmuckler estimate from a whole-track chromagram, so expect some to be wrong
+# until our own key detection (#45) replaces it; `Found A Cure` is the key in the owner's file name.
+#
+# tags: a genre (house, techno, dnb, hiphop, pop, disco, halftime), `key-clash` (3 or more Camelot steps apart) and
+# `vocal-heavy` (both tracks sing or rap most of the way). The tempo gap is computed; `golden check` and the tests hold
+# the corpus to the coverage it promises. `disco` holds live drums. `halftime-double-time` is a 1:2 tempo pair.
+#
+# Changing a pair invalidates comparisons of that pair only; ids must stay stable. New tracks: `golden track FILE...`.
+
+
+[[track]]
+id = "karizma-tech-this-out-pt-1"
+hash = "3e0e9fdc548369377d9417e8e09313a7c0431d99"
+artist = "Karizma"
+title = "Tech This Out Pt.1"
+duration = 457.3
+bpm = 123.009
+key = "8B"
+genre = "house"
+
+[[track]]
+id = "alton-miller-inner8"
+hash = "5319217f397998b09844935b25c5c107b35b4013"
+artist = "Alton Miller"
+title = "Inner8"
+duration = 502.0
+bpm = 123
+key = "8B"
+genre = "house"
+
+[[track]]
+id = "mood-ii-swing-move-me"
+hash = "643c1755f50657b7794f9974c092bde69f1c14c3"
+artist = "Mood II Swing"
+title = "Move Me"
+duration = 381.5
+bpm = 123.981
+key = "8B"
+genre = "house"
+
+[[track]]
+id = "janeret-crazy"
+hash = "8e225206a8591b29c9140a6ad09ab775b9aca757"
+artist = "Janeret"
+title = "Crazy"
+duration = 379.4
+bpm = 124
+key = "10B"
+genre = "house"
+
+[[track]]
+id = "chez-damier-ron-trent-chez-n-trent-choice-vo"
+hash = "11797658e0a794366475f50742d89905e986b818"
+artist = "Chez Damier /Ron Trent"
+title = "Chez N Trent - Choice Vocal Mix"
+duration = 345.4
+bpm = 122.959
+key = "6A"
+genre = "house"
+
+[[track]]
+id = "mood-ii-swing-call-me"
+hash = "b413ae066ccaf732122c310657eee6551ccc248b"
+artist = "Mood II Swing"
+title = "Call Me"
+duration = 333.2
+bpm = 123.968
+key = "6B"
+genre = "house"
+
+[[track]]
+id = "janeret-sunrise"
+hash = "602fa5baccc2f651f8ffefab890130d1788837ac"
+artist = "Janeret"
+title = "Sunrise"
+duration = 430.1
+bpm = 125
+key = "10B"
+genre = "house"
+
+[[track]]
+id = "running-hot-horse-of-the-year"
+hash = "4b8e15d035230468affcbfa1e93cc9dc0a05c581"
+artist = "Running Hot"
+title = "Horse Of The Year"
+duration = 427.3
+bpm = 127
+key = "10B"
+genre = "house"
+
+[[track]]
+id = "dj-duke-mix-your-own-beats-2"
+hash = "7fd838f88eaed9bda627696492656a9f204cedd2"
+artist = "DJ Duke"
+title = "Mix Your Own Beats 2"
+duration = 343.4
+bpm = 116
+key = "7A"
+genre = "house"
+
+[[track]]
+id = "daft-punk-da-funk"
+hash = "f891dae0849848cb1e498918242e2291d05bca24"
+artist = "Daft Punk"
+title = "Da Funk"
+duration = 328.7
+bpm = 111.234
+key = "6A"
+genre = "house"
+
+[[track]]
+id = "alton-miller-slow-burn"
+hash = "c06a54d067b372c5e0c39548953284549ba98f40"
+artist = "Alton Miller"
+title = "Slow Burn"
+duration = 446.3
+bpm = 121
+key = "8B"
+genre = "house"
+
+[[track]]
+id = "ollie-henry-wonder-groove"
+hash = "f9c3ba0701cbc952169abe498e4cf3df9c261c27"
+artist = "Ollie Henry"
+title = "Wonder Groove"
+duration = 375.1
+bpm = 127
+key = "4B"
+genre = "house"
+
+[[track]]
+id = "karizma-tech-this-out-pt-1-yoruba-soul-mix"
+hash = "a465bf3d721c2b071033d6e4d2750144f2bcd8ad"
+artist = "Karizma"
+title = "Tech This Out, Pt. 1 (Yoruba Soul Mix)"
+duration = 634.7
+bpm = 121
+key = "9A"
+genre = "house"
+
+[[track]]
+id = "running-hot-body-language"
+hash = "faafb9158ae092a357ceadf520ad10ec73df20f0"
+artist = "Running Hot"
+title = "Body Language"
+duration = 402.7
+bpm = 130
+key = "10B"
+genre = "house"
+
+[[track]]
+id = "danell-dixon-presents-urban-liberation-celeb"
+hash = "59d0a549999f6cfa7220a1d6451f5cc9472270a4"
+artist = "Danell Dixon presents Urban Liberation"
+title = "Celebrate (Come Party) (DJ Duke's Phusion Mix)"
+duration = 427.0
+bpm = 125.993
+key = "9A"
+genre = "house"
+
+[[track]]
+id = "janeret-believe"
+hash = "4422dcf9ec77dba80c6490385f5377e08dd96eb3"
+artist = "Janeret"
+title = "Believe"
+duration = 431.2
+bpm = 128
+key = "9B"
+genre = "house"
+
+[[track]]
+id = "diego-krause-pale-blue"
+hash = "9d1c22d241680e8989e2d0ad0167e59bd23dda4b"
+artist = "Diego Krause"
+title = "Pale Blue"
+duration = 461.9
+bpm = 126
+key = "8A"
+genre = "techno"
+
+[[track]]
+id = "marc-brauner-reach-for-you"
+hash = "926360dd8cb9bbabdb1403295276384155640dd9"
+artist = "Marc Brauner"
+title = "Reach For You"
+duration = 419.1
+bpm = 125
+key = "8A"
+genre = "techno"
+
+[[track]]
+id = "sepp-trickle"
+hash = "2c2727ff94a59a3ac5d8faa8185650b049f558f1"
+artist = "Sepp"
+title = "Trickle"
+duration = 480.0
+bpm = 128
+key = "8B"
+genre = "techno"
+
+[[track]]
+id = "ricky-razu-marc-brauner-day-dream"
+hash = "866253901d8a3311b79379828ab9ec3ee147c80c"
+artist = "Ricky Razu, Marc Brauner"
+title = "Marc Brauner - Day Dream"
+duration = 383.5
+bpm = 126
+key = "8B"
+genre = "techno"
+
+[[track]]
+id = "zwed-clear-mind-original-mix"
+hash = "7425e5164ddd5f1f9f95ff31cd118d15904eee5d"
+artist = "Zwed"
+title = "Clear Mind (Original Mix)"
+duration = 462.0
+bpm = 125
+key = "10B"
+genre = "techno"
+
+[[track]]
+id = "sepp-strickes"
+hash = "5adad931cfcac88c176b12629d632e92085b051f"
+artist = "Sepp"
+title = "Strickes"
+duration = 407.5
+bpm = 128
+key = "10B"
+genre = "techno"
+
+[[track]]
+id = "bandulu-guidance"
+hash = "da6558681464c1fa5f4e80657fd59b81b831914d"
+artist = "Bandulu"
+title = "Guidance"
+duration = 497.5
+bpm = 133.016
+key = "2A"
+genre = "techno"
+
+[[track]]
+id = "carl-finlow-artifact"
+hash = "7ccb3e47d850e01a33a0fe9a1a80d1e52aac636a"
+artist = "Carl Finlow"
+title = "Artifact"
+duration = 355.7
+bpm = 136
+key = "7A"
+genre = "techno"
+
+[[track]]
+id = "cromby-the-beat"
+hash = "6c189fb14a47b8684a3c68f84f1898ccd183cb57"
+artist = "Cromby"
+title = "The Beat"
+duration = 358.0
+bpm = 129
+key = "7A"
+genre = "techno"
+
+[[track]]
+id = "bandulu-flex"
+hash = "ac62f85c9bbea6e78d9782426c25d441281e15c8"
+artist = "Bandulu"
+title = "Flex"
+duration = 336.6
+bpm = 133.992
+key = "3A"
+genre = "techno"
+
+[[track]]
+id = "metapattern-moonwalk"
+hash = "c01fb2906e4750b23833f5bc0f1646bf70acb5ac"
+artist = "Metapattern"
+title = "Moonwalk"
+duration = 339.9
+bpm = 140
+key = "8B"
+genre = "techno"
+
+[[track]]
+id = "bandulu-tribal-reign"
+hash = "75583e9af999c4448fd17df11dab29c61b5e806e"
+artist = "Bandulu"
+title = "Tribal Reign"
+duration = 432.0
+bpm = 136.985
+key = "10B"
+genre = "techno"
+
+[[track]]
+id = "claude-b-mind-clicks"
+hash = "12b23d6ab8ff9e5b3d0bca5f9fa24f5e3880e508"
+artist = "Claude B"
+title = "Mind Clicks"
+duration = 480.0
+bpm = 138
+key = "8B"
+genre = "techno"
+
+[[track]]
+id = "elisa-bee-suerte"
+hash = "9950fead74b0f30a156504e718df6144a7bb00d1"
+artist = "Elisa Bee"
+title = "Suerte"
+duration = 332.3
+bpm = 143
+key = "7A"
+genre = "techno"
+
+[[track]]
+id = "ricky-razu-marc-brauner-dinner-4-2"
+hash = "1044a1369875f082f05f6e0f1243a2daf4cd7798"
+artist = "Ricky Razu, Marc Brauner"
+title = "Marc Brauner - Dinner 4 2"
+duration = 318.5
+bpm = 127
+key = "8A"
+genre = "techno"
+
+[[track]]
+id = "bandulu-pacekeeper"
+hash = "f4892f47098d3c919d60cf25f9f26527afc067f4"
+artist = "Bandulu"
+title = "Pacekeeper"
+duration = 341.9
+bpm = 135.193
+key = "9A"
+genre = "techno"
+
+[[track]]
+id = "dee3-dnb7"
+hash = "dd60c689f05b405fbc22099c40d1fe0329a2d090"
+artist = "dee3"
+title = "DNB7"
+duration = 424.5
+bpm = 160
+key = "7A"
+genre = "dnb"
+source = "https://archive.org/download/Dee3-TheDnb-trax/DNB7.mp3"
+licence = "CC BY-NC-ND 3.0"
+
+[[track]]
+id = "dee3-fraetsatellit192abr"
+hash = "bc001260b1d52d5dccb38644fff5080f499d8b36"
+artist = "dee3"
+title = "FraEtSatellit192abr"
+duration = 300.8
+bpm = 160
+key = "7A"
+genre = "dnb"
+source = "https://archive.org/download/Dee3-TheDnb-trax/FraEtSatellit192abr.mp3"
+licence = "CC BY-NC-ND 3.0"
+
+[[track]]
+id = "dee3-engel-finalvip"
+hash = "48076d5bd86cacd4013f3b56158e2eb7015790c2"
+artist = "dee3"
+title = "Engel-finalVIP"
+duration = 286.7
+bpm = 162
+key = "10B"
+genre = "dnb"
+source = "https://archive.org/download/Dee3-TheDnb-trax/Engel-finalVIP.mp3"
+licence = "CC BY-NC-ND 3.0"
+
+[[track]]
+id = "dee3-unavngivetdv-retrofit"
+hash = "62f658a56c964daf23fbc71bff6e050cde6ad599"
+artist = "dee3"
+title = "Unavngivetdv-retrofit"
+duration = 361.6
+bpm = 160
+key = "7A"
+genre = "dnb"
+source = "https://archive.org/download/Dee3-TheDnb-trax/Unavngivetdv-retrofit.mp3"
+licence = "CC BY-NC-ND 3.0"
+
+[[track]]
+id = "jamie-xx-jamie-xx-nia-archives-feat-romy-oli"
+hash = "40eaefe5025dc13513a29654c1f810839a4e6740"
+artist = "Jamie xx & Nia Archives feat. Romy, Oliver Sim & The xx"
+title = "Jamie xx & Nia Archives feat. Romy, Oliver Sim & The xx - Waited All Night (Nia Archives Remix)"
+duration = 189.2
+bpm = 170
+key = "11A"
+genre = "dnb"
+
+[[track]]
+id = "kendrick-lamar-n95"
+hash = "7ebc0f4dc71f2452cb3d9889a61287960ac83634"
+artist = "Kendrick Lamar"
+title = "N95"
+duration = 195.9
+bpm = 140
+key = "2A"
+genre = "hiphop"
+
+[[track]]
+id = "kendrick-lamar-purple-hearts"
+hash = "03ba5634ceb4ed4a778128ecec206ff7c6722efc"
+artist = "Kendrick Lamar, Summer Walker, Ghostface Killah"
+title = "Purple Hearts"
+duration = 329.3
+bpm = 138
+key = "2A"
+genre = "hiphop"
+
+[[track]]
+id = "kneecap-irish-goodbye-feat-kae-tempest"
+hash = "0ac4a2d945fbce23b74f0ee12d8c6e23dccc2879"
+artist = "KNEECAP"
+title = "Irish Goodbye (feat. Kae Tempest)"
+duration = 214.4
+bpm = 127.311
+key = "10B"
+genre = "hiphop"
+
+[[track]]
+id = "kneecap-liars-tale"
+hash = "b86d3bc187e1f471ea677afa4ce2a564b4459f52"
+artist = "KNEECAP"
+title = "Liars Tale"
+duration = 197.9
+bpm = 127
+key = "10B"
+genre = "hiphop"
+
+[[track]]
+id = "death-grips-get-got"
+hash = "fe3df38e6bf93b45c36c40d03cfff901c4c9cf5d"
+artist = "Death Grips"
+title = "Get Got"
+duration = 171.9
+bpm = 116.837
+key = "10B"
+genre = "hiphop"
+
+[[track]]
+id = "serengetiraps-cat-cant-think"
+hash = "77c80cc290526ef2e2281b107dbe91ee53845ebc"
+artist = "serengetiraps"
+title = "cat cant think"
+duration = 186.2
+bpm = 114.051
+key = "9A"
+genre = "hiphop"
+
+[[track]]
+id = "dee-1-shut-em-down"
+hash = "4afc9c5c66caf1961236c98dc5d487a49b05db37"
+artist = "Dee-1"
+title = "Shut Em Down"
+duration = 153.1
+bpm = 114.221
+key = "8A"
+genre = "hiphop"
+
+[[track]]
+id = "death-grips-hustle-bones"
+hash = "23d5905af70d74818e6f08f4f5b504a4f50aec47"
+artist = "Death Grips"
+title = "Hustle Bones"
+duration = 192.4
+bpm = 110
+key = "9B"
+genre = "hiphop"
+
+[[track]]
+id = "kendrick-lamar-count-me-out"
+hash = "88ce4b05075469e5c341422fa3a2cf83a093089a"
+artist = "Kendrick Lamar"
+title = "Count Me Out"
+duration = 283.6
+bpm = 134.014
+key = "9A"
+genre = "hiphop"
+
+[[track]]
+id = "death-grips-punk-weight"
+hash = "408c36b814832dc4c59bf8eaab1b5adbff7d51e3"
+artist = "Death Grips"
+title = "Punk Weight"
+duration = 204.2
+bpm = 131.03
+key = "10B"
+genre = "hiphop"
+
+[[track]]
+id = "serengetiraps-kd-in-the-phantom-zone"
+hash = "190fae75affa5ec894d9ef875eda2679a7f17985"
+artist = "serengetiraps"
+title = "KD in the phantom zone"
+duration = 222.0
+bpm = 121.77
+key = "7B"
+genre = "hiphop"
+
+[[track]]
+id = "kendrick-lamar-united-in-grief"
+hash = "24f6d1efe6760ddb8dc947dbfd3ffeb8f903d404"
+artist = "Kendrick Lamar"
+title = "United In Grief"
+duration = 255.4
+bpm = 131
+key = "7A"
+genre = "hiphop"
+
+[[track]]
+id = "harry-styles-matilda"
+hash = "e12b0cf3df624f9d7db29d8e979e9197ecee8fda"
+artist = "Harry Styles"
+title = "Matilda"
+duration = 246.0
+bpm = 114
+key = "10B"
+genre = "pop"
+
+[[track]]
+id = "harry-styles-daydreaming"
+hash = "4502deaee2fc4e7d9ad219f8191eb1fa581fd132"
+artist = "Harry Styles"
+title = "Daydreaming"
+duration = 187.3
+bpm = 114
+key = "10A"
+genre = "pop"
+
+[[track]]
+id = "harry-styles-as-it-was"
+hash = "43b1da1019153a44d02ddc576cd8f86cfa6c5ec2"
+artist = "Harry Styles"
+title = "As It Was"
+duration = 167.3
+bpm = 114.187
+key = "11A"
+genre = "pop"
+
+[[track]]
+id = "harry-styles-late-night-talking"
+hash = "033de38d7812396ba82ee3379b1aca5f32d7442b"
+artist = "Harry Styles"
+title = "Late Night Talking"
+duration = 178.0
+bpm = 115
+key = "7B"
+genre = "pop"
+
+[[track]]
+id = "future-islands-sail"
+hash = "ab75cf41316c043cc1c1746c8a3b79c0fab12d14"
+artist = "Future Islands"
+title = "Sail"
+duration = 294.5
+bpm = 120
+key = "7A"
+genre = "pop"
+
+[[track]]
+id = "ecca-vandal-molly"
+hash = "61545767ea531adae7acb2a7f7bcec11d648c464"
+artist = "Ecca Vandal"
+title = "MOLLY"
+duration = 260.8
+bpm = 121
+key = "7B"
+genre = "pop"
+
+[[track]]
+id = "gorillaz-casablanca-feat-paul-simonon-johnny"
+hash = "0e077abe49c8010b72f2a5ed8fed5b47084686f2"
+artist = "Gorillaz"
+title = "Casablanca feat. Paul Simonon & Johnny Marr"
+duration = 226.3
+bpm = 108
+key = "8B"
+genre = "pop"
+
+[[track]]
+id = "gorillaz-the-sad-god-feat-black-thought-ajay"
+hash = "34e0b58662fe1e5e99b0961b1d5f1d2592e33bc6"
+artist = "Gorillaz"
+title = "The Sad God feat. Black Thought, Ajay Prasanna, Johnny Marr & Anoushka Shankar"
+duration = 289.3
+bpm = 109.5
+key = "10B"
+genre = "pop"
+
+[[track]]
+id = "harry-styles-cinema"
+hash = "e8aadf517f623001b7af857ea79a54e5f92cf65d"
+artist = "Harry Styles"
+title = "Cinema"
+duration = 243.5
+bpm = 106
+key = "8A"
+genre = "pop"
+
+[[track]]
+id = "harry-styles-music-for-a-sushi-restaurant"
+hash = "d788acc99045f80304cff6a9f2066d329fb45c82"
+artist = "Harry Styles"
+title = "Music For a Sushi Restaurant"
+duration = 193.8
+bpm = 107
+key = "2B"
+genre = "pop"
+
+[[track]]
+id = "ecca-vandal-vertical-worlds"
+hash = "27464b3cc71aac0395857ffff0961227ad028c9a"
+artist = "Ecca Vandal"
+title = "VERTICAL WORLDS"
+duration = 195.4
+bpm = 115.424
+key = "6A"
+genre = "pop"
+
+[[track]]
+id = "future-islands-one-day"
+hash = "3d2de261a2eb943cd043b9a93b8bf1b1eab37667"
+artist = "Future Islands"
+title = "One Day"
+duration = 267.5
+bpm = 120
+key = "4B"
+genre = "pop"
+
+[[track]]
+id = "gorillaz-orange-county-bzrp-radio-mix-feat-b"
+hash = "2999a73beca5f5573bf985aaeef8ed34692eacd5"
+artist = "Gorillaz"
+title = "Orange County (BZRP Radio Mix) feat. Bizarrap, Kara Jackson & Anoushka Shankar"
+duration = 193.7
+bpm = 130
+key = "5B"
+genre = "pop"
+
+[[track]]
+id = "ecca-vandal-do-it-anyway"
+hash = "0c3fec91bb94303aedd1f64faaa12f76e9547169"
+artist = "Ecca Vandal"
+title = "DO IT ANYWAY"
+duration = 182.9
+bpm = 137.794
+key = "9A"
+genre = "pop"
+
+[[track]]
+id = "daft-punk-get-lucky"
+hash = "4263c3942931c52928815bb747d7f82a51ce7655"
+artist = "Daft Punk"
+title = "Get Lucky"
+duration = 369.6
+bpm = 116.045
+key = "10B"
+genre = "disco"
+
+[[track]]
+id = "ali-coleman-first-choice-breakaway"
+hash = "3d4a61bd2948759e5ebaf1f20ae29b1ad819a62d"
+artist = "Ali Coleman"
+title = "First Choice - Breakaway"
+duration = 509.0
+bpm = 119.544
+key = "10B"
+genre = "disco"
+
+[[track]]
+id = "daft-punk-give-life-back-to-music"
+hash = "e3e400c515005e1beb06a93d6a006af61cffeb2b"
+artist = "Daft Punk"
+title = "Give Life Back To Music"
+duration = 275.4
+bpm = 119.052
+key = "8A"
+genre = "disco"
+
+[[track]]
+id = "ali-coleman-the-salsoul-orchestra-it-s-good"
+hash = "8e8f2a3a7c0d56d07007f650ff8696c73a2e95c3"
+artist = "Ali Coleman"
+title = "The Salsoul Orchestra - It's Good For The Soul"
+duration = 400.0
+bpm = 123.076
+key = "8A"
+genre = "disco"
+
+[[track]]
+id = "ali-coleman-machine-is-it-love"
+hash = "496f243d14939836f15392486a36ebec8c612f20"
+artist = "Ali Coleman"
+title = "Machine - Is It Love"
+duration = 381.6
+bpm = 116.987
+key = "8A"
+genre = "disco"
+
+[[track]]
+id = "ali-coleman-dynasty-piece-of-the-rock-late-n"
+hash = "e6c320803ee3170155ec54fe00f43b5fbeee8a57"
+artist = "Ali Coleman"
+title = "Dynasty - Piece of The Rock (Late Nite BK Edit)"
+duration = 582.0
+bpm = 115.979
+key = "8A"
+genre = "disco"
+
+[[track]]
+id = "ashford-found-a-cure-clean"
+hash = "c5883e9b88905842d4531e848ad213927950dd78"
+artist = "Ashford & Simpson"
+title = "Found A Cure (Clean)"
+duration = 220.6
+bpm = 122
+key = "2A"
+genre = "disco"
+
+[[track]]
+id = "ali-coleman-slave-wait-for-me"
+hash = "5ac5d2a667709a4404c2c146e4a10b8e5d9f7fe9"
+artist = "Ali Coleman"
+title = "Slave - Wait For Me"
+duration = 240.0
+bpm = 120.127
+key = "9B"
+genre = "disco"
+
+[[track]]
+id = "daft-punk-the-game-of-love"
+hash = "8d61fefa06b831828cd212db7dad0a0ef4368496"
+artist = "Daft Punk"
+title = "The Game Of Love"
+duration = 322.1
+bpm = 118.19
+key = "9B"
+genre = "disco"
+
+[[track]]
+id = "ali-coleman-ginno-soccio-i-wanna-take-you-th"
+hash = "a166b7b2e4475a1b187a2514cf98dd4344af248b"
+artist = "Ali Coleman"
+title = "Ginno Soccio - I Wanna Take You There (Now)"
+duration = 450.0
+bpm = 120.263
+key = "9B"
+genre = "disco"
+
+[[track]]
+id = "daft-punk-instant-crush"
+hash = "dd218a12c757dd140964edd4fe2bf923183ab796"
+artist = "Daft Punk"
+title = "Instant Crush"
+duration = 337.6
+bpm = 109.949
+key = "3A"
+genre = "disco"
+
+[[track]]
+id = "little-barrie-luggin-hurt"
+hash = "90a1b4af773556cde97626a0bd972c865c46101f"
+artist = "Little Barrie"
+title = "Luggin' Hurt"
+duration = 427.8
+bpm = 108.903
+key = "9A"
+genre = "disco"
+
+[[track]]
+id = "daft-punk-lose-yourself-to-dance"
+hash = "c459040b10d8a846a176c2a1197e708203160215"
+artist = "Daft Punk"
+title = "Lose Yourself To Dance"
+duration = 353.9
+bpm = 100.155
+key = "3A"
+genre = "disco"
+
+[[track]]
+id = "little-barrie-gravity-freeze"
+hash = "896e77d71afbb0536fac38b6d963b4443fe21bf2"
+artist = "Little Barrie"
+title = "Gravity Freeze"
+duration = 186.6
+bpm = 102.051
+key = "10B"
+genre = "disco"
+
+[[track]]
+id = "commodo-uninvited-instrumental"
+hash = "2bba6b2a9294f4ab595c7b80d918abccc307851b"
+artist = "Commodo"
+title = "Uninvited (Instrumental)"
+duration = 169.2
+bpm = 140
+key = "11B"
+genre = "halftime"
+
+[[track]]
+id = "d-rothon-plains-of-cement"
+hash = "41146f0f7917809eb291716db824258d58246817"
+artist = "D.Rothon"
+title = "Plains of Cement"
+duration = 217.6
+bpm = 140
+key = "9A"
+genre = "halftime"
+
+[[track]]
+id = "d-rothon-london-lights-the-clouds"
+hash = "89cf83c08582ae0692fa5a059a3ef82112f3b967"
+artist = "D.Rothon"
+title = "London Lights the Clouds"
+duration = 268.8
+bpm = 140
+key = "9B"
+genre = "halftime"
+
+[[track]]
+id = "thomas-wood-eremos"
+hash = "890285989e0d90562db6f1248fd4edc9ca8e995d"
+artist = "thomas wood"
+title = "Eremos"
+duration = 280.4
+bpm = 139.12
+key = "11A"
+genre = "halftime"
+
+[[track]]
+id = "trickfinger-tysch-rotation"
+hash = "6887d3b47c506bcde3ec8bca2cded276fa710652"
+artist = "Trickfinger"
+title = "Tysch (Rotation)"
+duration = 356.4
+bpm = 143
+key = "9A"
+genre = "halftime"
+
+[[track]]
+id = "d-rothon-her-own-shadow-on-the-wall"
+hash = "f22b9c8068562aee50a28749bd81473384452623"
+artist = "D.Rothon"
+title = "Her Own Shadow on the Wall"
+duration = 389.7
+bpm = 140
+key = "9B"
+genre = "halftime"
+
+[[track]]
+id = "kendrick-lamar-worldwide-steppers"
+hash = "1bd3d951fb6e421ed7686222d645594066e563fa"
+artist = "Kendrick Lamar"
+title = "Worldwide Steppers"
+duration = 203.4
+bpm = 176
+key = "12A"
+genre = "halftime"
+
+[[track]]
+id = "harry-styles-grapejuice"
+hash = "78eb01fde78cbdceac0501571e79c8442aad1fbb"
+artist = "Harry Styles"
+title = "Grapejuice"
+duration = 192.0
+bpm = 91.5
+key = "7B"
+genre = "halftime"
+
+[[pair]]
+id = "house-same-tempo-same-key"
+a = "karizma-tech-this-out-pt-1"
+b = "alton-miller-inner8"
+tags = ["house"]
+
+[[pair]]
+id = "house-same-tempo-up-two"
+a = "mood-ii-swing-move-me"
+b = "janeret-crazy"
+tags = ["house"]
+
+[[pair]]
+id = "house-vocal-dub"
+a = "chez-damier-ron-trent-chez-n-trent-choice-vo"
+b = "mood-ii-swing-call-me"
+tags = ["house", "vocal-heavy"]
+
+[[pair]]
+id = "house-small-gap"
+a = "janeret-sunrise"
+b = "running-hot-horse-of-the-year"
+tags = ["house"]
+
+[[pair]]
+id = "house-medium-gap"
+a = "dj-duke-mix-your-own-beats-2"
+b = "daft-punk-da-funk"
+tags = ["house"]
+
+[[pair]]
+id = "house-5pct-key-clash"
+a = "alton-miller-slow-burn"
+b = "ollie-henry-wonder-groove"
+tags = ["house", "key-clash"]
+
+[[pair]]
+id = "house-7pct"
+a = "karizma-tech-this-out-pt-1-yoruba-soul-mix"
+b = "running-hot-body-language"
+tags = ["house"]
+
+[[pair]]
+id = "house-organ-to-piano"
+a = "danell-dixon-presents-urban-liberation-celeb"
+b = "janeret-believe"
+tags = ["house"]
+
+[[pair]]
+id = "techno-same-key"
+a = "diego-krause-pale-blue"
+b = "marc-brauner-reach-for-you"
+tags = ["techno"]
+
+[[pair]]
+id = "techno-small-gap"
+a = "sepp-trickle"
+b = "ricky-razu-marc-brauner-day-dream"
+tags = ["techno"]
+
+[[pair]]
+id = "techno-up-tempo"
+a = "zwed-clear-mind-original-mix"
+b = "sepp-strickes"
+tags = ["techno"]
+
+[[pair]]
+id = "techno-clash-2pct"
+a = "bandulu-guidance"
+b = "carl-finlow-artifact"
+tags = ["techno", "key-clash"]
+
+[[pair]]
+id = "techno-clash-4pct"
+a = "cromby-the-beat"
+b = "bandulu-flex"
+tags = ["techno", "key-clash"]
+
+[[pair]]
+id = "techno-fast"
+a = "metapattern-moonwalk"
+b = "bandulu-tribal-reign"
+tags = ["techno"]
+
+[[pair]]
+id = "techno-fast-4pct"
+a = "claude-b-mind-clicks"
+b = "elisa-bee-suerte"
+tags = ["techno"]
+
+[[pair]]
+id = "techno-6pct"
+a = "ricky-razu-marc-brauner-dinner-4-2"
+b = "bandulu-pacekeeper"
+tags = ["techno"]
+
+[[pair]]
+id = "dnb-same-tempo"
+a = "dee3-dnb7"
+b = "dee3-fraetsatellit192abr"
+tags = ["dnb"]
+
+[[pair]]
+id = "dnb-key-clash"
+a = "dee3-engel-finalvip"
+b = "dee3-unavngivetdv-retrofit"
+tags = ["dnb", "key-clash"]
+
+[[pair]]
+id = "dnb-5pct-vocal"
+a = "jamie-xx-jamie-xx-nia-archives-feat-romy-oli"
+b = "dee3-engel-finalvip"
+tags = ["dnb"]
+
+[[pair]]
+id = "dnb-6pct"
+a = "dee3-fraetsatellit192abr"
+b = "jamie-xx-jamie-xx-nia-archives-feat-romy-oli"
+tags = ["dnb"]
+
+[[pair]]
+id = "hiphop-same-artist-vocal"
+a = "kendrick-lamar-n95"
+b = "kendrick-lamar-purple-hearts"
+tags = ["hiphop", "vocal-heavy"]
+
+[[pair]]
+id = "hiphop-same-tempo-vocal"
+a = "kneecap-irish-goodbye-feat-kae-tempest"
+b = "kneecap-liars-tale"
+tags = ["hiphop", "vocal-heavy"]
+
+[[pair]]
+id = "hiphop-small-gap"
+a = "death-grips-get-got"
+b = "serengetiraps-cat-cant-think"
+tags = ["hiphop"]
+
+[[pair]]
+id = "hiphop-4pct"
+a = "dee-1-shut-em-down"
+b = "death-grips-hustle-bones"
+tags = ["hiphop"]
+
+[[pair]]
+id = "hiphop-2pct-up"
+a = "kendrick-lamar-count-me-out"
+b = "death-grips-punk-weight"
+tags = ["hiphop", "vocal-heavy"]
+
+[[pair]]
+id = "hiphop-7pct-vocal"
+a = "serengetiraps-kd-in-the-phantom-zone"
+b = "kendrick-lamar-united-in-grief"
+tags = ["hiphop", "vocal-heavy"]
+
+[[pair]]
+id = "pop-same-tempo-relative"
+a = "harry-styles-matilda"
+b = "harry-styles-daydreaming"
+tags = ["pop", "vocal-heavy"]
+
+[[pair]]
+id = "pop-clash-vocal"
+a = "harry-styles-as-it-was"
+b = "harry-styles-late-night-talking"
+tags = ["pop", "vocal-heavy", "key-clash"]
+
+[[pair]]
+id = "pop-small-gap-vocal"
+a = "future-islands-sail"
+b = "ecca-vandal-molly"
+tags = ["pop", "vocal-heavy"]
+
+[[pair]]
+id = "pop-small-gap"
+a = "gorillaz-casablanca-feat-paul-simonon-johnny"
+b = "gorillaz-the-sad-god-feat-black-thought-ajay"
+tags = ["pop"]
+
+[[pair]]
+id = "pop-clash-tritone"
+a = "harry-styles-cinema"
+b = "harry-styles-music-for-a-sushi-restaurant"
+tags = ["pop", "vocal-heavy", "key-clash"]
+
+[[pair]]
+id = "pop-4pct"
+a = "ecca-vandal-vertical-worlds"
+b = "future-islands-one-day"
+tags = ["pop"]
+
+[[pair]]
+id = "pop-6pct"
+a = "gorillaz-orange-county-bzrp-radio-mix-feat-b"
+b = "ecca-vandal-do-it-anyway"
+tags = ["pop"]
+
+[[pair]]
+id = "disco-3pct-vocal"
+a = "daft-punk-get-lucky"
+b = "ali-coleman-first-choice-breakaway"
+tags = ["disco", "vocal-heavy"]
+
+[[pair]]
+id = "disco-3pct-same-key"
+a = "daft-punk-give-life-back-to-music"
+b = "ali-coleman-the-salsoul-orchestra-it-s-good"
+tags = ["disco"]
+
+[[pair]]
+id = "disco-same-key-edits"
+a = "ali-coleman-machine-is-it-love"
+b = "ali-coleman-dynasty-piece-of-the-rock-late-n"
+tags = ["disco"]
+
+[[pair]]
+id = "disco-clash"
+a = "ashford-found-a-cure-clean"
+b = "ali-coleman-slave-wait-for-me"
+tags = ["disco", "key-clash"]
+
+[[pair]]
+id = "disco-2pct-vocal"
+a = "daft-punk-the-game-of-love"
+b = "ali-coleman-ginno-soccio-i-wanna-take-you-th"
+tags = ["disco", "vocal-heavy"]
+
+[[pair]]
+id = "disco-funk-clash"
+a = "daft-punk-instant-crush"
+b = "little-barrie-luggin-hurt"
+tags = ["disco", "vocal-heavy", "key-clash"]
+
+[[pair]]
+id = "disco-funk-rock"
+a = "daft-punk-lose-yourself-to-dance"
+b = "little-barrie-gravity-freeze"
+tags = ["disco"]
+
+[[pair]]
+id = "halftime-same-tempo"
+a = "commodo-uninvited-instrumental"
+b = "d-rothon-plains-of-cement"
+tags = ["halftime"]
+
+[[pair]]
+id = "halftime-small-gap"
+a = "d-rothon-london-lights-the-clouds"
+b = "thomas-wood-eremos"
+tags = ["halftime"]
+
+[[pair]]
+id = "halftime-2pct"
+a = "trickfinger-tysch-rotation"
+b = "d-rothon-her-own-shadow-on-the-wall"
+tags = ["halftime"]
+
+[[pair]]
+id = "halftime-double-time"
+a = "kendrick-lamar-worldwide-steppers"
+b = "harry-styles-grapejuice"
+tags = ["halftime", "vocal-heavy"]
