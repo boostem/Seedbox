@@ -1,0 +1,438 @@
+## long outro -> standard
+long blend, 16 bars, window -32..96, tempo 124@-32h
+A long_outro: play -448..65.0335, grid 124@0=216.774s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@32e 0.35@64h
+  filter_res: 0@-32h 0@32e 0.35@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.55@64h 0.55@65l 0@66h
+B standard: play 0..513.034, grid 124@0=0.000s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.4@-32h 0.4@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+
+## standard -> long outro
+long blend, 16 bars, window -32..96, tempo 124@-32h
+A standard: play -448..65.0335, grid 124@0=216.774s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@32e 0.35@64h
+  filter_res: 0@-32h 0@32e 0.35@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.55@64h 0.55@65l 0@66h
+B long_outro: play 0..449.034, grid 124@0=30.968s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.4@-32h 0.4@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+
+## short outro -> standard
+long blend, 16 bars, window -32..96, tempo 124@-32h
+A short_outro: play -448..65.0335, grid 124@0=216.774s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@32e 0.35@64h
+  filter_res: 0@-32h 0@32e 0.35@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.55@64h 0.55@65l 0@66h
+B standard: play 0..513.034, grid 124@0=0.000s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.4@-32h 0.4@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+
+## cold end -> standard
+loop roll, 16 bars, window -32..96, tempo 124@-32h
+A cold_end: play -448..65.0335, grid 124@0=216.774s, echo 0.75
+  volume: 1@-32h 1@48h 0@64h
+  eq_low: 0@-32h 0@48h -30@56h
+  filter: 0@-32h 0@48e 0.6@64h
+  filter_res: 0@-32h 0@48e 0.6@64h
+  echo_send: 0@-32h 0@56l 0.5@63l 0.9@64h 0.9@65l 0@66h
+  reverb_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  loop 48..56 from 48 every 8
+  loop 56..60 from 48 every 4
+  loop 60..62 from 48 every 2
+  loop 62..63 from 48 every 1
+  loop 63..66 from 48 every 0.5
+B standard: play 0..513.034, grid 124@0=0.000s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h 0@64h
+  eq_mid: -15@-32h -15@0e 0@32h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.3@-32h 0.3@0e 0@32h
+
+## vocal outro -> standard
+filter sweep, 16 bars, window -32..96, tempo 124@-32h
+A vocal_outro: play -448..65.0335, grid 124@0=216.774s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@0e 0.425@31.75h 0.2125@32e 0.85@64h
+  filter_res: 0@-32h 0@0e 0.6@31.75h 0@32e 0.6@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.7@64h 0.7@65l 0@66h
+B standard: play 0..513.034, grid 124@0=0.000s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: -0.6@-32h -0.6@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+
+## vocal outro -> vocal intro
+long blend, 16 bars, window -32..96, tempo 124@-32h
+A vocal_outro: play -384..66, grid 124@0=185.806s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@32e 0.35@64h
+  filter_res: 0@-32h 0@32e 0.35@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.55@64h 0.55@65l 0@66h
+B vocal_intro: play 0..513.034, grid 124@0=0.000s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.4@-32h 0.4@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+
+## drop heavy -> drop heavy
+drop swap, 4 bars, window -64..64, tempo 124@-64h
+A drop_heavy: play -544..2, grid 124@0=263.226s, echo 0.75
+  volume: 1@-64h 1@-4h 0@0h
+  filter: 0@-64h 0@-8e 0.35@0h
+  filter_res: 0@-64h 0@-8e 0.6@0h
+  reverb_send: 0@-64h 0@-1l 0.6@0h 0.6@1l 0@2h
+B drop_heavy_b: play 0..545.033, grid 124@0=46.452s, echo 0.75
+
+## standard -> pickup
+long blend, 16 bars, window -32..96, tempo 124@-32h
+A standard: play -448..65.0335, grid 124@0=216.774s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@32e 0.35@64h
+  filter_res: 0@-32h 0@32e 0.35@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.55@64h 0.55@65l 0@66h
+B pickup: play 0..513.034, grid 124@0=8.112s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.4@-32h 0.4@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+
+## standard -> fast
+echo out, 4 bars, window -64..64, tempo 124@-64h 124@-1h 140@0h
+A standard: play -512..1.0333, grid 124@0=247.742s, echo 0.75
+  volume: 1@-64h 1@-4h 0@0h
+  filter: 0@-64h 0@-16e 0.4@0h
+  filter_res: 0@-64h 0@-16e 0.6@0h
+  echo_send: 0@-64h 0@-2l 0.9@0h 0.9@1l 0@2h
+  reverb_send: 0@-64h 0@-4l 0.6@0h 0.6@1l 0@2h
+B fast: play 0..513.168, grid 140@0=0.000s, echo 0.75
+
+## standard -> half time
+long blend, 16 bars, window -96..96, tempo 124@-128e 125.984@0h 125.984@64e 128@192h
+A standard: play -448..65.0335, grid 124@0=216.774s, echo 0.75
+  volume: 1@-96h 1@48e 0@64h
+  eq_low: 0@-96h 0@0h 0@32l -30@33h
+  eq_mid: 0@-96h 0@40e -10@56h
+  eq_high: 0@-96h 0@32e -12@48h
+  filter: 0@-96h 0@32e 0.35@64h
+  filter_res: 0@-96h 0@32e 0.35@64h
+  echo_send: 0@-96h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-96h 0@56l 0.55@64h 0.55@65l 0@66h
+B half_time: play 0..577.067, grid 128@0=0.000s, echo 0.75
+  volume: 0@-96h 0@0e 1@16h
+  eq_low: -30@-96h -30@0h -30@32l 0@33h
+  eq_mid: -15@-96h -15@0e -4@32e 0@36h
+  eq_high: -12@-96h -12@0e 0@32h
+  filter: 0.4@-96h 0.4@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-96h 0@24e 0.6@31.75h 0@32h
+
+## standard -> clash key
+long blend, 16 bars, window -32..96, tempo 124@-32h
+A standard: play -448..65.0335, grid 124@0=216.774s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@32e 0.35@64h
+  filter_res: 0@-32h 0@32e 0.35@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.55@64h 0.55@65l 0@66h
+B clash_key: play 0..513.034, grid 124@0=0.000s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.4@-32h 0.4@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+
+## short outro -> clash key
+filter sweep, 16 bars, window -32..96, tempo 124@-32h
+A short_outro: play -448..65.0335, grid 124@0=216.774s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@0e 0.425@31.75h 0.2125@32e 0.85@64h
+  filter_res: 0@-32h 0@0e 0.6@31.75h 0@32e 0.6@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.7@64h 0.7@65l 0@66h
+B clash_key: play 0..513.034, grid 124@0=0.000s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: -0.6@-32h -0.6@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+
+## insert -> standard
+long blend, 16 bars, window -32..96, tempo 124@-32h
+A insert: play -464..65.0337, grid 124@0=224.516s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@32e 0.35@64h
+  filter_res: 0@-32h 0@32e 0.35@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.55@64h 0.55@65l 0@66h
+B standard: play 0..513.034, grid 124@0=0.000s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.4@-32h 0.4@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+
+## outro 24 -> standard
+long blend, 16 bars, window -32..96, tempo 124@-32h
+A outro_24: play -416..66, grid 124@0=201.290s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@32e 0.35@64h
+  filter_res: 0@-32h 0@32e 0.35@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.55@64h 0.55@65l 0@66h
+B standard: play 0..513.034, grid 124@0=0.000s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.4@-32h 0.4@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+
+## standard -> short intro drop
+slam, 4 bars, window -64..64, tempo 124@-64h
+A standard: play -448..2, grid 124@0=216.774s, echo 0.75
+  volume: 1@-64h 1@-4h 0@0h
+  eq_low: 0@-64h 0@-8h -30@-4h
+  filter: 0@-64h 0@-8e 0.35@0h
+  filter_res: 0@-64h 0@-8e 0.6@0h
+  echo_send: 0@-64h 0@-2l 0.7@0h 0.7@1l 0@2h
+  reverb_send: 0@-64h 0@-4l 0.6@0h 0.6@1l 0@2h
+  loop -8..-4 from -8 every 4
+  loop -4..-2 from -8 every 2
+  loop -2..-1 from -8 every 1
+  loop -1..2 from -8 every 0.5
+B short_intro_drop: play -4..449.034, grid 124@0=30.968s, echo 0.75
+  volume: 0@-64h 0@-4e 0.6@-1h 1@0h
+  eq_low: -30@-64h -30@-4h 0@0h
+  filter: 0.25@-64h 0.25@-4e 0.45@-0.25h 0@0h
+  filter_res: 0@-64h 0@-4e 0.6@-0.25h 0@0h
+
+## build end -> short intro drop
+slam, 4 bars, window -64..64, tempo 124@-64h
+A build_end: play -448..2, grid 124@0=216.774s, echo 0.75
+  volume: 1@-64h 1@-4h 0@0h
+  eq_low: 0@-64h 0@-8h -30@-4h
+  filter: 0@-64h 0@-8e 0.35@0h
+  filter_res: 0@-64h 0@-8e 0.6@0h
+  echo_send: 0@-64h 0@-2l 0.7@0h 0.7@1l 0@2h
+  reverb_send: 0@-64h 0@-4l 0.6@0h 0.6@1l 0@2h
+  loop -8..-4 from -8 every 4
+  loop -4..-2 from -8 every 2
+  loop -2..-1 from -8 every 1
+  loop -1..2 from -8 every 0.5
+B short_intro_drop: play -4..449.034, grid 124@0=30.968s, echo 0.75
+  volume: 0@-64h 0@-4e 0.6@-1h 1@0h
+  eq_low: -30@-64h -30@-4h 0@0h
+  filter: 0.25@-64h 0.25@-4e 0.45@-0.25h 0@0h
+  filter_res: 0@-64h 0@-4e 0.6@-0.25h 0@0h
+
+## build end -> fast
+slam, 4 bars, window -64..64, tempo 124@-64h 124@-1h 140@0h
+A build_end: play -448..0, grid 124@0=216.774s, echo 0.75
+  volume: 1@-64h 1@-4h 0@0h
+  eq_low: 0@-64h 0@-8h -30@-4h
+  filter: 0@-64h 0@-16e 0.4@0h
+  filter_res: 0@-64h 0@-16e 0.6@0h
+  echo_send: 0@-64h 0@-2l 0.9@0h 0.9@1l 0@2h
+  reverb_send: 0@-64h 0@-4l 0.6@0h 0.6@1l 0@2h
+  loop -8..-4 from -8 every 4
+  loop -4..-2 from -8 every 2
+  loop -2..-1 from -8 every 1
+  loop -1..2 from -8 every 0.5
+B fast: play 0..449.168, grid 140@0=27.429s, echo 0.75
+
+## build end -> standard
+long blend, 16 bars, window -32..96, tempo 124@-32h
+A build_end: play -448..65.0335, grid 124@0=216.774s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@32e 0.35@64h
+  filter_res: 0@-32h 0@32e 0.35@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.55@64h 0.55@65l 0@66h
+B standard: play 0..513.034, grid 124@0=0.000s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.4@-32h 0.4@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+
+## house -> house
+long blend, 16 bars, window -32..96, tempo 124@-32h 124@0h 124@64e 123@128h
+A house: play -512..65.0339, grid 124@0=247.742s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@32e 0.35@64h
+  filter_res: 0@-32h 0@32e 0.35@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.55@64h 0.55@65l 0@66h
+B house_b: play 0..513.025, grid 123@0=0.000s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.4@-32h 0.4@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+
+## techno -> techno
+long blend, 32 bars, window -32..160, tempo 130@-32h 130@0h 130@128e 131@192h
+A techno: play -640..129.084, grid 130@0=295.385s, echo 0.75
+  volume: 1@-32h 1@112e 0@128h
+  eq_low: 0@-32h 0@0h 0@64l -30@65h
+  eq_mid: 0@-32h 0@104e -10@120h
+  eq_high: 0@-32h 0@96e -12@112h
+  filter: 0@-32h 0@96e 0.35@128h
+  filter_res: 0@-32h 0@96e 0.35@128h
+  echo_send: 0@-32h 0@124l 0.6@128h 0.6@129l 0@130h
+  reverb_send: 0@-32h 0@120l 0.55@128h 0.55@129l 0@130h
+B techno_b: play 0..769.092, grid 131@0=0.000s, echo 0.75
+  volume: 0@-32h 0@0e 1@32h
+  eq_low: -30@-32h -30@0h -30@64l 0@65h
+  eq_mid: -15@-32h -15@0e -4@32h -4@64e 0@68h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.4@-32h 0.4@0e 0@32h 0@56e 0.45@63.75h 0@64h
+  filter_res: 0@-32h 0@56e 0.6@63.75h 0@64h
+
+## music outro -> house
+long blend, 16 bars, window -32..96, tempo 124@-32h 124@0h 124@64e 123@128h
+A music_outro: play -448..65.0335, grid 124@0=216.774s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@32e 0.35@64h
+  filter_res: 0@-32h 0@32e 0.35@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.55@64h 0.55@65l 0@66h
+B house_b: play 0..513.025, grid 123@0=0.000s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.4@-32h 0.4@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+
+## short edges -> short edges
+long blend, 16 bars, window -32..96, tempo 124@-32h
+A short_edges: play -480..64, grid 124@0=232.258s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@32e 0.35@64h
+  filter_res: 0@-32h 0@32e 0.35@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.55@64h 0.55@65l 0@66h
+  loop 32..64 from 0 every 32
+B short_edges: play 0..545.034, grid 124@0=-15.484s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.4@-32h 0.4@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+  loop 0..32 from 32 every 32
+
+## outro 8 -> standard
+long blend, 16 bars, window -32..96, tempo 124@-32h
+A outro_8: play -480..64, grid 124@0=232.258s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@32e 0.35@64h
+  filter_res: 0@-32h 0@32e 0.35@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.55@64h 0.55@65l 0@66h
+  loop 32..64 from 0 every 32
+B standard: play 0..513.034, grid 124@0=0.000s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.4@-32h 0.4@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+
+## music outro -> short intro
+long blend, 16 bars, window -32..96, tempo 124@-32h
+A music_outro: play -448..65.0335, grid 124@0=216.774s, echo 0.75
+  volume: 1@-32h 1@48e 0@64h
+  eq_low: 0@-32h 0@0h 0@32l -30@33h
+  eq_mid: 0@-32h 0@40e -10@56h
+  eq_high: 0@-32h 0@32e -12@48h
+  filter: 0@-32h 0@32e 0.35@64h
+  filter_res: 0@-32h 0@32e 0.35@64h
+  echo_send: 0@-32h 0@60l 0.6@64h 0.6@65l 0@66h
+  reverb_send: 0@-32h 0@56l 0.55@64h 0.55@65l 0@66h
+B short_intro: play 0..545.034, grid 124@0=-15.484s, echo 0.75
+  volume: 0@-32h 0@0e 1@16h
+  eq_low: -30@-32h -30@0h -30@32l 0@33h
+  eq_mid: -15@-32h -15@0e -4@32e 0@36h
+  eq_high: -12@-32h -12@0e 0@32h
+  filter: 0.4@-32h 0.4@0e 0@24e 0.45@31.75h 0@32h
+  filter_res: 0@-32h 0@24e 0.6@31.75h 0@32h
+  loop 0..32 from 32 every 32
