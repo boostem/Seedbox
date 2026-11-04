@@ -3,7 +3,7 @@
  * show an error toast, unless `{ quiet: true }` (then the caller handles it).
  */
 import { toast } from "@/store/toasts";
-import type { CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, ModelInfo, ModelSettings, ModelsStatus, SetSummary, SystemInfo, WatchFolders } from "./types";
+import type { CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, SetSummary, SystemInfo, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -85,6 +85,17 @@ export const api = {
   system: (opts?: RequestOptions) => get<SystemInfo>("/api/system", opts),
   /** Show a file or folder (inside Seedbox 2's folders) in Finder / Explorer / the file manager. */
   reveal: (path: string, opts?: RequestOptions) => post<{ ok: boolean }>("/api/system/reveal", { path }, opts),
+  listen: {
+    status: (rater: string, opts?: RequestOptions) => get<ListenStatus>(`/api/listen/status?rater=${encodeURIComponent(rater)}`, opts),
+    /** A new blind trial: only the pair's name and an id say anything about it. */
+    next: (rater: string, opts?: RequestOptions) => get<ListenTrial>(`/api/listen/next?rater=${encodeURIComponent(rater)}`, opts),
+    audioUrl: (trialId: string, slot: "a" | "b") => `/api/listen/trials/${encodeURIComponent(trialId)}/${slot}`,
+    rate: (trialId: string, rating: ListenRating, opts?: RequestOptions) => post<{ ok: boolean; ratings: number }>(`/api/listen/trials/${encodeURIComponent(trialId)}/rating`, rating, opts),
+    summary: (opts?: RequestOptions) => get<ListenSummary>("/api/listen/summary", opts),
+    /** Writes a ratings file in the listening folder: a browser download doesn't work in every app window. */
+    saveExport: (rater: string, opts?: RequestOptions) => post<{ path: string; ratings: number }>("/api/listen/export/save", { rater }, opts),
+    import: (doc: unknown, opts?: RequestOptions) => post<ListenImport>("/api/listen/import", doc, opts),
+  },
   models: {
     status: (opts?: RequestOptions) => get<ModelsStatus>("/api/models", opts),
     /** Download one model (`force`: delete it first, i.e. re-download). Progress comes as `model.*` events. */

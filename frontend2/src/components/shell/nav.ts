@@ -27,5 +27,6 @@ export const TITLES: Record<RouteName, string> = {
   settings: "Settings",
   ui: "Design system",
   bench: "Benchmark",
+  listen: "Listening test",
   notFound: "Not found",
 };

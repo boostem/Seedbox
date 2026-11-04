@@ -28,7 +28,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_beats.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_beats.py tests/test_seedbox2_listen.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -194,6 +194,28 @@ shown on `#/ui`). Compare engines over a set of pairs:
 Until Seedbox 2's mix engine lands (#51–#53) its column reads n/a; that engine should call `mixmetrics.measure` on
 every render. Without stems (#44, #47) bass overlap uses a low-pass of each deck and vocal overlap a tonal voice-band
 proxy.
+
+**The blind listening test** (#86, `seedbox2/eval/listening.py`, `seedbox2/server/routers/listen.py`,
+`frontend2/src/features/listen/`): metrics don't hear, so `#/listen` lets people rate transitions. The page is hidden:
+nothing links to it, so open the address yourself. It plays two renders of one pair in random
+order, as A and B, and the rater says which is better, with optional 1–5 scores (smoothness, energy, "would a DJ do
+this") for each and a note. Press `A` and `B` to switch at the same moment in the track. The client only gets an opaque trial id,
+so neither the page nor its requests name what is playing; the answer goes in the `ratings` table with what A and B really were.
+
+Renders are files, so a human DJ's version is just dropped in:
+`<support folder>/listening/<pair>/<version>[--<style>].<wav|mp3|m4a|aac|flac|ogg|opus>`, for example
+`human--DJ Someone.mp3`. To render them with our engines (Seedbox 2's joins when #51–#53 land):
+
+```sh
+.venv/bin/python -m seedbox2.eval listen                                      # built-in synthetic pairs
+.venv/bin/python -m seedbox2.eval listen pairs.toml --techniques "bass swap,echo out"   # alternative plans too
+```
+
+The Results tab (`#/listen?tab=results`) has win rates with Wilson 95% intervals per engine version and per style, and
+each two versions head to head. A trial only counts in a table when its two renders differ there. To pool results, Export
+writes a ratings file to the listening folder (ratings only, no audio) and Import merges one; ratings have a uid, so
+importing a file twice adds nothing. Everyone rating needs the same renders: share the folder itself. Levels aren't
+matched between renders, so a louder one may be favoured.
 
 ## Architecture (target)
 
