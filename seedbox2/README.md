@@ -190,9 +190,36 @@ Detailed findings, with numbers and sources, are in each epic's and ticket's des
 
 ## Licences
 
-Undecided (#35). Models and libraries with non-commercial terms (Essentia models, madmom weights, MERT) are not used
-in either case. Pending #35, prefer MIT/Apache/CC BY components: beat_this, HTDemucs, CLAP, onnxruntime, Signalsmith
-Stretch.
+Decided in #35: **personal use only.** Seedbox is not sold or distributed, and the repository is private. So
+licences don't limit the choice of components: pick whatever sounds, measures or runs best. That includes:
+- GPL and AGPL code: pedalboard, Rubber Band R3, libKeyFinder, Essentia.
+- Models and weights with non-commercial terms: MERT, MuQ, the madmom weights and the Essentia models.
+
+Verified licences of the candidates (2026-10-29), for the model list (#42) and in case this ever changes:
+
+| Component | Code | Weights |
+|---|---|---|
+| beat_this | MIT | MIT |
+| HTDemucs | MIT | no licence given (upstream: "likely CC-NC-BY") |
+| LAION CLAP `larger_clap_music`, `clap-htsat-fused` | CC0-1.0 | Apache-2.0 |
+| MERT, MuQ | Apache-2.0, MIT | CC BY-NC 4.0 |
+| madmom | BSD-2 | CC BY-NC-SA 4.0 |
+| Essentia | AGPL-3.0 | CC BY-NC-SA 4.0 (proprietary licence on request) |
+| Signalsmith Stretch, onnxruntime | MIT | |
+| pedalboard (bundles JUCE, Rubber Band, FFTW) | GPLv3 | |
+| Rubber Band R3 | GPL-2.0-or-later or paid commercial licence | |
+| libKeyFinder | GPL-3.0-or-later | |
+
+Seedbox 1 is GPL through pedalboard, mutagen (GPL-2.0-or-later) and the ffmpeg binary in imageio-ffmpeg (a GPLv3
+build).
+
+Attribution: keep each model's licence and credit next to it in the model list (#42), and cite the papers (beat_this,
+HTDemucs, CLAP, MERT, MuQ) in this README when they are used. CC BY and Apache only ask for that once the work is
+shared.
+
+If Seedbox is ever shared, this decision has to be made again. Sharing it as GPLv3 would keep everything except the
+non-commercial weights and the unlicensed HTDemucs weights. Selling or closing it would also rule out GPL code and
+Rubber Band (unless a commercial licence is bought).
 
 ## Roadmap (dependency waves)
 
