@@ -28,7 +28,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_models.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -114,6 +114,22 @@ event with the new status. `seedbox2/models/export/` (dev-only, the one place to
 files from the upstream checkpoints and checks any file against torch:
 `python -m seedbox2.models.export beat_this --check FILE` (the registry's file differs from torch by at most 2e-6
 in its logits). The first model is Beat This! (`final0`, MIT; Foscarin, Schlüter and Widmer, ISMIR 2024).
+
+**The library view** (#73, `frontend2/src/features/library/`, `seedbox2/library/view.py`): `#/library` is a
+virtualised table of every track (artwork, title, artist, BPM, Camelot-coloured key, energy 1-10, length, genre, an
+overview waveform and the analysis/stems status). `GET /api/library/view` sends every track as one compact row
+(`POST` with `{"hashes"}` for a few); our analyses win (`beats`/`tempo` → `bpm`, `key` → `camelot`, `energy`), and
+until a track has them the hints in its tags fill in (Rekordbox, Seedbox 1/tunebat, the file, iTunes; shown in grey
+italics). The client filters and sorts those rows (`filter.ts`): vibe text over title, artist, album, genre, comment
+and label; a BPM range (optionally counting half and double tempo); keys that mix with a Camelot key; energy; "not
+analysed yet". A filter can be saved as a smart crate (`GET`/`PUT /api/library/smart-crates`, in `settings.json`).
+The waveform column is one canvas over the table: `POST /api/library/overviews` returns the 1,200-column overviews of
+the rows in view in one binary response, and each row's image is drawn once and blitted on scroll. Rows drag (the
+selection, or the row grabbed) onto a crate or a set in the side list, or onto "New crate"/"New set"
+(`POST /api/library/crates[/{id}/tracks]`, `POST /api/sets[/{id}/tracks]`); files dropped from the OS import as
+before. The top bar shows the analysis queue from the `job.*` events: what runs, the stems' progress, what waits and
+an ETA learnt from the jobs seen finishing. Measured on 3,000 tracks in headless Chrome: 60 fps scrolling, and 56-58 fps
+with no long tasks at a 4× CPU throttle.
 
 ## Evaluating the analysis
 
@@ -249,6 +265,6 @@ Each wave only depends on earlier waves. Tickets wait in Backlog; move them to T
 3. #39 process-pool job system with persisted state, priorities and cancel, #43 beats and downbeats with beat_this + a piecewise beatgrid, #49 binary waveform data at 150 points/s with Bessel band split, #72 minimal app shell with a command palette and panel motion, #81 visual regression tests for every route, #86 blind A/B listening test page, #87 golden corpus of real track pairs and render regression, #88 installers for macOS (arm64 + Intel) and Windows
 4. #40 import local music (folders, drag and drop, Rekordbox/iTunes XML), #44 stem separation with HTDemucs on the CPU, cached, #51 mix plan model v2 with stem lanes and piecewise grids, #74 WebGL2 waveform renderer (RGB and 3-band, 60 fps), #85 low-power mode and polite background work, #89 self-update and a support bundle
 5. #45 our own key detection (no more tunebat keys), #46 phrases and sections from stems (intro, build, drop, breakdown, outro), #47 vocal activity and vocal phrases from the vocal stem, #48 energy curve, loudness and CLAP embeddings for the vibe, #52 time-stretch and pitch-shift engine (key lock, ±1 semitone), #56 automation shaped by the audio (masking-aware EQ, gain and filter), #65 real-time AudioWorklet engine that plays mix plans live, #69 streaming decode and chunked DSP (no whole tracks in RAM), #73 library view (virtualised table, smart filters, analysis status), #78 stem waveforms (four lanes or one stacked colour view), #80 first-run onboarding, model download and empty states, #83 one waveform style for preview clips too
-6. #53 stem-aware transitions (bass hand-off, vocal hand-off, no clashes), #55 cue points and transition lengths learnt from real DJ mixes, #58 master chain and loudness for continuous mixes, #60 set ordering on our own analysis with energy arcs, #66 key-locked tempo in the browser (Signalsmith Stretch WASM), #67 edit while it plays (live lanes, scrubbing, loop a transition), #76 centred scrolling waveform with a frame-accurate playhead, #82 waveform overlays (beatgrid, phrase bands, cues, sections)
+6. #53 stem-aware transitions (bass hand-off, vocal hand-off, no clashes), #55 cue points and transition lengths learnt from real DJ mixes, #58 master chain and loudness for continuous mixes, #60 set ordering on our own analysis with energy arcs, #66 key-locked tempo in the browser (Signalsmith Stretch WASM), #67 edit while it plays (live lanes, scrubbing, loop a transition), #73 centred scrolling waveform with a frame-accurate playhead, #82 waveform overlays (beatgrid, phrase bands, cues, sections)
 7. #57 genre-aware transition styles as data, #59 research spike: learn EQ/fader curves from real DJ mixes, #62 long sets across crates and the whole library, #63 natural-language set assistant (Claude API, optional), #64 suggest tracks that fit a gap in the set, #70 render and export the whole set as one continuous mix, #75 whole-set timeline view with the energy arc, #77 live "now playing" view with two scrolling decks, #79 transition editor v2 (stem lanes, simple first)
 8. #61 plan transitions across the whole set with lookahead

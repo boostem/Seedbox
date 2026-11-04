@@ -130,6 +130,48 @@ class Library:
             f"hash LIMIT ? OFFSET ?", (*args, limit, offset)).fetchall()  # fmt: skip
         return _rows(rows)
 
+    def view_rows(self, *, waveform_version: str | None = None, hashes: Iterable[str] | None = None) -> list[dict]:
+        """Every track (or these ones) as a library-table row (`seedbox2.library.view.describe`), in four queries
+        whatever the size of the library: the tracks, the fields of their newest beats/tempo/key/energy analyses,
+        their artifacts and the newest job of each kind about each of them."""
+        from seedbox2.library import view
+
+        r = self.db.read()
+        only = None if hashes is None else list(dict.fromkeys(hashes))
+        if only is not None and len(only) > 900:  # SQLite's parameter limit: one query per slice
+            return [row for n in range(0, len(only), 900)
+                    for row in self.view_rows(waveform_version=waveform_version, hashes=only[n:n + 900])]  # fmt: skip
+        if only is not None and not only:
+            return []
+        in_ = "" if only is None else f" AND hash IN ({', '.join('?' * len(only))})"
+        args = () if only is None else tuple(only)
+        analyses: dict[str, dict[str, dict]] = {}
+        for row in r.execute(
+                "SELECT hash, analyser, json_extract(data, '$.bpm') AS bpm, json_extract(data, '$.camelot') AS camelot, "
+                "json_extract(data, '$.key') AS key, json_extract(data, '$.energy') AS energy FROM analyses "
+                f"WHERE analyser IN ('beats', 'tempo', 'key', 'energy') AND json_valid(data){in_} "
+                "ORDER BY created_at, rowid", args):  # fmt: skip
+            analyses.setdefault(row["hash"], {})[row["analyser"]] = {k: row[k] for k in ("bpm", "camelot", "key", "energy")}
+        artifacts: dict[str, list[str]] = {}
+        for row in r.execute(f"SELECT hash, kind, model_version FROM artifacts WHERE 1{in_}", args):
+            artifacts.setdefault(row["hash"], []).append(f"{row['kind']}:{row['model_version']}")
+        jobs: dict[str, dict[str, dict]] = {}
+        for row in r.execute(
+                "SELECT json_extract(payload, '$.hash') AS hash, kind, state, progress FROM jobs "
+                "WHERE json_valid(payload) AND json_extract(payload, '$.hash') IS NOT NULL "
+                + ("" if only is None else f"AND json_extract(payload, '$.hash') IN ({', '.join('?' * len(only))}) ")
+                + "ORDER BY created_at, rowid", args):  # fmt: skip
+            if row["state"] == "cancelled":
+                continue
+            jobs.setdefault(row["hash"], {})[row["kind"]] = {"state": row["state"], "progress": row["progress"]}
+        for per_track in jobs.values():  # done jobs say nothing the artifacts and analyses don't
+            for kind in [k for k, j in per_track.items() if j["state"] == "done"]:
+                del per_track[kind]
+        tracks = _rows(r.execute(f"SELECT hash, duration, title, artist, album, tags, source, added_at FROM tracks "
+                                 f"WHERE 1{in_} ORDER BY artist COLLATE NOCASE, title COLLATE NOCASE, hash", args))  # fmt: skip
+        return [view.describe(t, analyses=analyses.get(t["hash"]), artifacts=artifacts.get(t["hash"], ()),
+                              jobs=jobs.get(t["hash"]), waveform_version=waveform_version) for t in tracks]  # fmt: skip
+
     def track_count(self) -> int:
         return self.db.read().execute("SELECT count(*) FROM tracks").fetchone()[0]
 
@@ -238,6 +280,55 @@ class Library:
             c.executemany("INSERT OR IGNORE INTO crate_tracks (crate_id, hash, position) VALUES (?, ?, ?)",
                           [(crate_id, h, n) for n, h in enumerate(dict.fromkeys(hashes))])  # fmt: skip
             return crate_id  # type: ignore[return-value]
+
+    def add_to_crate(self, crate_id: int, hashes: Iterable[str]) -> int:
+        """Append these tracks to the crate (the ones already in it stay where they are). Returns how many were
+        added; KeyError if there is no such crate, ValueError for an unknown track."""
+        with self.db.write() as c:
+            if c.execute("SELECT 1 FROM crates WHERE id = ?", (crate_id,)).fetchone() is None:
+                raise KeyError(crate_id)
+            hashes = list(dict.fromkeys(hashes))
+            self._check_tracks(c, hashes)
+            end = c.execute("SELECT coalesce(max(position) + 1, 0) FROM crate_tracks WHERE crate_id = ?",
+                            (crate_id,)).fetchone()[0]  # fmt: skip
+            added = 0
+            for h in hashes:
+                added += c.execute("INSERT OR IGNORE INTO crate_tracks (crate_id, hash, position) VALUES (?, ?, ?)",
+                                   (crate_id, h, end + added)).rowcount  # fmt: skip
+            c.execute(f"UPDATE crates SET updated_at = {_NOW} WHERE id = ?", (crate_id,))
+            return added
+
+    def add_to_set(self, set_id: int, hashes: Iterable[str]) -> int:
+        """Append these tracks to the end of the set's running order. Returns how many were added."""
+        with self.db.write() as c:
+            if c.execute("SELECT 1 FROM sets WHERE id = ?", (set_id,)).fetchone() is None:
+                raise KeyError(set_id)
+            hashes = list(hashes)
+            self._check_tracks(c, hashes)
+            end = c.execute("SELECT coalesce(max(position) + 1, 0) FROM set_items WHERE set_id = ?",
+                            (set_id,)).fetchone()[0]  # fmt: skip
+            c.executemany("INSERT INTO set_items (set_id, position, hash) VALUES (?, ?, ?)",
+                          [(set_id, end + n, h) for n, h in enumerate(hashes)])  # fmt: skip
+            c.execute(f"UPDATE sets SET updated_at = {_NOW} WHERE id = ?", (set_id,))
+            return len(hashes)
+
+    @staticmethod
+    def _check_tracks(c: sqlite3.Connection, hashes: list[str]) -> None:
+        for h in hashes:
+            if c.execute("SELECT 1 FROM tracks WHERE hash = ?", (h,)).fetchone() is None:
+                raise ValueError(f"no track {h}")
+
+    def crate_hashes(self, crate_id: int) -> list[str] | None:
+        if self.db.read().execute("SELECT 1 FROM crates WHERE id = ?", (crate_id,)).fetchone() is None:
+            return None
+        rows = self.db.read().execute("SELECT hash FROM crate_tracks WHERE crate_id = ? ORDER BY position", (crate_id,))
+        return [r["hash"] for r in rows]
+
+    def set_hashes(self, set_id: int) -> list[str] | None:
+        if self.db.read().execute("SELECT 1 FROM sets WHERE id = ?", (set_id,)).fetchone() is None:
+            return None
+        rows = self.db.read().execute("SELECT hash FROM set_items WHERE set_id = ? ORDER BY position", (set_id,))
+        return [r["hash"] for r in rows]
 
     def crates(self) -> list[dict]:
         return _rows(self.db.read().execute(

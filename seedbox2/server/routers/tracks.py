@@ -4,15 +4,17 @@
   gzipped (`Content-Encoding: gzip`, as stored) to clients that accept it. The ETag is the track's content hash, the
   format version and its stem count, so an unchanged waveform is a 304. Not computed yet: 202 with the queued job
   (at the front of the light queue); the `job.done` event says when to fetch again.
+- `GET /tracks/{hash}/artwork` (#73): the cover saved from the file's tags at import, for the library table.
 """
 
 from __future__ import annotations
 
 import gzip
 import zlib
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
 
 from seedbox2.analysis import waveform
 from seedbox2.server.deps import LibraryDep, get_jobs
@@ -41,3 +43,23 @@ def track_waveform(hash_: str, request: Request, lib: LibraryDep) -> Response:
     if "gzip" in request.headers.get("accept-encoding", ""):
         return Response(data, media_type="application/octet-stream", headers={**headers, "Content-Encoding": "gzip"})
     return Response(gzip.decompress(data), media_type="application/octet-stream", headers=headers)
+
+
+_IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
+
+
+@router.get("/{hash_}/artwork", response_class=Response, responses={200: {"content": {"image/*": {}}}, 404: {}})
+def track_artwork(hash_: str, lib: LibraryDep) -> Response:
+    """The track's cover: the image its file carried (saved at import), else a redirect to the cover tunebat gave
+    Seedbox 1. 404 if it has none. Covers are named by their own hash, so they are cached for a day."""
+    t = lib.track(hash_)
+    if t is None:
+        raise HTTPException(404, "no such track")
+    tags = t["tags"] or {}
+    art = tags.get("artwork")
+    if isinstance(art, str) and (path := Path(art)).suffix.lower() in _IMAGE_TYPES and path.is_file():
+        return FileResponse(path, media_type=_IMAGE_TYPES[path.suffix.lower()], headers={"Cache-Control": "max-age=86400"})
+    url = (tags.get("tunebat") or {}).get("cover_url") if isinstance(tags.get("tunebat"), dict) else None
+    if isinstance(url, str) and url.startswith("https://"):
+        return RedirectResponse(url, status_code=302)
+    raise HTTPException(404, "no artwork")

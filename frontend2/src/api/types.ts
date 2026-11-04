@@ -218,3 +218,78 @@ export interface MixCheck {
   value: string; // "1.8 s"
   detail: string; // what was measured, for the tooltip
 }
+
+// ---- The library view (#73: seedbox2/library/view.py) ----
+
+export type AnalysisState = "new" | "queued" | "analysing" | "failed" | "done";
+
+/** One row of GET /api/library/view: what the library table shows, sorts and filters on. */
+export interface LibraryRow {
+  hash: string;
+  duration: number;
+  title: string;
+  artist: string;
+  album: string;
+  source: string;
+  added_at: string;
+  bpm: number | null;
+  /** "analysis" (ours) or "tags" (a hint from the file, Rekordbox, iTunes or Seedbox 1) */
+  bpm_from: "analysis" | "tags" | null;
+  key: string | null; // Camelot code
+  key_from: "analysis" | "tags" | null;
+  energy: number | null; // 0-1
+  energy_from: "analysis" | "tags" | null;
+  genre: string;
+  /** genre, comment, label…: what the vibe search looks through besides title, artist and album */
+  text: string;
+  artwork: boolean;
+  format: string;
+  status: {
+    state: AnalysisState;
+    waveform: boolean;
+    /** true once separated; else the stems job's state, or false if there is none */
+    stems: boolean | "queued" | "running" | "failed";
+    stems_progress: number | null;
+    analyses: string[];
+    jobs: Record<string, "queued" | "running" | "failed">;
+  };
+}
+
+export interface CrateSummary {
+  id: number;
+  name: string;
+  folder: string | null;
+  source: string;
+  track_count: number;
+  updated_at: string;
+}
+
+export interface SetSummary {
+  id: number;
+  name: string;
+  crate_id: number | null;
+  source: string;
+  track_count: number;
+  updated_at: string;
+}
+
+/** A job row (GET /api/jobs, the job.* events). */
+export interface JobRow {
+  id: string;
+  kind: string;
+  state: "queued" | "running" | "done" | "failed" | "cancelled";
+  priority: number;
+  payload: { hash?: string } & Record<string, unknown>;
+  progress: number;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobsResponse {
+  status: { pools: Record<string, { workers: number; size: number; busy: number; queued: number }>; running: number; queued: number; waiting_for_ram: boolean };
+  types: string[];
+  /** each job type's pool (light or heavy) */
+  pools?: Record<string, string>;
+  items: JobRow[];
+}

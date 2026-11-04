@@ -3,7 +3,7 @@
  * show an error toast, unless `{ quiet: true }` (then the caller handles it).
  */
 import { toast } from "@/store/toasts";
-import type { Health, ImportStatus, LibrarySummary, LibraryTrack, ModelInfo, ModelSettings, ModelsStatus, SystemInfo, WatchFolders } from "./types";
+import type { CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, ModelInfo, ModelSettings, ModelsStatus, SetSummary, SystemInfo, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -78,6 +78,7 @@ export async function request<T>(method: Method, path: string, body?: unknown, o
 
 const get = <T>(path: string, opts?: RequestOptions) => request<T>("GET", path, undefined, opts);
 const post = <T>(path: string, body?: unknown, opts?: RequestOptions) => request<T>("POST", path, body, opts);
+const put = <T>(path: string, body?: unknown, opts?: RequestOptions) => request<T>("PUT", path, body, opts);
 
 export const api = {
   health: (opts?: RequestOptions) => get<Health>("/api/health", opts),
@@ -119,8 +120,44 @@ export const api = {
       }
       return data as ImportStatus;
     },
+    /** Every track as a table row (#73); `hashes`: only these. */
+    view: (hashes?: string[], opts?: RequestOptions) =>
+      hashes ? post<{ total: number; items: LibraryRow[] }>("/api/library/view", { hashes }, opts) : get<{ total: number; items: LibraryRow[] }>("/api/library/view", opts),
+    /** The overview waveforms of these tracks, binary (features/library/overviews.ts parses it). */
+    overviews: async (hashes: string[], opts?: RequestOptions): Promise<ArrayBuffer> => {
+      const res = await fetch(apiUrl("/api/library/overviews"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ hashes }),
+        signal: opts?.signal,
+      });
+      if (!res.ok) throw new ApiError(res.status, `overviews failed (${res.status})`);
+      return res.arrayBuffer();
+    },
+    crates: (opts?: RequestOptions) => get<CrateSummary[]>("/api/library/crates", opts),
+    newCrate: (name: string, hashes: string[], opts?: RequestOptions) => post<CrateSummary>("/api/library/crates", { name, hashes }, opts),
+    addToCrate: (id: number, hashes: string[], opts?: RequestOptions) => post<{ added: number; hashes: string[] }>(`/api/library/crates/${id}/tracks`, { hashes }, opts),
+    crateHashes: (id: number, opts?: RequestOptions) => get<{ hashes: string[] }>(`/api/library/crates/${id}/hashes`, opts),
+    smartCrates: (opts?: RequestOptions) => get<{ crates: SmartCrateJson[] }>("/api/library/smart-crates", opts),
+    saveSmartCrates: (crates: SmartCrateJson[], opts?: RequestOptions) => put<{ crates: SmartCrateJson[] }>("/api/library/smart-crates", { crates }, opts),
+  },
+  sets: {
+    list: (opts?: RequestOptions) => get<SetSummary[]>("/api/sets", opts),
+    create: (name: string, hashes: string[], opts?: RequestOptions) => post<SetSummary>("/api/sets", { name, hashes }, opts),
+    addTracks: (id: number, hashes: string[], opts?: RequestOptions) => post<{ added: number; hashes: string[] }>(`/api/sets/${id}/tracks`, { hashes }, opts),
+    hashes: (id: number, opts?: RequestOptions) => get<{ hashes: string[] }>(`/api/sets/${id}/hashes`, opts),
+  },
+  jobs: {
+    list: (state?: string, opts?: RequestOptions) => get<JobsResponse>(`/api/jobs${state ? `?state=${state}` : ""}`, opts),
   },
 };
+
+/** A saved filter (smart crate), as settings.json keeps it. */
+export interface SmartCrateJson {
+  id: string;
+  name: string;
+  filter: Record<string, unknown>;
+}
 
 /** Turns an audio path from the API into a playable src. */
 export function resolveMediaUrl(path: string): Promise<string> {
