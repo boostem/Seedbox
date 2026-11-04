@@ -11,6 +11,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
+from starlette.responses import Response
 
 from seedbox2.server.deps import LibraryDep, LocalMusicDep, local_music
 
@@ -204,3 +205,109 @@ def choose(body: ChooseBody) -> dict:
         picked = windows[0].create_file_dialog(webview.FileDialog.OPEN,  # type: ignore[union-attr]
                                                file_types=("Library XML (*.xml)", "All files (*.*)"))  # fmt: skip
     return {"paths": [str(p) for p in picked or []]}
+
+
+# --- the library view (#73): table rows, overview waveforms, crates and sets to drop tracks into, smart crates -----
+
+
+@router.get("/view")
+def view(lib: LibraryDep) -> dict:
+    """Every track as a table row: BPM, Camelot key, energy and genre (our analysis, else the tags' hints) and its
+    analysis status (`seedbox2.library.view`). The table sorts and filters these on the client."""
+    from seedbox2.analysis import waveform
+
+    items = lib.view_rows(waveform_version=waveform.MODEL_VERSION)
+    return {"total": len(items), "items": items}
+
+
+class HashesBody(BaseModel):
+    hashes: list[str]
+
+
+@router.post("/view")
+def view_some(body: HashesBody, lib: LibraryDep) -> dict:
+    """The rows of these tracks only (the table refreshes the ones whose jobs just finished); unknown ones are left
+    out."""
+    from seedbox2.analysis import waveform
+
+    items = lib.view_rows(waveform_version=waveform.MODEL_VERSION, hashes=body.hashes)
+    return {"total": len(items), "items": items}
+
+
+_overviews = None
+
+
+@router.post("/overviews", response_class=Response, responses={200: {"content": {"application/octet-stream": {}}}})
+def overviews(body: HashesBody, lib: LibraryDep) -> Response:
+    """The 1,200-column peak overviews (low, mid, high) of up to 500 tracks in one binary response
+    (`seedbox2.library.view.pack_overviews`); a track without a waveform yet is marked absent."""
+    global _overviews
+    from seedbox2.analysis import waveform
+    from seedbox2.library import view
+
+    if len(body.hashes) > 500:
+        raise HTTPException(422, "at most 500 tracks at a time")
+    if _overviews is None:
+        _overviews = view.OverviewCache()
+    rows = []
+    for h in body.hashes:
+        path = waveform.current_artifact(lib, h)
+        rows.append(_overviews.get(path) if path is not None else None)
+    data = view.pack_overviews(rows, columns=waveform.OVERVIEW_COLUMNS, bands=len(waveform.BANDS))
+    return Response(data, media_type="application/octet-stream", headers={"Cache-Control": "no-store"})
+
+
+class NewCrate(BaseModel):
+    name: str
+    hashes: list[str] = []
+
+
+@router.post("/crates", status_code=201)
+def new_crate(body: NewCrate, lib: LibraryDep) -> dict:
+    if not body.name.strip():
+        raise HTTPException(422, "a crate needs a name")
+    crate_id = lib.save_crate(body.name.strip(), [])
+    _add(lib.add_to_crate, crate_id, body.hashes)
+    return lib.crate(crate_id)  # type: ignore[return-value]
+
+
+@router.post("/crates/{crate_id}/tracks")
+def add_to_crate(crate_id: int, body: HashesBody, lib: LibraryDep) -> dict:
+    """Append tracks to a crate (dragged onto it); tracks already in it stay where they are."""
+    return {"added": _add(lib.add_to_crate, crate_id, body.hashes), "hashes": lib.crate_hashes(crate_id)}
+
+
+@router.get("/crates/{crate_id}/hashes")
+def crate_hashes(crate_id: int, lib: LibraryDep) -> dict:
+    hashes = lib.crate_hashes(crate_id)
+    if hashes is None:
+        raise HTTPException(404, "no such crate")
+    return {"hashes": hashes}
+
+
+def _add(fn, target_id: int, hashes: list[str]) -> int:  # noqa: ANN001
+    try:
+        return fn(target_id, hashes)
+    except KeyError:
+        raise HTTPException(404, "no such crate or set") from None
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
+
+
+class SmartCrates(BaseModel):
+    crates: list[dict]
+
+
+@router.get("/smart-crates")
+def smart_crates(music: LocalMusicDep) -> dict:
+    """Saved filters (`{"id", "name", "filter"}`; the filter's fields are the library page's), kept in settings.json."""
+    crates = music.settings.get("smart_crates")
+    return {"crates": crates if isinstance(crates, list) else []}
+
+
+@router.put("/smart-crates")
+def save_smart_crates(body: SmartCrates, music: LocalMusicDep) -> dict:
+    if any(not isinstance(c.get("name"), str) or not isinstance(c.get("filter"), dict) for c in body.crates):
+        raise HTTPException(422, "each smart crate needs a name and a filter")
+    music.settings.set("smart_crates", body.crates)
+    return {"crates": body.crates}

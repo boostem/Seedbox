@@ -30,7 +30,8 @@ class Bump(BaseModel):
 def jobs(sup: JobsDep, state: str | None = None) -> dict:
     if state is not None and state not in JOB_STATES:
         raise HTTPException(422, f"state must be one of {', '.join(JOB_STATES)}")
-    return {"status": sup.status(), "types": sup.registry.names(), "items": sup.jobs(state)}
+    return {"status": sup.status(), "types": sup.registry.names(),
+            "pools": {n: sup.registry.get(n).pool for n in sup.registry.names()}, "items": sup.jobs(state)}  # fmt: skip
 
 
 @router.post("", status_code=202)

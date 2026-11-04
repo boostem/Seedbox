@@ -46,6 +46,9 @@ rows in view: `VirtualRows` inside a `TableScroll`, or `VirtualList` (`component
 `@tanstack/react-virtual`). Rows have a fixed height and are memoised (`React.memo`), so scrolling renders only the
 rows that come into view. `#/ui` and `#/bench` show 10,000 rows.
 
+Something drawn in every row (the library's overview waveforms) is one canvas over the column, not a canvas per row:
+`features/library/LibraryTable.tsx` draws the visible rows' cached images into it on the next frame after a scroll.
+
 ## 4. Heavy data work happens in a worker
 
 Preparing waveforms (normalising bands) and decoding the binary waveform file run in `features/waveform/wave.worker.ts`;

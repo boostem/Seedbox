@@ -14,6 +14,7 @@ import { UiPage } from "@/pages/UiPage";
 import { useApp } from "@/store/app";
 import { followImports } from "@/store/imports";
 import { followModels } from "@/store/models";
+import { followJobs } from "@/store/jobs";
 
 function Page({ route }: { route: Route }) {
   switch (route.name) {
@@ -72,6 +73,7 @@ export function App() {
   }, []);
   useEffect(followImports, []);
   useEffect(followModels, []);
+  useEffect(followJobs, []);
   return (
     <AppShell>
       <Routes />

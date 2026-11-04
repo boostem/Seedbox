@@ -75,6 +75,7 @@ export interface ThProps extends Omit<ThHTMLAttributes<HTMLTableCellElement>, "a
   sort?: SortDir;
   onSort?: () => void;
   width?: number | string;
+  ref?: Ref<HTMLTableCellElement>;
 }
 
 export function Th({ align = "left", sort, onSort, width, className, children, style, ...rest }: ThProps) {
