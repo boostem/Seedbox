@@ -397,7 +397,8 @@ class Supervisor:
         parent, child = self._mp.Pipe()
         cancel = self._mp.Event()
         library_path = getattr(getattr(self.library, "db", None), "path", None)
-        process = self._mp.Process(target=worker_main, args=(child, cancel, pool.name, str(library_path or "")),
+        args = (child, cancel, pool.name, str(library_path or ""), pool.size)
+        process = self._mp.Process(target=worker_main, args=args,
                                    name=f"seedbox2-{pool.name}-worker", daemon=True)  # fmt: skip
         process.start()
         child.close()

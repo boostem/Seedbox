@@ -24,7 +24,8 @@ DEV_ORIGINS = ["http://localhost:5174", "http://127.0.0.1:5174"]  # frontend2's 
 
 
 def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s: float = HEARTBEAT_S,
-               library_path: Path | None = None, start_jobs: bool = False, watch_folders: bool = False) -> FastAPI:
+               library_path: Path | None = None, start_jobs: bool = False, watch_folders: bool = False,
+               download_models: bool = False, models_dir: Path | None = None) -> FastAPI:
     """The Seedbox 2 API under /api, and the built frontend at / when `static_dir` (a Vite dist/) is given.
 
     Routers reach shared state through `request.app.state`: `events` (the EventBus), `static_dir` and the library
@@ -32,7 +33,9 @@ def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s
     first use and closed on shutdown) and `jobs` (`seedbox2.server.deps.get_jobs`: the job Supervisor, started on
     first use, or with the server when `start_jobs`, so jobs left from the last run carry on; stopped on shutdown)
     and `local_music` (`seedbox2.server.deps.local_music`: imports, and the watch folders, scanned and watched from
-    the start when `watch_folders`).
+    the start when `watch_folders`) and `models` (`seedbox2.server.deps.models`: the ModelManager, on `models_dir`,
+    default models/ in the cache folder; with `download_models` it downloads the missing models when the server
+    starts, unless the auto_download setting is off).
     """
     app = FastAPI(title="Seedbox 2", version=__version__, docs_url="/api/docs" if dev else None, redoc_url=None,
                   openapi_url="/api/openapi.json" if dev else None, lifespan=_lifespan)  # fmt: skip
@@ -44,6 +47,9 @@ def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s
     app.state.start_jobs = start_jobs
     app.state.local_music = None
     app.state.watch_folders = watch_folders
+    app.state.models = None
+    app.state.models_dir = Path(models_dir) if models_dir is not None else None
+    app.state.download_models = download_models
     if dev:
         app.add_middleware(CORSMiddleware, allow_origins=DEV_ORIGINS, allow_methods=["*"], allow_headers=["*"])
     _add_error_handlers(app)
@@ -65,7 +71,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         threading.Thread(target=lambda: local_music(app).start_watching(), name="seedbox2-watch-start",
                          daemon=True).start()  # fmt: skip
+    if app.state.download_models:
+        from seedbox2.server.deps import models
+
+        threading.Thread(target=lambda: models(app).start(), name="seedbox2-models-start", daemon=True).start()
     yield
+    if app.state.models is not None:
+        app.state.models.close()
+        app.state.models = None
     if app.state.local_music is not None:
         app.state.local_music.close()
         app.state.local_music = None

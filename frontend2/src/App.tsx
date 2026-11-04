@@ -13,6 +13,7 @@ import { SystemPage } from "@/pages/SystemPage";
 import { UiPage } from "@/pages/UiPage";
 import { useApp } from "@/store/app";
 import { followImports } from "@/store/imports";
+import { followModels } from "@/store/models";
 
 function Page({ route }: { route: Route }) {
   switch (route.name) {
@@ -70,6 +71,7 @@ export function App() {
     void useApp.getState().refreshSystem();
   }, []);
   useEffect(followImports, []);
+  useEffect(followModels, []);
   return (
     <AppShell>
       <Routes />

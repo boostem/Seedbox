@@ -12,3 +12,5 @@ imageio-ffmpeg
 pedalboard
 psutil
 watchdog
+onnxruntime; sys_platform != "win32" or platform_machine != "AMD64"
+onnxruntime-directml; sys_platform == "win32" and platform_machine == "AMD64"

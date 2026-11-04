@@ -31,8 +31,11 @@ class Cancelled(Exception):  # noqa: N818 - raised inside a job to stop it
 class JobContext:
     """What a job function gets besides its payload."""
 
-    def __init__(self, job_id: str, conn: Connection, cancel: Any, cache: dict, library_path: Path | None) -> None:
+    def __init__(self, job_id: str, conn: Connection, cancel: Any, cache: dict, library_path: Path | None,
+                 pool: str = "light", pool_size: int = 1) -> None:  # fmt: skip
         self.job_id = job_id
+        self.pool = pool
+        self.pool_size = pool_size
         self._conn = conn
         self._cancel = cancel
         self._cache = cache
@@ -62,6 +65,34 @@ class JobContext:
             self._cache[key] = factory()
         return self._cache[key]
 
+    def session(self, name: str) -> Any:
+        """The model's onnxruntime session, made once per worker process (threads: this pool's share of the
+        physical cores). Raises seedbox2.models.ModelMissing if the model isn't downloaded."""
+        from seedbox2.models import load_session
+        from seedbox2.models.manager import read_settings
+
+        def make() -> Any:
+            return load_session(name, pool=self.pool, pool_size=self.pool_size,
+                                accelerator=read_settings(self._settings())["accelerator"])  # fmt: skip
+
+        return self.cached(f"seedbox2.models.{name}", make)
+
+    def session_or_none(self, name: str) -> Any:
+        """The model's session, or None when it isn't downloaded: the job then uses the Seedbox 1 heuristics."""
+        from seedbox2.models import ModelMissing
+
+        try:
+            return self.session(name)
+        except ModelMissing:
+            return None
+
+    def _settings(self) -> Any:
+        from seedbox2 import paths
+        from seedbox2.library.service import SETTINGS_FILE, Settings
+
+        folder = self._library_path.parent if self._library_path is not None else paths.folders()["settings"]
+        return Settings(folder / SETTINGS_FILE)
+
     @property
     def library(self) -> Any:
         """This process's own connection to the library (opened on first use), or None without one."""
@@ -76,7 +107,7 @@ class JobContext:
         return self.cached("seedbox2.library", open_library)
 
 
-def worker_main(conn: Connection, cancel: Any, pool: str, library_path: str | None = None) -> None:
+def worker_main(conn: Connection, cancel: Any, pool: str, library_path: str | None = None, pool_size: int = 1) -> None:
     """A worker process's loop (the spawn target)."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ctrl+C in a terminal: the supervisor decides when workers stop
     logging.basicConfig(level=logging.INFO, format=f"%(asctime)s {pool} worker %(levelname)s %(name)s: %(message)s")
@@ -91,7 +122,7 @@ def worker_main(conn: Connection, cancel: Any, pool: str, library_path: str | No
         if msg is None:
             return
         _, job_id, target, payload = msg
-        ctx = JobContext(job_id, conn, cancel, cache, path)
+        ctx = JobContext(job_id, conn, cancel, cache, path, pool, pool_size)
         try:
             fn = functions.get(target)
             if fn is None:

@@ -3,6 +3,7 @@ import { api } from "@/api/client";
 import type { SystemFolders } from "@/api/types";
 import { IconButton, InfoRow, Page, PageBody, PageHeader, Panel, PanelHeader, StatusDot } from "@/components/ui";
 import { WatchFoldersPanel } from "@/features/import/WatchFoldersPanel";
+import { ModelsPanel } from "@/features/models/ModelsPanel";
 import { useApp } from "@/store/app";
 
 function Value({ v }: { v: string | null | undefined }) {
@@ -63,6 +64,7 @@ export function SystemPage() {
           </InfoRow>
         </Panel>
         <WatchFoldersPanel />
+        <ModelsPanel />
         <FoldersPanel />
       </PageBody>
     </Page>
