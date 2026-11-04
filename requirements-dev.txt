@@ -2,3 +2,4 @@
 pytest
 mir_eval
 onnx
+httpx2
