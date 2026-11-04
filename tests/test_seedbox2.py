@@ -11,10 +11,11 @@ import urllib.request
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from musicreco import paths as mpaths
 from seedbox2 import __version__, app, paths, shell
-from seedbox2.server import DEFAULT_PORT, start_server
+from seedbox2.server import DEFAULT_PORT, create_app, start_server
 from seedbox2.server.routers import ROUTERS
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -227,6 +228,56 @@ def test_dev_port_is_8766_next_to_seedbox1():
     assert "http://127.0.0.1:8766" in (ROOT / "frontend2" / "vite.config.ts").read_text()
     assert shell.DEV_URL == "http://localhost:5174"  # Seedbox 1's Vite has 5173
     assert "http://127.0.0.1:8765" in (ROOT / "frontend" / "vite.config.ts").read_text()
+
+
+def test_without_a_build_the_root_says_how_to_build_it():
+    with TestClient(create_app(None, start_jobs=False)) as client:
+        r = client.get("/")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
+    assert "deno task build" in r.text
+    with TestClient(create_app(None, dev=True, start_jobs=False)) as client:
+        assert client.get("/").status_code == 404  # --dev: the window loads Vite, not this server
+
+
+def _fake_deno(tmp_path, monkeypatch, exit_code=0):
+    """shell.build_frontend's deno: records its calls, and `task build` writes dist/index.html."""
+    calls = []
+
+    def run(cmd, cwd, **_kw):
+        calls.append(cmd[1:])
+        if cmd[1:] == ["task", "build"] and exit_code == 0:
+            (Path(cwd) / "dist").mkdir(parents=True)
+            (Path(cwd) / "dist" / "index.html").write_text(INDEX)
+        return subprocess.CompletedProcess(cmd, exit_code, "out", "the error")
+
+    (tmp_path / "frontend2").mkdir()
+    monkeypatch.delenv(shell.STATIC_DIR_ENV, raising=False)
+    monkeypatch.setattr(shell, "project_root", lambda: tmp_path)
+    monkeypatch.setattr(mpaths, "deno_path", lambda: "/bin/deno")
+    monkeypatch.setattr(shell.subprocess, "run", run)
+    return calls
+
+
+def test_a_fresh_clone_builds_the_frontend(tmp_path, monkeypatch):
+    calls = _fake_deno(tmp_path, monkeypatch)
+    assert shell.build_frontend() == tmp_path / "frontend2" / "dist"
+    assert calls == [["install"], ["task", "build"]]
+
+
+def test_a_failed_build_starts_without_a_frontend(tmp_path, monkeypatch, caplog):
+    calls = _fake_deno(tmp_path, monkeypatch, exit_code=1)
+    assert shell.build_frontend() is None
+    assert calls == [["install"]] and "the error" in caplog.text
+
+
+def test_no_build_without_deno_or_with_a_chosen_folder(tmp_path, monkeypatch):
+    calls = _fake_deno(tmp_path, monkeypatch)
+    monkeypatch.setattr(mpaths, "deno_path", lambda: None)
+    assert shell.build_frontend() is None
+    monkeypatch.setattr(mpaths, "deno_path", lambda: "/bin/deno")
+    monkeypatch.setenv(shell.STATIC_DIR_ENV, str(tmp_path / "elsewhere"))
+    assert shell.build_frontend() is None
+    assert calls == []
 
 
 def test_static_dir_defaults_to_frontend2_dist(tmp_path, monkeypatch):

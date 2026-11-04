@@ -9,9 +9,12 @@ software (the waveforms stay), on an ordinary laptop. It was planned in board ti
 Do the [Setup](../README.md#setup) in the main README first (`.venv`, `ffmpeg` and `deno`).
 
 ```sh
-(cd frontend2 && deno install && deno task build)   # once, and after frontend changes (writes frontend2/dist)
 .venv/bin/python -m seedbox2                        # opens the Seedbox 2 window
+(cd frontend2 && deno install && deno task build)   # after frontend changes (writes frontend2/dist)
 ```
+
+The first run builds `frontend2/dist` itself when it is missing, so it takes a little longer (the terminal says so).
+It doesn't notice a stale build: after pulling frontend changes, run the build line.
 
 To work on the UI with hot reload, use two terminals:
 
