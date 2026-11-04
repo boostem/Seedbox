@@ -165,3 +165,16 @@ export interface Transition {
   warnings: string[]; // e.g. "vocals overlap for 8 bars"
   ready: boolean; // false until both analyses exist (then only key/BPM fields are meaningful)
 }
+
+// ---- Mix metrics (seedbox2/eval/mixmetrics.py, #54) ----
+
+export type MixCheckStatus = "pass" | "warn" | "fail" | "na";
+
+/** One objective check on a rendered transition (mixmetrics.checks): the transition editor (#79) lists them. */
+export interface MixCheck {
+  id: "beat" | "bass" | "vocals" | "loudness" | "key" | "masking";
+  label: string; // "One bassline at a time"
+  status: MixCheckStatus;
+  value: string; // "1.8 s"
+  detail: string; // what was measured, for the tooltip
+}

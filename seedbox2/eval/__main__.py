@@ -5,6 +5,7 @@
                                      [--baseline FILE --max-drop 2] [--out FILE] [--jobs N]
     python -m seedbox2.eval annotate AUDIO... [--analyser seedbox1] [--rekordbox FILE.xml] [--force]
     python -m seedbox2.eval import-rekordbox FILE.xml
+    python -m seedbox2.eval mixes [PAIRS.toml] [--json FILE]   (objective mix metrics, #54)
 """
 
 from __future__ import annotations
@@ -157,10 +158,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     rb.add_argument("xml")
     rb.add_argument("--verified", action="store_true", help="mark the updated annotations as checked")
     rb.set_defaults(fn=cmd_import_rekordbox)
+
+    sub.add_parser("mixes", help="objective mix metrics of rendered transitions (#54); --help after it", add_help=False)
     return p.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "mixes":  # has its own parser
+        from . import mixes
+
+        return mixes.main(argv[1:])
     a = parse_args(argv)
     return a.fn(a)
 

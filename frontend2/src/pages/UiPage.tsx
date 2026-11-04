@@ -1,9 +1,12 @@
 import { useMemo } from "react";
 import { player } from "@/audio/player";
 import { Badge, Button, Page, PageBody, PageHeader, Panel, PanelHeader } from "@/components/ui";
+import { MixChecks } from "@/features/mix";
 import { TrackWaveform } from "@/features/waveform";
 import { demoAnalysis } from "@/lib/demo/analysis";
 import { DemoTrackTable } from "@/lib/demo/tracks";
+import { demoMixChecks } from "@/lib/demo/mixChecks";
+import { toast } from "@/store/toasts";
 
 // class names spelled out: Tailwind only generates classes (and emits theme variables) it finds whole in the source
 const COLOURS: [string, [string, string][]][] = [
@@ -89,6 +92,10 @@ export function UiPage() {
               </div>
             ))}
           </div>
+        </Panel>
+        <Panel className="max-w-md">
+          <PanelHeader title="Mix checks" description="features/mix: mixmetrics checks of a rendered transition, for the transition editor (#79)" />
+          <MixChecks checks={demoMixChecks} onFix={(c) => toast.info(`Fix "${c.label}" lands with the editor (#79)`)} />
         </Panel>
       </PageBody>
     </Page>
