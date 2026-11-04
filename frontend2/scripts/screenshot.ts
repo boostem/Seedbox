@@ -25,6 +25,20 @@ const PIXEL_THRESHOLD = 24;
  * this only absorbs stray anti-aliasing: a changed word is about 70 pixels. */
 const MAX_CHANGED = 16;
 
+const LISTEN_RATE = (name: string, wins: number, trials: number, low: number, high: number) => ({
+  name, wins, trials, win_rate: wins / trials, ci_low: low, ci_high: high, scores: { smoothness: 3.8, energy: 3.4, dj: 3.1 },
+});
+const LISTEN_SUMMARY = {
+  ratings: 42,
+  raters: 3,
+  versions: [LISTEN_RATE("seedbox2-2.0.0", 27, 34, 0.63, 0.9), LISTEN_RATE("human", 9, 20, 0.26, 0.66), LISTEN_RATE("seedbox1-0.3.0", 6, 30, 0.1, 0.38)],
+  styles: [LISTEN_RATE("bass swap", 15, 24, 0.43, 0.79), LISTEN_RATE("echo out", 9, 24, 0.21, 0.57)],
+  matchups: [{ name: "seedbox1-0.3.0", opponent: "seedbox2-2.0.0", wins: 4, trials: 24, win_rate: 1 / 6, ci_low: 0.07, ci_high: 0.36 }],
+  slot_a: { wins: 22, trials: 42, win_rate: 0.52, ci_low: 0.38, ci_high: 0.67 },
+};
+const LISTEN_STATUS = { folder: "/home/dj/.local/share/seedbox2/listening", pairs: 6, renders: 18, comparisons: 18, ratings: 42, progress: { done: 3, total: 18 } };
+const LISTEN_EMPTY = { ...LISTEN_STATUS, pairs: 0, renders: 0, comparisons: 0, ratings: 0, progress: { done: 0, total: 0 } };
+
 /** What the stub /api answers: `live` an engine that works, `loading` one that never answers, `offline` none. */
 type ApiState = "live" | "loading" | "offline";
 
@@ -93,6 +107,9 @@ const API: Record<string, unknown> = {
   "/api/library/tracks": { total: TRACKS.length, items: TRACKS },
   "/api/library/folders": { folders: [{ path: "/home/dj/Music/Techno 2026", exists: true }, { path: "/media/usb/Old crates", exists: false }], scanning: null },
   "/api/library/import": { state: "idle" },
+  "/api/listen/status": LISTEN_STATUS,
+  "/api/listen/next": { id: "trial", pair: "House into house", progress: { done: 3, total: 18 } },
+  "/api/listen/summary": LISTEN_SUMMARY,
 };
 
 // Every route, and the states each one has so far. Area tickets add their screens' states (empty, loading,
@@ -114,6 +131,10 @@ const SHOTS: Shot[] = [
   { name: "settings-offline", hash: "#/settings", api: "offline", settle: 5000 }, // offline after 4 failed reconnects (~3.5 s)
   { name: "ui", hash: "#/ui" },
   { name: "bench", hash: "#/bench" },
+  { name: "listen", hash: "#/listen" },
+  { name: "listen-results", hash: "#/listen?tab=results" },
+  { name: "listen-no-renders", hash: "#/listen", data: { "/api/listen/status": LISTEN_EMPTY, "/api/listen/next": undefined } },
+  { name: "listen-no-ratings", hash: "#/listen?tab=results", data: { "/api/listen/status": LISTEN_EMPTY, "/api/listen/summary": { ratings: 0, raters: 0, versions: [], styles: [], matchups: [], slot_a: { wins: 0, trials: 0, win_rate: null, ci_low: 0, ci_high: 1 } } } },
   { name: "not-found", hash: "#/no-such-page" },
   { name: "command-palette", hash: "#/", keys: ["Mod+k"] },
   { name: "shortcuts", hash: "#/", keys: ["?"] },
@@ -216,7 +237,7 @@ function serve(shot: () => Shot): { server: Deno.HttpServer<Deno.NetAddr>; close
       const data = { ...API, ...shot().data };
       if (s === "offline") return new Response("engine offline", { status: 503 });
       if (s === "loading") return hang();
-      if (req.method === "GET" && path in data) return Response.json(data[path]);
+      if (req.method === "GET" && data[path] !== undefined) return Response.json(data[path]);
       if (path === "/api/events") {
         // an open stream with nothing on it, until the page goes away or the server closes
         let close = () => {};

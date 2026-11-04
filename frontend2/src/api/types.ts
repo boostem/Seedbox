@@ -294,3 +294,68 @@ export interface JobsResponse {
   pools?: Record<string, string>;
   items: JobRow[];
 }
+
+/** The blind listening test (#86, seedbox2/eval/listening.py). */
+export interface ListenProgress {
+  done: number;
+  total: number;
+}
+
+export interface ListenStatus {
+  folder: string;
+  pairs: number;
+  renders: number;
+  comparisons: number;
+  ratings: number;
+  progress: ListenProgress;
+}
+
+export interface ListenTrial {
+  id: string;
+  pair: string;
+  progress: ListenProgress;
+}
+
+export type ListenSlot = "a" | "b";
+export type ListenScore = "smoothness" | "energy" | "dj";
+export type ListenScores = Partial<Record<ListenSlot, Partial<Record<ListenScore, number>>>>;
+
+export interface ListenRating {
+  choice: ListenSlot;
+  scores: ListenScores;
+  comment: string;
+  rater: string;
+}
+
+export interface ListenRate {
+  trials: number;
+  wins: number;
+  win_rate: number | null;
+  ci_low: number;
+  ci_high: number;
+}
+
+export interface ListenRow extends ListenRate {
+  name: string;
+  scores: Partial<Record<ListenScore, number>>;
+}
+
+export interface ListenMatchup extends ListenRate {
+  name: string;
+  opponent: string;
+}
+
+export interface ListenSummary {
+  ratings: number;
+  raters: number;
+  versions: ListenRow[];
+  styles: ListenRow[];
+  matchups: ListenMatchup[];
+  slot_a: ListenRate;
+}
+
+export interface ListenImport {
+  added: number;
+  duplicates: number;
+  ratings: number;
+}

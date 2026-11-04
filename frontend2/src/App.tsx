@@ -9,6 +9,7 @@ import { AreaPage } from "@/pages/AreaPage";
 import { BenchPage } from "@/pages/BenchPage";
 import { HomePage } from "@/pages/HomePage";
 import { LibraryPage } from "@/pages/LibraryPage";
+import { ListenPage } from "@/pages/ListenPage";
 import { SystemPage } from "@/pages/SystemPage";
 import { UiPage } from "@/pages/UiPage";
 import { useApp } from "@/store/app";
@@ -36,6 +37,8 @@ function Page({ route }: { route: Route }) {
       return <UiPage />;
     case "bench":
       return <BenchPage />;
+    case "listen":
+      return <ListenPage />;
     case "notFound":
       return (
         <EmptyState

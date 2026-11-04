@@ -15,6 +15,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import FileResponse, JSONResponse, Response
 
 from seedbox2 import __version__
+from seedbox2.eval.listening import Trials
 from seedbox2.server.events import HEARTBEAT_S, EventBus
 from seedbox2.server.routers import ROUTERS
 
@@ -50,6 +51,7 @@ def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s
     app.state.models = None
     app.state.models_dir = Path(models_dir) if models_dir is not None else None
     app.state.download_models = download_models
+    app.state.listen_trials = Trials()
     if dev:
         app.add_middleware(CORSMiddleware, allow_origins=DEV_ORIGINS, allow_methods=["*"], allow_headers=["*"])
     _add_error_handlers(app)

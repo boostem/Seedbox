@@ -10,7 +10,7 @@ import json
 import os
 import sqlite3
 import uuid
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -462,6 +462,14 @@ class Library:
         with self.db.write() as c:
             return c.execute("INSERT INTO ratings (test, subject, choice, data) VALUES (?, ?, ?, ?)",
                              (test, subject, choice, _dumps(data or {}))).lastrowid  # type: ignore[return-value]
+
+    def add_ratings(self, test: str, rows: Iterable[Mapping[str, Any]]) -> None:
+        """Several answers in one transaction: `subject`, `choice`, `data` and optionally `created_at` (an import)."""
+        with self.db.write() as c:
+            for r in rows:
+                c.execute(f"INSERT INTO ratings (test, subject, choice, data, created_at) "
+                          f"VALUES (?, ?, ?, ?, coalesce(?, {_NOW}))",
+                          (test, r["subject"], r["choice"], _dumps(r.get("data") or {}), r.get("created_at")))  # fmt: skip
 
     def ratings(self, test: str | None = None) -> list[dict]:
         sql, args = "SELECT * FROM ratings", []
