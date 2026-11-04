@@ -9,7 +9,9 @@ import json
 import sys
 from pathlib import Path
 
-EXPORTERS = {"beat_this": "seedbox2.models.export.beat_this"}
+# model name -> (exporter module, the checkpoint it exports)
+EXPORTERS = {"beat_this": ("seedbox2.models.export.beat_this", "final0"),
+             "beat_this_small": ("seedbox2.models.export.beat_this", "small0")}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -23,9 +25,13 @@ def main(argv: list[str] | None = None) -> int:
 
     from seedbox2.models.export import common
 
-    mod = importlib.import_module(EXPORTERS[args.model])
-    path = mod.export(args.out) if args.out else args.check
-    report = common.parity(mod.reference(), path, mod.cases(),
+    module, checkpoint = EXPORTERS[args.model]
+    mod = importlib.import_module(module)
+    path = mod.export(args.out, checkpoint) if args.out else args.check
+    import onnxruntime as ort
+
+    name = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"]).get_inputs()[0].name
+    report = common.parity(mod.reference(checkpoint), path, mod.cases(name=name),
                            common.TOLERANCE if args.tolerance is None else args.tolerance)  # fmt: skip
     out = {"model": args.model, **common.registry_entry(path), "parity": report.cases, "max_error": report.max_error,
            "tolerance": report.tolerance, "ok": report.ok}

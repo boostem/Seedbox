@@ -1,6 +1,7 @@
-"""Beat This! (CPJKU, MIT): the network from the `final0` checkpoint, without its mel front end.
+"""Beat This! (CPJKU, MIT): the network from the `final0` (or `small0`) checkpoint, without its mel front end.
 
-Signature (as the registry's file): `spectrogram` float32 [1, frames, 128] -> `beat`, `downbeat` logits [1, frames].
+Signature (as the registry's files): `spectrogram` float32 [1, frames, 128] -> `beat`, `downbeat` logits [1, frames].
+The small0 file in the registry names its input `input_spectrogram`; the analysis code takes the first input's name.
 The front end (22,050 Hz mono, 1024-point FFT, hop 441, 128 slaney mels 30 Hz-11 kHz, log1p(1000 x)) stays in the
 analysis code, which feeds at most 1500 frames (30 s) per call with overlapping windows, as upstream does.
 
@@ -54,10 +55,10 @@ def reference(checkpoint: str = CHECKPOINT) -> Any:
     return _Network.build(checkpoint)
 
 
-def cases(seed: int = 0) -> list[dict[str, np.ndarray]]:
-    """Log-mel-like inputs (log1p of non-negative values) of several lengths."""
+def cases(seed: int = 0, name: str = "spectrogram") -> list[dict[str, np.ndarray]]:
+    """Log-mel-like inputs (log1p of non-negative values) of several lengths, fed as the graph's input `name`."""
     rng = np.random.default_rng(seed)
-    return [{"spectrogram": np.log1p(1000 * rng.random((1, n, 128), dtype=np.float32) ** 4).astype(np.float32)}
+    return [{name: np.log1p(1000 * rng.random((1, n, 128), dtype=np.float32) ** 4).astype(np.float32)}
             for n in FRAMES]  # fmt: skip
 
 

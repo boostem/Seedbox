@@ -57,6 +57,7 @@ export interface ModelInfo {
 export interface ModelSettings {
   accelerator: boolean; // CoreML on macOS, DirectML on Windows (the CPU is always the fallback)
   auto_download: boolean; // download missing models when the app starts
+  low_power: boolean; // analysis uses the small models (Beat This! small0 instead of final0)
 }
 
 export interface ModelsStatus {

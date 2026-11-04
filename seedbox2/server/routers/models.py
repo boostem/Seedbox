@@ -19,6 +19,7 @@ class Download(BaseModel):
 class SettingsBody(BaseModel):
     accelerator: bool | None = None  # CoreML on macOS, DirectML on Windows (the CPU stays the fallback)
     auto_download: bool | None = None  # download missing models when the app starts
+    low_power: bool | None = None  # analysis uses the small models (Beat This! small0)
 
 
 @router.get("")
@@ -28,7 +29,7 @@ def models(mgr: ModelsDep) -> dict:
 
 @router.post("/settings")
 def settings(body: SettingsBody, mgr: ModelsDep) -> dict:
-    mgr.update_settings(accelerator=body.accelerator, auto_download=body.auto_download)
+    mgr.update_settings(accelerator=body.accelerator, auto_download=body.auto_download, low_power=body.low_power)
     return mgr.status()
 
 

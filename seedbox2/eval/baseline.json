@@ -1,26 +1,38 @@
 {
  "format": "seedbox2-eval-analysis/1",
- "created": "2026-10-29T16:01:02+00:00",
- "commit": "fd5069b",
+ "created": "2026-11-04T21:13:24+00:00",
+ "commit": "b029370",
  "analysers": [
-  "seedbox1"
+  "seedbox1",
+  "seedbox2"
  ],
  "datasets": {
-  "giantsteps-tempo": 49,
+  "giantsteps-tempo": 50,
   "giantsteps-key": 50
  },
  "summary": {
   "giantsteps-tempo": {
    "seedbox1": {
-    "tempo_acc1": 59.18,
-    "tempo_acc2": 61.22,
-    "octave_err": 2.04,
-    "tracks": 49,
+    "tempo_acc1": 60.0,
+    "tempo_acc2": 62.0,
+    "octave_err": 2.0,
+    "tracks": 50,
+    "errors": 0
+   },
+   "seedbox2": {
+    "tempo_acc1": 86.0,
+    "tempo_acc2": 94.0,
+    "octave_err": 8.0,
+    "tracks": 50,
     "errors": 0
    }
   },
   "giantsteps-key": {
    "seedbox1": {
+    "tracks": 50,
+    "errors": 0
+   },
+   "seedbox2": {
     "tracks": 50,
     "errors": 0
    }
