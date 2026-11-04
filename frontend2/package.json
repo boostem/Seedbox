@@ -8,9 +8,10 @@
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview --port 4175",
     "typecheck": "tsc -p tsconfig.json",
-    "lint": "deno lint --rules-tags=recommended,react,jsx --rules-exclude=no-window,no-window-prefix,no-sloppy-imports src vite.config.ts",
+    "lint": "deno lint --rules-tags=recommended,react,jsx --rules-exclude=no-window,no-window-prefix,no-sloppy-imports src scripts vite.config.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "screenshot": "deno run --allow-run --allow-net=127.0.0.1 --allow-read --allow-write --allow-env --allow-sys=uid,gid scripts/screenshot.ts"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.23",
@@ -21,9 +22,13 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.0",
+    "jsdom": "^27.4.0",
     "tailwindcss": "^4.1.0",
     "typescript": "^7.0.0",
     "vite": "^8.0.0",

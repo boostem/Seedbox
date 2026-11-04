@@ -28,7 +28,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_models.py`, and in `frontend2/` `deno task build`, `deno task test` and `deno task lint`.
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_models.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
