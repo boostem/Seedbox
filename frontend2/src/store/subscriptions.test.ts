@@ -101,3 +101,20 @@ describe("zustand subscriptions", () => {
     expect(checkSubscriptions(good, ["useApp", "usePlayer"])).toEqual([]);
   });
 });
+
+describe("failure fixes", () => {
+  it("say what to do about a failed model download", async () => {
+    const { modelFix } = await import("./models");
+    expect(modelFix("[Errno 28] No space left on device")).toContain("disk is full");
+    expect(modelFix("SHA-256 mismatch")).toContain("damaged");
+    expect(modelFix("timed out")).toContain("Check the connection");
+    expect(modelFix(null)).toContain("retry");
+  });
+
+  it("say what to do about a failed import", async () => {
+    const { importFix } = await import("./imports");
+    expect(importFix({ state: "failed", kind: "xml" })).toContain("Export it again");
+    expect(importFix({ state: "failed", kind: "watch" })).toContain("Watch folders");
+    expect(importFix({ state: "failed", kind: "files" })).toContain("drop them again");
+  });
+});

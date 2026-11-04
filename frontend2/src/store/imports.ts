@@ -34,6 +34,13 @@ export function importSummary(s: ImportStatus): string {
   return parts.join(", ") || "Nothing new";
 }
 
+/** What to do about a failed import. */
+export function importFix(s: ImportStatus): string {
+  if (s.kind === "xml") return "Export it again from Rekordbox (File → Export Collection in xml format) or iTunes/Music (File → Library → Export Library), then choose that file.";
+  if (s.kind === "watch") return "Check that the folder is still there and that the drive is connected, in Settings → Watch folders.";
+  return "Check that the files are still there and are audio (MP3, AAC, FLAC, WAV, AIFF or OGG/Opus), then drop them again.";
+}
+
 function notify(s: ImportStatus) {
   const title = s.kind === "xml" ? "Playlists imported" : s.kind === "watch" ? "Watch folders" : "Import";
   if (s.state === "failed") toast.error(s.error ?? "Import failed", { key: "library.import", title });

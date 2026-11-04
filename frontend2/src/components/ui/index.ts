@@ -11,6 +11,7 @@ export { Modal, type ModalProps } from "./Modal";
 export { InfoRow, Page, PageBody, PageHeader, Panel, PanelHeader, type PageHeaderProps } from "./Panel";
 export { PeaksWaveform, type PeaksWaveformProps } from "./PeaksWaveform";
 export { ProgressBar, type ProgressBarProps, type ProgressTone } from "./ProgressBar";
+export { Skeleton, WaveSkeleton, type WaveSkeletonProps } from "./Skeleton";
 export { Slider, type SliderProps } from "./Slider";
 export { Spinner } from "./Spinner";
 export { StarRating, type StarRatingProps } from "./StarRating";
@@ -18,4 +19,5 @@ export { nextSort, Table, TableScroll, TBody, Td, Th, THead, Tr, type SortDir, t
 export { Switch, type SwitchProps } from "./Switch";
 export { Tabs, type TabItem, type TabsProps } from "./Tabs";
 export { ROW_H, VirtualList, VirtualRows, type VirtualListProps, type VirtualRowsProps } from "./Virtual";
+export { seedOf, WaveArt, waveBars, type WaveArtProps } from "./WaveArt";
 export { Tooltip, type TooltipProps, type TooltipSide } from "./Tooltip";

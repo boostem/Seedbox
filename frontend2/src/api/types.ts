@@ -29,6 +29,30 @@ export interface SystemFolders {
   music: string; // the music library shared with Seedbox 1
 }
 
+// ---- First run (#80): GET/POST /api/onboarding, GET /api/tunebat/search, POST /api/tunebat/download ----
+
+export interface Onboarding {
+  first_run: boolean;
+}
+
+export interface TunebatTrack {
+  id: string;
+  name: string;
+  artists: string[];
+  album: string;
+  duration: number; // seconds
+  bpm: number;
+  camelot: string;
+  cover_url: string | null;
+}
+
+/** A `tunebat.download` event, and the answer to POST /api/tunebat/download. */
+export interface TunebatDownload {
+  id: string;
+  state: "queued" | "finding" | "downloading" | "done" | "failed";
+  error: string | null;
+}
+
 // ---- Models: GET /api/models, POST /api/models/{name}/download|cancel, DELETE /api/models/{name} (#42) ----
 
 export type ModelState = "installed" | "missing" | "downloading" | "failed";

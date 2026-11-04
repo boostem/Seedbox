@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect } from "react";
 import { DropOverlay } from "@/features/import/DropOverlay";
+import { SystemBanner } from "@/features/system/SystemBanner";
 import { registerCommands } from "@/lib/commands";
 import { appCommands } from "./appCommands";
 import { CommandPalette } from "./CommandPalette";
@@ -21,6 +22,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Rail />
         <div className="flex min-w-0 flex-1 flex-col">
           <TopBar />
+          <SystemBanner />
           <main className="min-h-0 flex-1 overflow-hidden bg-surface">{children}</main>
         </div>
       </div>

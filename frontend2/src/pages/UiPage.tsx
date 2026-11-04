@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { player } from "@/audio/player";
 import { Badge, Button, Page, PageBody, PageHeader, Panel, PanelHeader } from "@/components/ui";
 import { MixChecks } from "@/features/mix";
-import { TrackWaveform, WaveModeTabs, WaveOverview } from "@/features/waveform";
+import { TrackWaveform, WaveModeTabs, WaveOverview, WavePlaceholder } from "@/features/waveform";
 import { demoAnalysis } from "@/lib/demo/analysis";
 import { DemoTrackTable } from "@/lib/demo/tracks";
 import { demoMixChecks } from "@/lib/demo/mixChecks";
@@ -97,6 +97,15 @@ export function UiPage() {
                 {name}
               </div>
             ))}
+          </div>
+        </Panel>
+        <Panel className="max-w-3xl">
+          <PanelHeader title="Waiting for a waveform" description="features/waveform: WavePlaceholder, for every view that draws one" />
+          <div className="grid grid-cols-2 gap-3 p-4">
+            <WavePlaceholder state="loading" seed={2} className="h-24" />
+            <WavePlaceholder state="queued" seed={3} className="h-24" />
+            <WavePlaceholder state="analysing" seed={4} className="h-24" />
+            <WavePlaceholder state="failed" seed={5} className="h-24" message="ffmpeg couldn't read this file" onRetry={() => toast.info("Retried")} />
           </div>
         </Panel>
         <Panel className="max-w-md">

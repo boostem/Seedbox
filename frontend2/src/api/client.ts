@@ -3,7 +3,7 @@
  * show an error toast, unless `{ quiet: true }` (then the caller handles it).
  */
 import { toast } from "@/store/toasts";
-import type { CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, WatchFolders } from "./types";
+import type { CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -96,6 +96,15 @@ export const api = {
     saveExport: (rater: string, opts?: RequestOptions) => post<{ path: string; ratings: number }>("/api/listen/export/save", { rater }, opts),
     import: (doc: unknown, opts?: RequestOptions) => post<ListenImport>("/api/listen/import", doc, opts),
   },
+  onboarding: {
+    status: (opts?: RequestOptions) => get<Onboarding>("/api/onboarding", opts),
+    finish: (opts?: RequestOptions) => post<Onboarding>("/api/onboarding", { done: true }, opts),
+  },
+  tunebat: {
+    search: (q: string, opts?: RequestOptions) => get<{ total: number; items: TunebatTrack[] }>(`/api/tunebat/search?q=${encodeURIComponent(q)}`, opts),
+    /** Fetch a search result into the music folder. Progress comes as `tunebat.download` events. */
+    download: (id: string, opts?: RequestOptions) => post<TunebatDownload>("/api/tunebat/download", { id }, opts),
+  },
   models: {
     status: (opts?: RequestOptions) => get<ModelsStatus>("/api/models", opts),
     /** Download one model (`force`: delete it first, i.e. re-download). Progress comes as `model.*` events. */
@@ -168,6 +177,7 @@ export const api = {
   },
   jobs: {
     list: (state?: string, opts?: RequestOptions) => get<JobsResponse>(`/api/jobs${state ? `?state=${state}` : ""}`, opts),
+    submit: (kind: string, payload: Record<string, unknown>, opts?: RequestOptions) => post<unknown>("/api/jobs", { kind, payload }, opts),
   },
 };
 

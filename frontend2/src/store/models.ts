@@ -35,6 +35,18 @@ export const useModels = create<ModelsState>()((set) => ({
   },
 }));
 
+/** What to do about a failed download, from its error. It resumes where it stopped and the app works meanwhile. */
+export function modelFix(error: string | null | undefined): string {
+  const e = (error ?? "").toLowerCase();
+  if (/no space|disk full|enospc/.test(e)) return "The disk is full: free some space, then retry.";
+  if (/sha|checksum|hash/.test(e)) return "The file arrived damaged: retry to fetch it again.";
+  return "Check the connection, then retry: it carries on where it stopped.";
+}
+
+export function retryModel(name: string): void {
+  void api.models.download(name).then(() => useModels.getState().refresh(), () => {});
+}
+
 function titleOf(name: string): string {
   return useModels.getState().status?.models.find((m) => m.name === name)?.title ?? name;
 }
@@ -51,7 +63,8 @@ export function followModels(): () => void {
     else if (ev.type === "model.progress" && data.name) useModels.getState().progress(data.name, data.done ?? 0);
     else if (ev.type === "model.done" && data.name) toast.success(`${titleOf(data.name)} is ready`, { key: `model:${data.name}`, title: "Models" });
     else if (ev.type === "model.failed" && data.name) {
-      toast.error(`${titleOf(data.name)}: ${data.error ?? "download failed"}`, { key: `model:${data.name}`, title: "Models" });
+      const name = data.name;
+      toast.error(`${titleOf(name)} didn't download. ${modelFix(data.error)}`, { key: `model:${name}`, title: "Models", action: { label: "Retry", onClick: () => retryModel(name) } });
     }
   });
   return () => {

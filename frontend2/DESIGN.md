@@ -104,7 +104,9 @@ outside `index.css`. Utilities: `num` (tabular numerals — use on every BPM/tim
 | `Modal` | `open`, `onClose`, `title`, `description`, `footer`, `size` sm\|md\|lg\|xl (native `<dialog>`; global hotkeys pause while open) |
 | `Tooltip` | `content`, `side`, `delay` (portal; wraps child in an inline-flex span) |
 | `Kbd` | `combo="Mod+S"` (→ ⌘S) or children |
-| `EmptyState` | `icon`, `title`, `description`, `action`, `compact` |
+| `EmptyState` | `icon`, `title`, `description`, `action`, `compact`, `tone` (draws `WaveArt`; never a dashed box with prose) |
+| `WaveArt` | `seed`, `tone`: the waveform illustration of empty states and the first run |
+| `Skeleton`, `WaveSkeleton` | what stands in for content until it loads: size it like what it replaces (`still`: no pulse, for what only waits); `features/waveform`'s `WavePlaceholder` for a waveform view |
 | `CoverArt` | `src` (Spotify URL or `/api/covers/<folder>/<id>` embedded art — both handled), `size` px, `camelot` (tinted fallback), `fill`, `rounded` — lazy, picks the right Spotify size |
 | `StarRating` | `rating` 1-10 (→ stars like POPM) or `stars` 0-5 |
 | `PeaksWaveform` | `peaks` (PreviewStatus.peaks), `progress` 0-1, `onSeek(f)`, `height`, `color`, `playedColor`, `loading` — preview clips only |
