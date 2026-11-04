@@ -5,6 +5,7 @@ mutagen
 numpy
 scipy
 fastapi
+pydantic>=2
 uvicorn[standard]
 pywebview
 platformdirs

@@ -31,7 +31,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_listen.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -136,6 +136,27 @@ selection, or the row grabbed) onto a crate or a set in the side list, or onto "
 before. The top bar shows the analysis queue from the `job.*` events: what runs, the stems' progress, what waits and
 an ETA learnt from the jobs seen finishing. Measured on 3,000 tracks in headless Chrome: 60 fps scrolling, and 56-58 fps
 with no long tasks at a 4× CPU throttle.
+
+## Mix plans
+
+**The plan** (#51, `seedbox2/mix/plan.py`): one transition as JSON, version 3 (Seedbox 1's are version 2), for the
+offline renderer and the live engine. Lanes, loops, effects and the tempo map sit on Seedbox 1's master timeline in
+beats. Every deck has a piecewise `grid`, and `deck_time(deck, beat)` goes through it, loops included: to place an
+analysed grid, use `Grid.scaled(factor, offset).to_json()`. `key_shift` is whole semitones per deck (±2).
+
+`stem_lanes` (`gain_drums`, `gain_bass`, `gain_vocals`, `gain_other`) are linear gains, so 0 is true silence; `null`
+means the deck plays the full mix. `validate(raw)` gives the plan as stored, for an editor.
+`validate(raw, has_stems=...)` gives it as it plays: a deck without stems has its stem lanes folded into its EQ (bass
+into the lows, vocals into the mids, drums into the highs; "other" has no band and stays up), and the plan's notes say
+so.
+
+Validation refuses bad values rather than clamping them. Loops start, end and read from whole beats, and last whole
+beats or ½, ¼, ⅛ or 1/16 of one (Seedbox 1's loop rolls end in ½-beat loops).
+
+`convert.load(raw)` reads a stored plan of either version. Imports keep Seedbox 1's JSON, so user-edited plans
+convert when read: lanes, markers, notes and `edited` carry over, and loops off the beat move to the nearest beat with
+a note. `frontend2/src/api/mixplan.generated.ts` is generated from the models: after changing `plan.py`, run
+`.venv/bin/python -m seedbox2.mix.typescript` (a test fails if you forget).
 
 ## Evaluating the analysis
 
