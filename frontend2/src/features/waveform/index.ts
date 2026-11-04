@@ -10,3 +10,4 @@ export { cueColor, edgeColor, edgeWords, SECTION_LABEL, sectionColor, wavePalett
 export { barBeat, drawWave, drawWave2d, fmtPrecise, mergeCues, type WaveOptions } from "./draw";
 export { type WaveMode, WAVE_MODES, useWaveMode, useWaveSettings, waveSettings } from "./settings";
 export { waveRendererInfo, waveRendererName, webgl2Available } from "./gl/renderer";
+export { WavePlaceholder, type WavePlaceholderProps, type WavePlaceholderState } from "./WavePlaceholder";

@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { useServerEvents } from "@/api/events";
 import { AppShell } from "@/components/shell/AppShell";
 import { Button, EmptyState } from "@/components/ui";
+import { Onboarding } from "@/features/onboarding/Onboarding";
 import { cn } from "@/lib/cn";
 import { navigate, type Route, useRoute } from "@/lib/router";
 import { AreaPage } from "@/pages/AreaPage";
@@ -16,6 +17,7 @@ import { useApp } from "@/store/app";
 import { followImports } from "@/store/imports";
 import { followModels } from "@/store/models";
 import { followJobs } from "@/store/jobs";
+import { loadOnboarding, useOnboarding } from "@/store/onboarding";
 
 function Page({ route }: { route: Route }) {
   switch (route.name) {
@@ -77,6 +79,9 @@ export function App() {
   useEffect(followImports, []);
   useEffect(followModels, []);
   useEffect(followJobs, []);
+  useEffect(() => void loadOnboarding(), []);
+  const firstRun = useOnboarding((s) => s.open);
+  if (firstRun) return <Onboarding />;
   return (
     <AppShell>
       <Routes />

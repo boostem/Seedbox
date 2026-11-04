@@ -1,8 +1,9 @@
 /** The shell's commands: going places, the actions the ticket lists, playback and the app itself (lib/commands.ts). */
-import { ArrowLeft, ArrowRight, AudioWaveform, Disc3, FileOutput, House, Keyboard, ListPlus, Palette, Pause, Square, Volume1, Volume2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, AudioWaveform, Disc3, FileOutput, House, Keyboard, ListPlus, Palette, Pause, Sparkles, Square, Volume1, Volume2 } from "lucide-react";
 import { player, usePlayer } from "@/audio/player";
 import type { Command } from "@/lib/commands";
 import { navigate, type Route } from "@/lib/router";
+import { reopenOnboarding } from "@/store/onboarding";
 import { toast } from "@/store/toasts";
 import { ui } from "@/store/ui";
 import { RAIL, SETTINGS_NAV } from "./nav";
@@ -40,6 +41,7 @@ export function appCommands(): Command[] {
     { id: "play.quieter", title: "Volume down", group: "Playback", icon: Volume1, combo: "Mod+ArrowDown", run: () => player.setVolume(usePlayer.getState().volume - 0.1) },
 
     { id: "app.palette", title: "Command palette", group: "App", combo: "Mod+K", allowInInputs: true, allowInModal: true, paletteHidden: true, run: ui.togglePalette },
+    { id: "app.setup", title: "Run setup again", group: "App", icon: Sparkles, keywords: "first run onboarding welcome models folders", run: reopenOnboarding },
     { id: "app.shortcuts", title: "Keyboard shortcuts", group: "App", icon: Keyboard, combo: "?", allowInModal: true, keywords: "keys help", run: ui.toggleShortcuts },
   ];
 }

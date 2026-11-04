@@ -464,6 +464,7 @@ def test_the_app_starts_and_works_offline(tmp_path, monkeypatch):
                             attribution="x", homepage="x", used_for="Testing", fallback="the heuristics")  # fmt: skip
     monkeypatch.setattr(manager_mod, "MODELS", {"dummy": unreachable})
     monkeypatch.setattr(store, "RETRIES", 1)
+    (tmp_path / "settings.json").write_text('{"onboarded": true}')  # on a first run, the setup screen asks first (#80)
     app = create_app(library_path=tmp_path / "library.sqlite3", models_dir=tmp_path / "models", download_models=True)
     with TestClient(app) as c:
         assert c.get("/api/health").json() == {"ok": True}

@@ -133,3 +133,31 @@ def models(app: Any) -> Any:
 
 
 ModelsDep = Annotated[Any, Depends(get_models)]
+
+
+def onboarding_pending(app: Any) -> bool:
+    """Is this a first run (#80)? Setup was never finished and the library is empty: someone who already has tracks
+    has no use for it. Until it is over, models don't download on their own, so its "skip" means skip."""
+    if models(app).settings.get("onboarded"):
+        return False
+    state = app.state
+    if state.library is None:
+        with _open_lock:
+            if state.library is None:
+                state.library = Library.open(Path(state.library_path) if state.library_path else default_path())
+    return state.library.track_count() == 0
+
+
+def get_tunebat(request: Request) -> Any:
+    """The first run's tunebat search and one-track download, made on first use."""
+    from seedbox2.library.tunebat_try import TunebatTry
+
+    state = request.app.state
+    if state.tunebat is None:
+        with _open_lock:
+            if state.tunebat is None:
+                state.tunebat = TunebatTry(local_music(request.app), state.events.publish)
+    return state.tunebat
+
+
+TunebatDep = Annotated[Any, Depends(get_tunebat)]

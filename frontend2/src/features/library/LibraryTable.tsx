@@ -7,10 +7,10 @@
  * crate and set list takes. Click selects, ⇧-click a range, ⌘/Ctrl-click toggles.
  */
 import { AlertTriangle, AudioLines, Check, Clock, Layers, Loader2 } from "lucide-react";
-import { memo, type DragEvent, type MouseEvent, useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { memo, type DragEvent, type MouseEvent, type Ref, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { apiUrl } from "@/api/client";
 import type { LibraryRow } from "@/api/types";
-import { CoverArt, KeyBadge, Table, TableScroll, TBody, Td, Th, THead, Tooltip, Tr, VirtualRows } from "@/components/ui";
+import { CoverArt, KeyBadge, Skeleton, Table, TableScroll, TBody, Td, Th, THead, Tooltip, Tr, VirtualRows, waveBars, WaveSkeleton } from "@/components/ui";
 import { useFrame } from "@/features/waveform/hooks";
 import { cn } from "@/lib/cn";
 import { fmtTime } from "@/lib/format";
@@ -75,10 +75,13 @@ export function LibraryTable({ rows, sort, onSort, selected, onSelect, dragHashe
     for (let i = first; i <= last; i++) {
       const img = overviews.image(list[i].hash, w, h, dpr);
       const y = i * LIBRARY_ROW_H - top + WAVE_PAD_Y;
+      const state = list[i].status.state;
+      const outline = img || (state !== "analysing" && state !== "queued") ? null : waveOutline(w, h, dpr, state === "analysing" ? "rgba(111,125,255,0.4)" : "rgba(127,127,127,0.2)");
       if (img) ctx.drawImage(img, WAVE_PAD_X, y, w, h);
+      else if (outline) ctx.drawImage(outline, WAVE_PAD_X, y, w, h);
       else {
-        // nothing yet: a faint centre line where the waveform will be
-        ctx.fillStyle = "rgba(127,127,127,0.18)";
+        // nothing coming, or it failed: a faint centre line where the waveform would be
+        ctx.fillStyle = state === "failed" ? "rgba(255,77,106,0.45)" : "rgba(127,127,127,0.18)";
         ctx.fillRect(WAVE_PAD_X, y + h / 2 - 0.5, w, 1);
       }
     }
@@ -101,14 +104,34 @@ export function LibraryTable({ rows, sort, onSort, selected, onSelect, dragHashe
     };
   }, [redraw]);
 
-  const th = (key: SortKey) => ({ sort: sort.key === key ? sort.dir : null, onSort: () => onSort(key) });
-
   return (
     <div className={cn("relative min-h-0", className)}>
       <TableScroll ref={scrollRef} className="h-full" aria-label="Tracks" data-library-table>
         <Table className="table-fixed">
           <THead>
-            <Tr interactive={false}>
+            <LibraryHead sort={sort} onSort={onSort} waveRef={waveTh} />
+          </THead>
+          <TBody>
+            <VirtualRows
+              scrollRef={scrollRef}
+              count={rows.length}
+              colSpan={COLS}
+              rowHeight={LIBRARY_ROW_H}
+              rowKey={(i) => rows[i].hash}
+              row={(i) => <Row row={rows[i]} index={i} selected={selected.has(rows[i].hash)} onSelect={onSelect} dragHashes={dragHashes} />}
+            />
+          </TBody>
+        </Table>
+      </TableScroll>
+      <canvas ref={canvasRef} aria-hidden className="pointer-events-none absolute top-0 left-0" />
+    </div>
+  );
+}
+
+function LibraryHead({ sort, onSort, waveRef }: { sort?: Sort; onSort?: (key: SortKey) => void; waveRef?: Ref<HTMLTableCellElement> }) {
+  const th = (key: SortKey) => (onSort ? { sort: sort?.key === key ? sort.dir : null, onSort: () => onSort(key) } : {});
+  return (
+    <Tr interactive={false}>
               <Th width={42} aria-label="Artwork" />
               <Th {...th("title")}>Title</Th>
               <Th width="16%" {...th("artist")}>
@@ -129,7 +152,7 @@ export function LibraryTable({ rows, sort, onSort, selected, onSelect, dragHashe
               <Th width="10%" {...th("genre")}>
                 Genre
               </Th>
-              <Th ref={waveTh} width="22%">
+              <Th ref={waveRef} width="22%">
                 Waveform
               </Th>
               <Th align="center" width={64} {...th("status")} title="Analysis and stems">
@@ -137,22 +160,84 @@ export function LibraryTable({ rows, sort, onSort, selected, onSelect, dragHashe
               </Th>
               <Th width={4} aria-hidden />
             </Tr>
-          </THead>
-          <TBody>
-            <VirtualRows
-              scrollRef={scrollRef}
-              count={rows.length}
-              colSpan={COLS}
-              rowHeight={LIBRARY_ROW_H}
-              rowKey={(i) => rows[i].hash}
-              row={(i) => <Row row={rows[i]} index={i} selected={selected.has(rows[i].hash)} onSelect={onSelect} dragHashes={dragHashes} />}
-            />
-          </TBody>
-        </Table>
-      </TableScroll>
-      <canvas ref={canvasRef} aria-hidden className="pointer-events-none absolute top-0 left-0" />
+  );
+}
+
+const SKELETON_ROWS = 24;
+const WIDTHS = ["w-2/3", "w-1/2", "w-4/5", "w-3/5", "w-3/4"];
+
+/** The table's outline while the library loads: the same columns, and rows shaped like tracks. */
+export function LibrarySkeleton({ className }: { className?: string }) {
+  return (
+    <div className={cn("min-h-0 overflow-hidden", className)} role="status" aria-label="Loading the library">
+      <Table className="table-fixed">
+        <THead>
+          <LibraryHead />
+        </THead>
+        <TBody>
+          {Array.from({ length: SKELETON_ROWS }, (_, i) => (
+            <Tr key={i} rowHeight={LIBRARY_ROW_H} interactive={false} aria-hidden>
+              <Td className="pr-0">
+                <Skeleton className="size-6.5" />
+              </Td>
+              <Td>
+                <Skeleton className={WIDTHS[i % WIDTHS.length]} />
+              </Td>
+              <Td>
+                <Skeleton className={WIDTHS[(i + 2) % WIDTHS.length]} />
+              </Td>
+              <Td>
+                <Skeleton className="ml-auto w-7" />
+              </Td>
+              <Td>
+                <Skeleton className="mx-auto h-4 w-7" />
+              </Td>
+              <Td>
+                <Skeleton className="w-10" />
+              </Td>
+              <Td>
+                <Skeleton className="ml-auto w-8" />
+              </Td>
+              <Td>
+                <Skeleton className={WIDTHS[(i + 1) % WIDTHS.length]} />
+              </Td>
+              <Td className="py-1.5">
+                <div className="h-5">
+                  <WaveSkeleton seed={i + 1} bars={64} />
+                </div>
+              </Td>
+              <Td>
+                <Skeleton className="mx-auto w-8" />
+              </Td>
+              <Td />
+            </Tr>
+          ))}
+        </TBody>
+      </Table>
     </div>
   );
+}
+
+/** A track's waveform outline for the shared canvas, one per size and colour: what is waiting or being analysed. */
+const outlines = new Map<string, HTMLCanvasElement>();
+function waveOutline(width: number, height: number, dpr: number, color: string): HTMLCanvasElement | null {
+  const key = `${width}x${height}x${dpr}${color}`;
+  const hit = outlines.get(key);
+  if (hit) return hit;
+  const c = document.createElement("canvas");
+  c.width = Math.round(width * dpr);
+  c.height = Math.round(height * dpr);
+  const ctx = c.getContext("2d");
+  if (!ctx) return null;
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = color;
+  const bars = waveBars(7, Math.floor(width / 3));
+  bars.forEach((v, i) => {
+    const h = Math.max(1, v * height);
+    ctx.fillRect(i * 3, (height - h) / 2, 2, h);
+  });
+  outlines.set(key, c);
+  return c;
 }
 
 interface RowProps {
@@ -177,6 +262,9 @@ const Row = memo(function Row({ row: r, index, selected, onSelect, dragHashes }:
     setTimeout(() => ghost.remove(), 0);
   };
   const tagHint = "From the file's tags or another app: a hint until our analysis";
+  // values on their way: the outline of the value, pulsing while it is worked on
+  const coming = r.status.state === "analysing" || r.status.state === "queued";
+  const waiting = r.status.state === "queued";
   return (
     <Tr rowHeight={LIBRARY_ROW_H} selected={selected} draggable onDragStart={onDragStart} onClick={(e) => onSelect(r.hash, index, e)} data-hash={r.hash}>
       <Td className="pr-0">
@@ -189,13 +277,13 @@ const Row = memo(function Row({ row: r, index, selected, onSelect, dragHashes }:
         {r.artist}
       </Td>
       <Td num align="right" className={cn(r.bpm_from === "tags" && "text-fg-subtle italic")} title={r.bpm_from === "tags" ? tagHint : undefined}>
-        {r.bpm ? (Number.isInteger(r.bpm) ? r.bpm : r.bpm.toFixed(1)) : ""}
+        {r.bpm ? (Number.isInteger(r.bpm) ? r.bpm : r.bpm.toFixed(1)) : coming && <Skeleton still={waiting} className="ml-auto w-7" />}
       </Td>
       <Td align="center" title={r.key_from === "tags" ? tagHint : undefined}>
-        {r.key && <KeyBadge camelot={r.key} size="xs" dim={r.key_from === "tags"} />}
+        {r.key ? <KeyBadge camelot={r.key} size="xs" dim={r.key_from === "tags"} /> : coming && <Skeleton still={waiting} className="mx-auto h-4 w-7" />}
       </Td>
       <Td>
-        <EnergyMeter energy={r.energy} hint={r.energy_from === "tags"} />
+        {r.energy === null && coming ? <Skeleton still={waiting} className="w-10" /> : <EnergyMeter energy={r.energy} hint={r.energy_from === "tags"} />}
       </Td>
       <Td num align="right" muted>
         {fmtTime(r.duration)}

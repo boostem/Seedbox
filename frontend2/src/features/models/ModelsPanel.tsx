@@ -2,10 +2,10 @@ import { CloudDownload, CloudOff, FolderOpen, RotateCw, Trash2, X } from "lucide
 import { useEffect } from "react";
 import { api } from "@/api/client";
 import type { ModelInfo } from "@/api/types";
-import { Badge, Button, IconButton, Panel, PanelHeader, ProgressBar, StatusDot, Switch } from "@/components/ui";
+import { Badge, Button, IconButton, Panel, PanelHeader, ProgressBar, Skeleton, StatusDot, Switch } from "@/components/ui";
 import { fmtBytes } from "@/lib/format";
 import { useApp } from "@/store/app";
-import { useModels } from "@/store/models";
+import { modelFix, retryModel, useModels } from "@/store/models";
 
 const STATE: Record<ModelInfo["state"], { tone: "ok" | "warn" | "danger" | "info"; label: string }> = {
   installed: { tone: "ok", label: "Downloaded" },
@@ -21,7 +21,7 @@ function acceleratorName(platform: string | undefined): string | null {
   return null;
 }
 
-function ModelRow({ m }: { m: ModelInfo }) {
+export function ModelRow({ m }: { m: ModelInfo }) {
   const state = STATE[m.state];
   const reload = () => void useModels.getState().refresh();
   return (
@@ -42,6 +42,10 @@ function ModelRow({ m }: { m: ModelInfo }) {
             <IconButton icon={RotateCw} label="Download again" tooltip="Download again" size="sm" onClick={() => void api.models.download(m.name, true).then(reload)} />
             <IconButton icon={Trash2} label="Delete" tooltip={`Delete (frees ${fmtBytes(m.size)})`} size="sm" onClick={() => void api.models.remove(m.name).then(reload)} />
           </>
+        ) : m.state === "failed" ? (
+          <Button size="sm" icon={RotateCw} onClick={() => retryModel(m.name)}>
+            Retry
+          </Button>
         ) : (
           <Button size="sm" icon={CloudDownload} onClick={() => void api.models.download(m.name).then(reload)}>
             {m.done > 0 ? "Resume" : "Download"}
@@ -65,7 +69,27 @@ function ModelRow({ m }: { m: ModelInfo }) {
           {m.homepage.replace(/^https?:\/\//, "")}
         </a>
       </p>
-      {m.state === "failed" && m.error && <p className="text-xs text-danger">{m.error}</p>}
+      {m.state === "failed" && (
+        <p className="text-xs text-danger" role="alert">
+          {m.error ?? "The download failed"}. {modelFix(m.error)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** A model row's outline, until the status arrives. */
+export function ModelRowSkeleton() {
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3" aria-hidden>
+      <div className="flex items-center gap-2">
+        <Skeleton className="w-40" />
+        <Skeleton className="w-12" />
+        <span className="flex-1" />
+        <Skeleton className="h-control-sm w-24" />
+      </div>
+      <Skeleton className="w-3/4" />
+      <Skeleton className="w-1/2" />
     </div>
   );
 }
@@ -74,6 +98,7 @@ function ModelRow({ m }: { m: ModelInfo }) {
 export function ModelsPanel() {
   const status = useModels((s) => s.status);
   const system = useApp((s) => s.system);
+  const connection = useApp((s) => s.connection);
   useEffect(() => void useModels.getState().refresh(), []);
   const accel = acceleratorName(system?.platform);
   const setSetting = (changes: Parameters<typeof api.models.settings>[0]) => void api.models.settings(changes).then((s) => useModels.getState().set(s));
@@ -115,6 +140,7 @@ export function ModelsPanel() {
           </div>
         </div>
       )}
+      {!status && connection !== "offline" && <ModelRowSkeleton />}
       {status?.models.map((m) => <ModelRow key={m.name} m={m} />)}
       {status && (
         <div className="flex flex-col gap-2 border-t border-line px-4 py-2.5">

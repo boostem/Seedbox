@@ -52,6 +52,8 @@ interface Shot {
   settle?: number;
   /** GET responses that differ from `API` for this shot, by path. */
   data?: Record<string, unknown>;
+  /** GET paths that answer 500 for this shot. */
+  fail?: string[];
 }
 
 const SYSTEM = {
@@ -99,6 +101,39 @@ const TRACKS = [
   added_at: "2026-10-01T12:00:00Z",
 }));
 
+type RowState = "new" | "queued" | "analysing" | "done" | "failed";
+
+/** The library view's rows: `analysed` of them done, the rest in the `rest` states in turn, with what they carry. */
+function rows(analysed: number, rest: RowState[] = []) {
+  return TRACKS.map((t, i) => {
+    const state: RowState = i < analysed ? "done" : rest[(i - analysed) % rest.length];
+    const done = state === "done";
+    return {
+      hash: t.hash, duration: t.duration, title: t.title, artist: t.artist, album: t.album, source: t.source, added_at: t.added_at,
+      bpm: done ? t.tags.file.bpm : null, bpm_from: done ? "analysis" : null,
+      key: done ? `${(i % 12) + 1}A` : null, key_from: done ? "analysis" : null,
+      energy: done ? 0.4 + (i % 6) / 10 : null, energy_from: done ? "analysis" : null,
+      genre: done ? "House" : "", text: "", artwork: false, format: t.tags.file.format,
+      status: { state, waveform: done, stems: false, stems_progress: null, analyses: [], jobs: state === "failed" ? { waveform: "failed" } : {} },
+    };
+  });
+}
+
+const model = (over: Record<string, unknown> = {}) => ({
+  name: "beat_this", version: "final0", title: "Beat This!", file: "beat_this.onnx", url: "https://example.org/beat_this.onnx", sha256: "0", size: 97_000_000,
+  licence: "MIT", attribution: "Foscarin, Schlüter and Widmer, ISMIR 2024.", homepage: "https://github.com/CPJKU/beat_this", used_for: "Beats and downbeats",
+  fallback: "the Seedbox 1 beat tracker", inputs: "log-mel", state: "installed", installed: true, path: "/home/dj/.cache/seedbox2/models/beat_this/final0/beat_this.onnx", done: 97_000_000, error: null, ...over,
+});
+
+function modelsStatus(m: ReturnType<typeof model>) {
+  return {
+    dir: "/home/dj/.cache/seedbox2/models", models: [m], missing: m.installed ? [] : [m], offline: !m.installed, total_bytes: m.size, installed_bytes: m.installed ? m.size : 0,
+    settings: { accelerator: false, auto_download: true },
+  };
+}
+const MODEL_MISSING = { state: "missing", installed: false, path: null, done: 0 };
+const FIRST_RUN = { "/api/onboarding": { first_run: true }, "/api/library/view": { total: 0, items: [] } };
+
 /** What the stub /api answers to a GET in the `live` state (a shot's `data` overrides these). */
 const API: Record<string, unknown> = {
   "/api/health": { ok: true },
@@ -111,6 +146,12 @@ const API: Record<string, unknown> = {
   "/api/listen/next": { id: "trial", pair: "House into house", progress: { done: 3, total: 18 } },
   "/api/listen/summary": LISTEN_SUMMARY,
   "/api/analysis/stems": { limit_gb: 20, format: "flac", low_power: false, usage: { tracks: 38, bytes: 2_874_000_000 } },
+  "/api/library/view": { total: TRACKS.length, items: rows(TRACKS.length) },
+  "/api/library/crates": [{ id: 1, name: "Peak time", folder: null, source: "local", track_count: 8 }, { id: 2, name: "Warm-up", folder: null, source: "local", track_count: 4 }],
+  "/api/library/smart-crates": { crates: [] },
+  "/api/sets": [{ id: 1, name: "Friday", track_count: 6 }],
+  "/api/models": modelsStatus(model()),
+  "/api/onboarding": { first_run: false },
 };
 
 // Every route, and the states each one has so far. Area tickets add their screens' states (empty, loading,
@@ -119,7 +160,17 @@ const SHOTS: Shot[] = [
   { name: "home", hash: "#/" },
   { name: "home-loading", hash: "#/", api: "loading" },
   { name: "library", hash: "#/library" },
-  { name: "library-empty", hash: "#/library", data: { "/api/library": { ...LIBRARY, tracks: 0, track_paths: 0, crates: 0 }, "/api/library/tracks": { total: 0, items: [] } } },
+  { name: "library-empty", hash: "#/library", data: { "/api/library": { ...LIBRARY, tracks: 0, track_paths: 0, crates: 0 }, "/api/library/tracks": { total: 0, items: [] }, "/api/library/view": { total: 0, items: [] }, "/api/library/crates": [], "/api/sets": [] } },
+  { name: "library-analysing", hash: "#/library", data: { "/api/library/view": { total: TRACKS.length, items: rows(4, ["analysing", "queued", "queued"]) } } },
+  { name: "library-analysis-failed", hash: "#/library", data: { "/api/library/view": { total: TRACKS.length, items: rows(9, ["failed"]) } } },
+  { name: "library-load-failed", hash: "#/library", fail: ["/api/library/view"] },
+  { name: "ffmpeg-missing", hash: "#/", data: { "/api/system": { ...SYSTEM, ffmpeg: null, frozen: true } } },
+  { name: "deno-missing", hash: "#/", data: { "/api/system": { ...SYSTEM, deno: null } } },
+  { name: "onboarding-music", hash: "#/", data: { ...FIRST_RUN, "/api/models": modelsStatus(model(MODEL_MISSING)) } },
+  { name: "onboarding-models", hash: "#/", keys: ["Enter"], data: { ...FIRST_RUN, "/api/models": modelsStatus(model(MODEL_MISSING)) } },
+  { name: "onboarding-models-downloading", hash: "#/", keys: ["Enter"], data: { ...FIRST_RUN, "/api/models": modelsStatus(model({ ...MODEL_MISSING, state: "downloading", done: 41_000_000 })) } },
+  { name: "onboarding-models-failed", hash: "#/", keys: ["Enter"], data: { ...FIRST_RUN, "/api/models": modelsStatus(model({ ...MODEL_MISSING, state: "failed", done: 41_000_000, error: "connection lost" })) } },
+  { name: "onboarding-analysis", hash: "#/", keys: ["Enter", "Enter"], data: FIRST_RUN },
   { name: "library-loading", hash: "#/library", api: "loading" },
   { name: "library-importing", hash: "#/library", data: { "/api/library/import": { state: "running", kind: "files", label: "Techno 2026", done: 37, total: 120, file: "/home/dj/Music/Techno 2026/Track 38.flac" } } },
   { name: "library-import-failed", hash: "#/library", data: { "/api/library/import": { state: "failed", kind: "xml", label: "rekordbox.xml", error: "not a Rekordbox or iTunes XML file" } } },
@@ -238,6 +289,7 @@ function serve(shot: () => Shot): { server: Deno.HttpServer<Deno.NetAddr>; close
       const data = { ...API, ...shot().data };
       if (s === "offline") return new Response("engine offline", { status: 503 });
       if (s === "loading") return hang();
+      if (req.method === "GET" && shot().fail?.includes(path)) return Response.json({ detail: "database is locked" }, { status: 500 });
       if (req.method === "GET" && data[path] !== undefined) return Response.json(data[path]);
       if (path === "/api/events") {
         // an open stream with nothing on it, until the page goes away or the server closes
@@ -377,6 +429,7 @@ const STILL_CSS = `*, *::before, *::after {
 
 const KEY_CODES: Record<string, [code: string, keyCode: number]> = {
   k: ["KeyK", 75],
+  Enter: ["Enter", 13],
   "?": ["Slash", 191],
   Escape: ["Escape", 27],
 };
@@ -389,7 +442,7 @@ async function press(cdp: Cdp, session: string, combo: string): Promise<void> {
   const modifiers = (ctrl ? 2 : 0) | (shift ? 8 : 0);
   const [code, keyCode] = KEY_CODES[key] ?? [`Key${key.toUpperCase()}`, key.toUpperCase().charCodeAt(0)];
   const base = { key, code, windowsVirtualKeyCode: keyCode, modifiers };
-  await cdp.send("Input.dispatchKeyEvent", { type: ctrl ? "rawKeyDown" : "keyDown", text: ctrl ? undefined : key, ...base }, session);
+  await cdp.send("Input.dispatchKeyEvent", { type: ctrl ? "rawKeyDown" : "keyDown", text: ctrl ? undefined : key === "Enter" ? "\r" : key, ...base }, session);
   await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...base }, session);
 }
 

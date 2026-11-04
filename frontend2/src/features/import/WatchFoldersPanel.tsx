@@ -2,7 +2,7 @@ import { FolderOpen, FolderPlus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/api/client";
 import type { WatchFolders } from "@/api/types";
-import { Button, IconButton, Input, InfoRow, Panel, PanelHeader, Spinner, StatusDot } from "@/components/ui";
+import { Button, IconButton, Input, InfoRow, Panel, PanelHeader, Skeleton, Spinner, StatusDot } from "@/components/ui";
 import { tildify } from "@/lib/format";
 import { useApp } from "@/store/app";
 import { useImports } from "@/store/imports";
@@ -10,6 +10,7 @@ import { useImports } from "@/store/imports";
 /** Settings: the folders the engine scans and then watches for new, changed and removed music (#40). */
 export function WatchFoldersPanel() {
   const system = useApp((s) => s.system);
+  const connection = useApp((s) => s.connection);
   const generation = useImports((s) => s.generation);
   const scanning = useImports((s) => (s.status.state === "running" && s.status.kind === "watch" ? s.status : null));
   const [data, setData] = useState<WatchFolders | null>(null);
@@ -49,10 +50,18 @@ export function WatchFoldersPanel() {
           </Button>
         }
       />
+      {!data && connection !== "offline" && (
+        <InfoRow label={<Skeleton className="w-16" />}>
+          <Skeleton className="w-72" />
+        </InfoRow>
+      )}
       {data?.folders.map((f) => (
         <InfoRow key={f.path} label={f.exists ? (scanning?.folder === f.path ? "Scanning" : "Watching") : "Missing"}>
           <StatusDot tone={f.exists ? "ok" : "warn"} />
-          <span className="min-w-0 flex-1 break-all font-mono text-xs">{tildify(f.path)}</span>
+          <span className="min-w-0 flex-1 break-all font-mono text-xs">
+            {tildify(f.path)}
+            {!f.exists && <span className="block font-sans text-fg-subtle">Not found: plug the drive back in, or stop watching it.</span>}
+          </span>
           {scanning?.folder === f.path && (
             <span className="flex shrink-0 items-center gap-1.5 text-xs text-fg-subtle">
               <Spinner size={12} /> {scanning.done ?? 0}/{scanning.total ?? "…"}

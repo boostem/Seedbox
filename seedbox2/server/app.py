@@ -57,6 +57,7 @@ def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s
     app.state.local_music = None
     app.state.watch_folders = watch_folders
     app.state.models = None
+    app.state.tunebat = None
     app.state.models_dir = Path(models_dir) if models_dir is not None else None
     app.state.download_models = download_models
     app.state.listen_trials = Trials()
@@ -84,9 +85,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         threading.Thread(target=lambda: local_music(app).start_watching(), name="seedbox2-watch-start",
                          daemon=True).start()  # fmt: skip
     if app.state.download_models:
-        from seedbox2.server.deps import models
+        from seedbox2.server.deps import models, onboarding_pending
 
-        threading.Thread(target=lambda: models(app).start(), name="seedbox2-models-start", daemon=True).start()
+        def start_models() -> None:
+            if not onboarding_pending(app):  # on a first run, the setup screen asks first
+                models(app).start()
+
+        threading.Thread(target=start_models, name="seedbox2-models-start", daemon=True).start()
     yield
     if app.state.models is not None:
         app.state.models.close()
