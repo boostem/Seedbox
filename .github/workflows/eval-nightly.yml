@@ -14,6 +14,7 @@ jobs:
     env:
       SEEDBOX2_EVAL_DATA: ${{ github.workspace }}/eval-data
       SEEDBOX2_EVAL_RESULTS: ${{ github.workspace }}/eval-results
+      SEEDBOX_CACHE_DIR: ${{ github.workspace }}/.seedbox-cache
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,8 +28,18 @@ jobs:
           path: eval-data
           key: eval-data-giantsteps-50-v1
       - run: python -m seedbox2.eval fetch giantsteps-tempo giantsteps-key --limit 50
+      - uses: actions/cache@v4
+        with:
+          path: .seedbox-cache/models
+          key: models-${{ runner.os }}-${{ hashFiles('seedbox2/models/**') }}
+          restore-keys: models-${{ runner.os }}-
+      - name: Download the models (the seedbox2 analysers need Beat This!)
+        run: >-
+          python -c "from seedbox2.models import store; from seedbox2.models.registry import MODELS;
+          [store.download(s, store.models_dir()) for s in MODELS.values()]"
       - run: >-
           python -m seedbox2.eval analysis --dataset giantsteps-tempo --dataset giantsteps-key --limit 50
+          --analyser seedbox1 --analyser seedbox2
           --baseline seedbox2/eval/baseline.json --max-drop 2 --out eval-results/nightly.json
       - uses: actions/upload-artifact@v4
         if: always()

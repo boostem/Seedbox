@@ -22,8 +22,8 @@ The result (`analyse`, stored as the track's `beats` analysis):
 Beat numbers: beat 0 is the first downbeat at most 3/4 of a beat before the first detected beat (as Seedbox 1's
 bar 0), downbeats are the multiples of 4; `grid.Grid(segments)` maps beats to seconds and back.
 
-Without either model the job falls back to Seedbox 1's analysis (`musicreco.structure`): one segment, `"model":
-"seedbox1"`.
+Without either model, or when Beat This! finds fewer than 8 beats, the job falls back to Seedbox 1's analysis
+(`musicreco.structure`): one segment, `"model": "seedbox1"`.
 """
 
 from __future__ import annotations
@@ -285,10 +285,14 @@ def beats_job(payload: dict, ctx: Any) -> dict:
         if session is not None:
             model = name
             break
-    if session is None:
+    data = None
+    if session is not None:
+        try:
+            data = analyse(sources[0], session, model=model or MODELS[0], hints=hints, progress=ctx.progress)
+        except NoBeats as e:  # beatless (ambient, speech): Seedbox 1's grid is better than none
+            log.info("%s: %s; using Seedbox 1's grid", hash_, e)
+    if data is None:
         data = seedbox1_fallback(sources[0], hints)
-    else:
-        data = analyse(sources[0], session, model=model or MODELS[0], hints=hints, progress=ctx.progress)
     lib.put_analysis(hash_, ANALYSER, VERSION, data)
     return {"hash": hash_, "model": data["model"], "bpm": data["bpm"], "segments": len(data["segments"])}
 

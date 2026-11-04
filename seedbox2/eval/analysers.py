@@ -85,7 +85,10 @@ def _beat_this(path: Path, model: str) -> Estimate:
     from seedbox2.models import load_session  # noqa: PLC0415
 
     session = load_session(model)
-    r = sb2.analyse(path, session, model=model)
+    try:
+        r = sb2.analyse(path, session, model=model)
+    except sb2.NoBeats:  # as the job does
+        r = sb2.seedbox1_fallback(path)
     return Estimate(duration_s=r["duration_s"], bpm=r["bpm"], beats=sb2.beat_times(r).round(4).tolist(),
                     downbeats=sb2.beat_times(r, sb2.BEATS_PER_BAR).round(4).tolist())
 
