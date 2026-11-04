@@ -137,6 +137,9 @@ def _text(tags: dict) -> str:
     return " · ".join(dict.fromkeys(parts))
 
 
+_STEMS_PENDING = ("queued", "running", "failed")  # a job that ended otherwise left stems, or skipped them, or they were evicted
+
+
 def describe(track: dict, *, analyses: dict[str, dict] | None = None, artifacts: Iterable[str] = (),
              jobs: dict[str, dict] | None = None, waveform_version: str | None = None) -> dict:  # fmt: skip
     """The table row for a track. `analyses`: analyser → its newest data's fields (bpm, camelot, key, energy);
@@ -178,7 +181,7 @@ def describe(track: dict, *, analyses: dict[str, dict] | None = None, artifacts:
     row["status"] = {
         "state": state,
         "waveform": waveform,
-        "stems": True if stems else (stems_job["state"] if stems_job else False),
+        "stems": True if stems else (stems_job["state"] if stems_job and stems_job["state"] in _STEMS_PENDING else False),
         "stems_progress": stems_job.get("progress") if stems_job and stems_job["state"] == "running" else None,
         "analyses": sorted(analyses),
         "jobs": {k: j["state"] for k, j in sorted(jobs.items())},

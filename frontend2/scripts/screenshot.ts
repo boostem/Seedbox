@@ -110,6 +110,7 @@ const API: Record<string, unknown> = {
   "/api/listen/status": LISTEN_STATUS,
   "/api/listen/next": { id: "trial", pair: "House into house", progress: { done: 3, total: 18 } },
   "/api/listen/summary": LISTEN_SUMMARY,
+  "/api/analysis/stems": { limit_gb: 20, format: "flac", low_power: false, usage: { tracks: 38, bytes: 2_874_000_000 } },
 };
 
 // Every route, and the states each one has so far. Area tickets add their screens' states (empty, loading,

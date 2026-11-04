@@ -100,10 +100,11 @@ def test_corpus_is_ten_pinned_tracks():
 
 
 @pytest.mark.skipif(ffmpeg_path() is None, reason="needs ffmpeg")
-def test_run_on_synthetic_tracks(tmp_path):
+def test_run_on_synthetic_tracks(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDBOX_CACHE_DIR", str(tmp_path / "cache"))  # no models there: stems are skipped
     tracks = corpus.synthetic(tmp_path / "corpus", count=2, seconds=40)
     r = run(tracks, ("analysis", "stems", "plan"), log=lambda _: None, corpus_name="synthetic")
-    assert r["stages"]["stems"]["skipped"].startswith("not implemented")
+    assert r["stages"]["stems"]["skipped"].startswith("needs the htdemucs model")
     an, plan = r["stages"]["analysis"], r["stages"]["plan"]
     assert an["summary"]["count"] == 2 and plan["summary"]["count"] == 1, (an, plan)
     assert abs(an["items"][0]["info"]["bpm"] - 118) < 1

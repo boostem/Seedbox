@@ -28,7 +28,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_beats.py tests/test_seedbox2_listen.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_listen.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -113,23 +113,6 @@ downloads; progress is `model.progress`, then `model.done`, `model.failed` or `m
 event with the new status. `seedbox2/models/export/` (dev-only, the one place torch is allowed) rebuilds the ONNX
 files from the upstream checkpoints and checks any file against torch:
 `python -m seedbox2.models.export beat_this --check FILE` (the registry's file differs from torch by at most 2e-6
-in its logits; `beat_this_small` checks small0, 5.5e-6). The first models are Beat This! `final0` and `small0` (MIT;
-Foscarin, Schlüter and Widmer, ISMIR 2024). The `low_power` setting (Settings → Models, "Low-power mode") makes
-analysis use the small models.
-
-**Beats** (#43, `seedbox2/analysis/beats.py`, `beatthis.py`, `grid.py`): the `beats` job (light pool, every new
-track) runs Beat This! on onnxruntime: our numpy mel front end (equal to upstream's torchaudio one), 30-second
-chunks and upstream's peak picker, so its beats and downbeats are upstream's exactly. A grid is fitted through
-them: one segment when the track is quantised (a global period/phase search, then a robust line), otherwise
-segments `[{start_beat, start_s, bpm}]` where a straight line stops holding (a tempo change, a live drummer), as a
-continuous piecewise line. The tempo octave picks x0.5, x1 or x2 of beat_this's level with a log-normal prior
-(130 BPM, 0.6 octaves, no folding into a range) and the bar length the downbeat activations show, so drum & bass
-reads 174 and halftime 140; tag BPMs (file, Rekordbox, iTunes, tunebat) only break near-ties. The bar phase is
-voted over the whole track; 4/4 is assumed and `time_signature.detected` flags 3/4. `GET
-/api/analysis/{hash}/beats` serves it (202 and the job at the front of the queue until it is there). Without a
-model the job stores Seedbox 1's grid as one segment. Mix plans take piecewise grids too: a deck's optional `grid`
-(`musicreco.mixplan.deck_time`, `deck_bpm`), which `mixplan.generate` fills from an analysis with a `grid`, and
-the renderer reads each piece of the deck at its own tempo so its beats stay on the master clock.
 
 **The library view** (#73, `frontend2/src/features/library/`, `seedbox2/library/view.py`): `#/library` is a
 virtualised table of every track (artwork, title, artist, BPM, Camelot-coloured key, energy 1-10, length, genre, an

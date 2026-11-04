@@ -138,8 +138,9 @@ def to_amplitude(byte: np.ndarray) -> np.ndarray:
     return 10 ** ((np.asarray(byte, np.float64) / 255 - 1) * FLOOR_DB / 20)
 
 
-def decode_chunks(path: Path | str, chunk_samples: int) -> Any:
-    """Mono float32 chunks of the file's first audio stream at SAMPLE_RATE, streamed from ffmpeg."""
+def decode_chunks(path: Path | str, chunk_samples: int, *, sample_rate: int = SAMPLE_RATE, channels: int = 1) -> Any:
+    """Float32 chunks of the file's first audio stream, streamed from ffmpeg: `chunk_samples` samples per channel,
+    interleaved. Mono at SAMPLE_RATE by default."""
     from musicreco.paths import ffmpeg_path
 
     path = Path(path)
@@ -147,7 +148,7 @@ def decode_chunks(path: Path | str, chunk_samples: int) -> Any:
     if ffmpeg is None:
         raise WaveformError("ffmpeg not found")
     cmd = [ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-i", str(path), "-map", "0:a:0", "-vn",
-           "-ac", "1", "-ar", str(SAMPLE_RATE), "-f", "f32le", "-"]  # fmt: skip
+           "-ac", str(channels), "-ar", str(sample_rate), "-f", "f32le", "-"]  # fmt: skip
     errors = tempfile.TemporaryFile()  # a file, not a pipe: a chatty ffmpeg can't fill it and stall
     try:
         proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=errors)
@@ -156,8 +157,9 @@ def decode_chunks(path: Path | str, chunk_samples: int) -> Any:
         raise WaveformError(f"could not decode {path.name}: {e}") from e
     try:
         assert proc.stdout is not None
-        while chunk := proc.stdout.read(chunk_samples * 4):  # whole chunks until the last one
-            yield np.frombuffer(chunk[: len(chunk) - len(chunk) % 4], np.float32)
+        frame = 4 * channels
+        while chunk := proc.stdout.read(chunk_samples * frame):  # whole chunks until the last one
+            yield np.frombuffer(chunk[: len(chunk) - len(chunk) % frame], np.float32)
         code = proc.wait(timeout=DECODE_TIMEOUT_S)
         if code != 0:
             errors.seek(0)
