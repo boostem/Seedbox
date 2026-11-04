@@ -71,6 +71,10 @@
   --color-wave-mid: #ff9f1c;
   --color-wave-high: #f4f6fa;
   --color-wave-played: #6f7682;
+  /* RGB waveform mode: each column mixes these by its low/mid/high balance */
+  --color-wave-rgb-low: #ff4b3e;
+  --color-wave-rgb-mid: #5be36b;
+  --color-wave-rgb-high: #4aa8ff;
   --color-playhead: #ffffff;
 
   /* type: the system UI font (SF Pro on macOS, Segoe UI on Windows, the desktop's font on Linux), 13px dense base */

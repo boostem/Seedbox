@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { player } from "@/audio/player";
 import { Badge, Button, Page, PageBody, PageHeader, Panel, PanelHeader } from "@/components/ui";
 import { MixChecks } from "@/features/mix";
-import { TrackWaveform } from "@/features/waveform";
+import { TrackWaveform, WaveModeTabs, WaveOverview } from "@/features/waveform";
 import { demoAnalysis } from "@/lib/demo/analysis";
 import { DemoTrackTable } from "@/lib/demo/tracks";
 import { demoMixChecks } from "@/lib/demo/mixChecks";
@@ -68,7 +68,13 @@ export function UiPage() {
         <Panel>
           <PanelHeader title="Waveform" description="features/waveform on a synthetic 128 BPM track" />
           <div className="p-4">
-            <TrackWaveform analysis={analysis} trackId="demo" hotkeys onSeek={(t) => player.seek(t)} />
+            <TrackWaveform analysis={analysis} trackId="demo" hotkeys onSeek={(t) => player.seek(t)} toolbar={<WaveModeTabs />} />
+            <div className="mt-4 mb-1.5 text-xs text-fg-subtle">Overviews (library rows, decks): the same renderer</div>
+            <div className="flex flex-col gap-1.5">
+              {[28, 36, 22].map((h) => (
+                <WaveOverview key={h} analysis={analysis} trackId="demo" height={h} sections={h > 24} onSeek={(t) => player.seek(t)} />
+              ))}
+            </div>
           </div>
         </Panel>
         <Panel>

@@ -7,7 +7,10 @@
  * then per track asked for: present u8, and if present bands × columns peak bytes (log scale, 0 = -48 dB).
  */
 import { api } from "@/api/client";
-import { wavePalette } from "@/features/waveform/palette";
+import type { Waveform } from "@/api/types";
+import { drawWave, laneOf } from "@/features/waveform/draw";
+import { prepareBands, type WaveData } from "@/features/waveform/prepare";
+import { useWaveSettings } from "@/features/waveform/settings";
 
 export interface Overview {
   columns: number;
@@ -42,56 +45,36 @@ export function parseOverviews(buf: ArrayBuffer): (Overview | null)[] {
   return out;
 }
 
-/** Column heights 0-1 of each band for a `width`-pixel image: the loudest overview column under each pixel. */
-export function overviewColumns(o: Overview, width: number): Float32Array[] {
-  const bands: Float32Array[] = [];
-  for (let b = 0; b < Math.min(3, o.bands); b++) {
+const FLOOR_DB = 48; // the overview's log scale: byte 0 = -48 dB, 255 = full scale
+
+const overviewWaves = new WeakMap<Overview, WaveData>();
+
+/**
+ * The overview as the renderer's waveform data, for a one-second "track" of `columns` points: linear amplitudes
+ * normalised per band (`prepareBands`), so a row looks like the same track in the track view.
+ */
+export function overviewWave(o: Overview): WaveData | null {
+  const hit = overviewWaves.get(o);
+  if (hit) return hit;
+  const band = (b: number) => {
     const row = o.peaks.subarray(b * o.columns, (b + 1) * o.columns);
-    const out = new Float32Array(width);
-    for (let x = 0; x < width; x++) {
-      const c0 = Math.floor((x * o.columns) / width);
-      const c1 = Math.max(c0 + 1, Math.floor(((x + 1) * o.columns) / width));
-      let m = 0;
-      for (let c = c0; c < c1; c++) if (row[c] > m) m = row[c];
-      out[x] = m / 255; // already a 48 dB log scale: 0 = silence, 1 = full scale
-    }
-    bands.push(out);
-  }
-  return bands;
+    return Float32Array.from(row, (v) => (v === 0 ? 0 : 10 ** (((v / 255 - 1) * FLOOR_DB) / 20)));
+  };
+  const wave = o.bands >= 3 ? prepareBands({ points_per_second: o.columns, low: band(0), mid: band(1), high: band(2) } as unknown as Waveform, 1) : null;
+  if (wave) overviewWaves.set(o, wave);
+  return wave;
 }
 
-// How each band fills its half of the row: lows are the body, highs a thin bright top, like Rekordbox's overview.
-const SHAPE = [
-  { gain: 1, curve: 2.2, alpha: 1 },
-  { gain: 0.8, curve: 2.6, alpha: 0.9 },
-  { gain: 0.55, curve: 3, alpha: 0.85 },
-];
-
-/** The overview drawn at this size (CSS px × dpr), mirrored around the middle, the three bands on top of each other. */
+/** The overview drawn at this size (CSS px; the canvas is that × dpr) by the waveform renderer, in the Settings mode. */
 export function renderOverview(o: Overview, width: number, height: number, dpr: number): HTMLCanvasElement | null {
-  const W = Math.max(1, Math.round(width * dpr));
-  const H = Math.max(1, Math.round(height * dpr));
+  const wave = overviewWave(o);
   const canvas = document.createElement("canvas");
-  canvas.width = W;
-  canvas.height = H;
+  canvas.width = Math.max(1, Math.round(width * dpr));
+  canvas.height = Math.max(1, Math.round(height * dpr));
   const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  const p = wavePalette();
-  const colors = [p.low, p.mid, p.high];
-  const cols = overviewColumns(o, W);
-  const mid = H / 2;
-  cols.forEach((vals, b) => {
-    const s = SHAPE[b];
-    ctx.globalAlpha = s.alpha;
-    ctx.fillStyle = colors[b];
-    ctx.beginPath();
-    ctx.moveTo(0, mid);
-    for (let x = 0; x < W; x++) ctx.lineTo(x, mid - Math.max(0.5, Math.pow(vals[x], s.curve) * s.gain * mid));
-    ctx.lineTo(W, mid);
-    for (let x = W - 1; x >= 0; x--) ctx.lineTo(x, mid + Math.max(0.5, Math.pow(vals[x], s.curve) * s.gain * mid));
-    ctx.closePath();
-    ctx.fill();
-  });
+  if (!ctx || !wave) return null;
+  ctx.scale(dpr, dpr);
+  drawWave(ctx, laneOf(null, wave), { start: 0, pxPerSec: width, width }, 0, height, dpr);
   return canvas;
 }
 
@@ -104,7 +87,7 @@ const IMAGES = 300;
 /**
  * Overviews by track hash: `undefined` = not asked yet, `null` = none yet (no waveform), else the data (3.6 KB a
  * track). Row images are kept for the IMAGES most recently drawn rows at one size; a new size (the column was
- * resized) drops them.
+ * resized) or a new waveform mode drops them.
  */
 export class OverviewStore {
   private data = new Map<string, Overview | null>();
@@ -128,7 +111,8 @@ export class OverviewStore {
 
   /** The image for a row, rendering it on first use; undefined while its data is on the way (it is requested). */
   image(hash: string, width: number, height: number, dpr: number): HTMLCanvasElement | null | undefined {
-    const size = `${width}x${height}@${dpr}`;
+    const { mode, gpu } = useWaveSettings.getState();
+    const size = `${width}x${height}@${dpr}/${mode}/${gpu}`;
     if (size !== this.imageSize) {
       this.images.clear();
       this.imageSize = size;

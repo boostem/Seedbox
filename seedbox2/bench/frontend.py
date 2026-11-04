@@ -126,10 +126,12 @@ def _wait(pred, timeout: float, what: str, step: float = 0.1):
     raise TimeoutError(f"timed out waiting for {what}")
 
 
-def _launch(chrome: str, profile: Path, size: tuple[int, int]) -> tuple[subprocess.Popen, BinaryIO, str]:
+def _launch(chrome: str, profile: Path, size: tuple[int, int], software_gl: bool = False) -> tuple[subprocess.Popen, BinaryIO, str]:
     args = [chrome, "--headless=new", "--remote-debugging-port=0", f"--user-data-dir={profile}", "--no-first-run",
             "--no-default-browser-check", "--autoplay-policy=no-user-gesture-required", "--mute-audio",
             f"--window-size={size[0]},{size[1]}", "about:blank"]  # fmt: skip
+    if software_gl:  # WebGL on the CPU: slower than any integrated GPU, so a floor for the waveform renderer
+        args[1:1] = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
     if os.environ.get("CI") and sys.platform.startswith("linux"):
         args.insert(1, "--no-sandbox")  # GitHub's Ubuntu runners don't allow Chrome's user-namespace sandbox
     env = dict(os.environ)
@@ -254,11 +256,13 @@ def _drive(cdp: Cdp, url: str, seconds: float, cpu_throttle: float, size: tuple[
           30, "the #/bench page")  # fmt: skip
     cdp.eval(METER_JS)
     time.sleep(0.5)  # let the first frames and layout settle
-    return {"browser": agent, "cpu_throttle": cpu_throttle, "viewport": list(size), "scenarios": scenarios(cdp, seconds)}
+    gpu = cdp.eval("window.__seedboxBench.gpu?.() ?? null")  # the waveform renderer, and the GPU behind it
+    return {"browser": agent, "cpu_throttle": cpu_throttle, "viewport": list(size), "waveform_renderer": gpu,
+            "scenarios": scenarios(cdp, seconds)}
 
 
 def run(dist: Path = DIST, seconds: float = 5.0, cpu_throttle: float = 1.0, size: tuple[int, int] = (1440, 900),
-        chrome: str | None = None, log=print) -> dict:
+        chrome: str | None = None, software_gl: bool = False, log=print) -> dict:
     """{"browser", "cpu_throttle", "scenarios": {name: {fps, frame_p95_ms, long_tasks, ...}}}, or {"skipped": why}."""
     chrome = chrome or find_chrome()
     if chrome is None:
@@ -272,7 +276,7 @@ def run(dist: Path = DIST, seconds: float = 5.0, cpu_throttle: float = 1.0, size
     server = start_server(dist, port=0)
     try:
         with tempfile.TemporaryDirectory(prefix="seedbox2-bench-chrome-") as profile:
-            proc, errors, ws = _launch(chrome, Path(profile), size)
+            proc, errors, ws = _launch(chrome, Path(profile), size, software_gl)
             try:
                 with connect(ws, max_size=None, open_timeout=30) as conn:
                     result = _drive(Cdp(conn), server.url, seconds, cpu_throttle, size)
@@ -281,7 +285,8 @@ def run(dist: Path = DIST, seconds: float = 5.0, cpu_throttle: float = 1.0, size
                 errors.close()
     finally:
         server.stop()
-    log(f"frontend: {chrome}, {seconds:g} s per scenario, CPU throttle {cpu_throttle:g}x")
+    log(f"frontend: {chrome}, {seconds:g} s per scenario, CPU throttle {cpu_throttle:g}x, "
+        f"waveforms on {result.get('waveform_renderer') or 'unknown'}")
     for name, sc in result["scenarios"].items():
         if "error" in sc:
             log(f"frontend  {name}: ERROR {sc['error']}")

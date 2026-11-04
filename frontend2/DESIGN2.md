@@ -162,6 +162,7 @@ screen.
 | Cues | `cue-mix` lime | mix-in and mix-out cues; every other cue takes its section's colour (`cueColor`) |
 | Stems | `stem-drums` yellow, `stem-bass` blue, `stem-vocals` magenta, `stem-other` green | stem lanes, and intro/outro brackets by what plays in them (drums only, vocals, music) |
 | Waveform | `wave-low` blue, `wave-mid` amber, `wave-high` white, `wave-played`, `playhead` | Rekordbox-style 3 bands |
+| RGB waveform | `wave-rgb-low` red, `wave-rgb-mid` green, `wave-rgb-high` blue | the RGB mode (Settings): each column mixes them by its band balance |
 | Keys | the 24 Camelot colours, `key-unknown`, `on-key` | below |
 | Moves | `move-same`, `move-step`, `move-relative`, `move-boost`, `move-clash`, `move-unknown` | how two keys relate (Seedbox 1's README, "Score and colours") |
 

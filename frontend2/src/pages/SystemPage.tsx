@@ -5,6 +5,7 @@ import { IconButton, InfoRow, Page, PageBody, PageHeader, Panel, PanelHeader, St
 import { WatchFoldersPanel } from "@/features/import/WatchFoldersPanel";
 import { ModelsPanel } from "@/features/models/ModelsPanel";
 import { StemsPanel } from "@/features/models/StemsPanel";
+import { WaveSettingsPanel } from "@/features/waveform";
 import { useApp } from "@/store/app";
 
 function Value({ v }: { v: string | null | undefined }) {
@@ -44,7 +45,7 @@ export function SystemPage() {
   const connection = useApp((s) => s.connection);
   return (
     <Page>
-      <PageHeader title="Settings" subtitle="What the Seedbox 2 engine is running on, and where it keeps its files" />
+      <PageHeader title="Settings" subtitle="What the Seedbox 2 engine is running on, how waveforms look, and where it keeps its files" />
       <PageBody className="flex flex-col gap-4">
         <Panel className="max-w-3xl">
           <PanelHeader title="Engine" />
@@ -67,6 +68,7 @@ export function SystemPage() {
         <WatchFoldersPanel />
         <ModelsPanel />
         <StemsPanel />
+        <WaveSettingsPanel className="max-w-3xl" />
         <FoldersPanel />
       </PageBody>
     </Page>

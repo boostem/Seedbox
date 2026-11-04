@@ -123,3 +123,4 @@ def test_frontend_bench_measures_every_scenario():
         assert sc["frames"] > 5, (name, sc)
         assert "react_commits_per_s" in sc, (name, sc)
     assert fe["scenarios"]["list"]["react_commits"] > 0  # the virtualised table re-renders as rows scroll in
+    assert fe["waveform_renderer"]  # "webgl2 (<GPU>)" or "canvas2d"

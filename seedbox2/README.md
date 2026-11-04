@@ -74,6 +74,10 @@ costs only that worker; the supervisor starts another. `/api/jobs` lists, submit
 `job.queued`, `job.started`, `job.progress` (coalesced: a slow client only gets the latest per job) and the terminal
 `job.done`, `job.failed` and `job.cancelled`, which are never dropped.
 
+**The waveform renderer** (#74, `frontend2/src/features/waveform/gl/`): one WebGL2 context for the library overviews,
+the track view and the transition editor; `WaveOverview` is the strip for the decks when they exist. RGB, 3-band and
+stacked modes are chosen in `#/settings`, and Canvas 2D takes over when WebGL2 isn't there.
+
 **Waveforms** (#49, `seedbox2/analysis/waveform.py`): the `waveform` job (light pool, so it never waits behind
 stems) decodes a track to mono at 22,050 Hz, a second at a time, and splits it with 4th-order Bessel filters
 (low-pass 600 Hz, band-pass 600-4,000 Hz, high-pass 4,000 Hz, as Mixxx). Each band keeps its peak and RMS at 150

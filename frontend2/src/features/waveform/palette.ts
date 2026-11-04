@@ -21,6 +21,10 @@ export interface WavePalette {
   low: string;
   mid: string;
   high: string;
+  /** RGB mode: lows, mids and highs mixed per column by their balance */
+  rgbLow: string;
+  rgbMid: string;
+  rgbHigh: string;
   playhead: string;
   /** music colours (DESIGN2.md "Colour roles"): what is in the track, never good or bad */
   section: Record<SectionKind, string>;
@@ -55,6 +59,9 @@ export function wavePalette(): WavePalette {
     low: v("wave-low"),
     mid: v("wave-mid"),
     high: v("wave-high"),
+    rgbLow: v("wave-rgb-low"),
+    rgbMid: v("wave-rgb-mid"),
+    rgbHigh: v("wave-rgb-high"),
     playhead: v("playhead"),
     section: {
       intro: v("section-intro"),
@@ -115,4 +122,24 @@ export function alpha(color: string, a: number): string {
   if (c.startsWith("rgb(")) return c.replace("rgb(", "rgba(").replace(")", `, ${a})`);
   if (c.startsWith("hsl(")) return c.replace("hsl(", "hsla(").replace(")", `, ${a})`);
   return c;
+}
+
+const rgbCache = new Map<string, Float32Array>();
+
+/** "#rrggbb" / "rgb(r, g, b)" → [r, g, b] in 0-1 (for shader uniforms); black when it can't be read. */
+export function rgbOf(color: string): Float32Array {
+  let out = rgbCache.get(color);
+  if (out) return out;
+  const c = color.trim();
+  out = new Float32Array(3);
+  if (c.startsWith("#")) {
+    const hex = c.length === 4 ? c.slice(1).replace(/./g, (x) => x + x) : c.slice(1, 7);
+    const n = parseInt(hex, 16);
+    if (Number.isFinite(n)) out.set([((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]);
+  } else {
+    const m = c.match(/rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/);
+    if (m) out.set([+m[1] / 255, +m[2] / 255, +m[3] / 255]);
+  }
+  rgbCache.set(color, out);
+  return out;
 }
