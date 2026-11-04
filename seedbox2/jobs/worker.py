@@ -86,6 +86,11 @@ class JobContext:
         except ModelMissing:
             return None
 
+    @property
+    def settings(self) -> Any:
+        """Seedbox 2's settings.json (seedbox2.library.service.Settings)."""
+        return self._settings()
+
     def _settings(self) -> Any:
         from seedbox2 import paths
         from seedbox2.library.service import SETTINGS_FILE, Settings

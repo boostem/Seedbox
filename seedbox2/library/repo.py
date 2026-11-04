@@ -260,7 +260,21 @@ class Library:
             sql, args = sql + " AND kind = ?", [*args, kind]
         return _rows(self.db.read().execute(sql + " ORDER BY kind, created_at", args))
 
+    def delete_artifacts(self, hash_: str, kind: str) -> None:
+        with self.db.write() as c:
+            c.execute("DELETE FROM artifacts WHERE hash = ? AND kind = ?", (hash_, kind))
+
+    def hashes_without_artifact(self, kind: str) -> list[dict]:
+        """`{hash, duration}` of the tracks with no such artifact, oldest first."""
+        return _rows(self.db.read().execute(
+            "SELECT hash, duration FROM tracks t WHERE NOT EXISTS (SELECT 1 FROM artifacts a WHERE a.hash = t.hash AND "
+            "a.kind = ?) ORDER BY added_at, hash", (kind,)))  # fmt: skip
+
     # --- crates and sets -------------------------------------------------------------------------------------------
+
+    def sets_with(self, hash_: str) -> list[int]:
+        """The ids of the sets holding this track."""
+        return [r[0] for r in self.db.read().execute("SELECT DISTINCT set_id FROM set_items WHERE hash = ?", (hash_,))]
 
     def save_crate(self, name: str, hashes: Iterable[str], *, folder: str | None = None, source: str = "local",
                    seed_hash: str | None = None) -> int:

@@ -3,7 +3,7 @@
  * show an error toast, unless `{ quiet: true }` (then the caller handles it).
  */
 import { toast } from "@/store/toasts";
-import type { CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, SetSummary, SystemInfo, WatchFolders } from "./types";
+import type { CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -104,6 +104,14 @@ export const api = {
     cancel: (name: string, opts?: RequestOptions) => post<{ cancelled: boolean }>(`/api/models/${encodeURIComponent(name)}/cancel`, undefined, opts),
     remove: (name: string, opts?: RequestOptions) => request<ModelInfo>("DELETE", `/api/models/${encodeURIComponent(name)}`, undefined, opts),
     settings: (changes: Partial<ModelSettings>, opts?: RequestOptions) => post<ModelsStatus>("/api/models/settings", changes, opts),
+  },
+  stems: {
+    status: (opts?: RequestOptions) => get<StemsStatus>("/api/analysis/stems", opts),
+    settings: (changes: Partial<Omit<StemsStatus, "usage">>, opts?: RequestOptions) => post<StemsStatus>("/api/analysis/stems/settings", changes, opts),
+    /** The "stems ready for this set" indicator; `stems.set` events say when to ask again. */
+    forSet: (setId: number, opts?: RequestOptions) => get<SetStemsStatus>(`/api/sets/${setId}/stems`, opts),
+    /** The set is open: its missing stems go first. */
+    openSet: (setId: number, opts?: RequestOptions) => post<SetStemsStatus>(`/api/sets/${setId}/stems`, undefined, opts),
   },
   library: {
     summary: (opts?: RequestOptions) => get<LibrarySummary>("/api/library", opts),

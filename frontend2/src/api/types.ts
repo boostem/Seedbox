@@ -70,6 +70,26 @@ export interface ModelsStatus {
   settings: ModelSettings;
 }
 
+// ---- Stems: GET /api/analysis/stems, /api/sets/{id}/stems (#44) ----
+
+export interface StemsStatus {
+  limit_gb: number;
+  format: "flac" | "opus";
+  low_power: boolean;
+  usage: { tracks: number; bytes: number };
+}
+
+export interface SetStemsStatus {
+  set_id: number;
+  /** every track of the set has its stems */
+  ready: boolean;
+  ready_tracks: number;
+  total: number;
+  /** 0-1 over the whole set */
+  progress: number;
+  tracks: { hash: string; stems: boolean | "queued" | "running" | "failed"; progress: number | null }[];
+}
+
 // ---- Library: GET /api/library, /api/library/tracks, /api/library/folders, /api/library/import (#38, #40) ----
 
 export interface LibrarySummary {

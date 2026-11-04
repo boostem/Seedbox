@@ -7,6 +7,7 @@
     python -m seedbox2.eval import-rekordbox FILE.xml
     python -m seedbox2.eval mixes [PAIRS.toml] [--json FILE]   (objective mix metrics, #54)
     python -m seedbox2.eval listen [PAIRS.toml] [--techniques A,B]   (renders for the #/listen page, #86)
+    python -m seedbox2.eval stems --musdb DIR --model FILE...  (HTDemucs through ONNX against torch, #44)
 """
 
 from __future__ import annotations
@@ -126,6 +127,12 @@ def cmd_import_rekordbox(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_stems(a: argparse.Namespace) -> int:
+    from . import stems
+
+    return stems.main(a)
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="python -m seedbox2.eval", description=__doc__.splitlines()[0])
     p.add_argument("--data", help="folder of the public datasets (default $SEEDBOX2_EVAL_DATA or the cache folder)")
@@ -161,6 +168,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     rb.set_defaults(fn=cmd_import_rekordbox)
 
     sub.add_parser("listen", help="renders for the #/listen blind test (#86); --help after it", add_help=False)
+    st = sub.add_parser("stems", help="HTDemucs through ONNX against torch on MUSDB18 clips (#44; needs torch, demucs)")
+    st.add_argument("--musdb", required=True, help="a folder of *.stem.mp4")
+    st.add_argument("--model", action="append", required=True, help="an ONNX file; repeat for several")
+    st.add_argument("--clips", type=int, default=30)
+    st.add_argument("--threads", type=int, default=3)
+    st.add_argument("--max-loss", type=float, default=0.1, help="dB of mean SI-SDR below torch's that still passes")
+    st.set_defaults(fn=cmd_stems)
     sub.add_parser("mixes", help="objective mix metrics of rendered transitions (#54); --help after it", add_help=False)
     return p.parse_args(argv)
 

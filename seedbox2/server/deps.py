@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from pathlib import Path
 from typing import Annotated, Any
@@ -11,6 +12,7 @@ from fastapi import Depends, Request
 from seedbox2.jobs import Supervisor
 from seedbox2.library import Library, default_path
 
+log = logging.getLogger(__name__)
 _open_lock = threading.RLock()
 
 
@@ -39,8 +41,27 @@ def start_jobs(app: Any) -> Supervisor:
             if state.jobs is None:
                 if state.library is None:
                     state.library = Library.open(Path(state.library_path) if state.library_path else default_path())
-                state.jobs = Supervisor(state.library, state.events).start()
+                from seedbox2.analysis import stems
+
+                lib, events = state.library, state.events
+                jobs = Supervisor(lib, events)
+                jobs.add_listener(lambda row: stems.on_job_finished(jobs, lib, events, row))
+                state.jobs = jobs.start()
+                threading.Thread(target=_queue_missing_stems, args=(app,), name="seedbox2-stems-queue",
+                                 daemon=True).start()  # fmt: skip
     return state.jobs
+
+
+def _queue_missing_stems(app: Any) -> None:
+    """The stems of tracks imported before the model was there, or left out when the cache was full."""
+    from seedbox2.analysis import stems
+    from seedbox2.library.service import SETTINGS_FILE, Settings
+
+    state = app.state
+    try:
+        stems.queue_missing(state.jobs, state.library, Settings(Path(state.library.db.path).parent / SETTINGS_FILE))
+    except Exception:
+        log.exception("couldn't queue the missing stems")
 
 
 JobsDep = Annotated[Supervisor, Depends(get_jobs)]
@@ -99,8 +120,15 @@ def models(app: Any) -> Any:
         with _open_lock:
             if state.models is None:
                 folder = Path(state.library_path).parent if state.library_path else default_path().parent
+
+                def publish(type_: str, data: Any = None, **kw: Any) -> None:
+                    state.events.publish(type_, data, **kw)
+                    if type_ == "model.done" and isinstance(data, dict) and data.get("name") in ("htdemucs", "htdemucs_int8"):
+                        threading.Thread(target=lambda: (start_jobs(app), _queue_missing_stems(app)),
+                                         name="seedbox2-stems-queue", daemon=True).start()  # fmt: skip
+
                 state.models = ModelManager(state.models_dir, settings=Settings(folder / SETTINGS_FILE),
-                                            publish=state.events.publish)  # fmt: skip
+                                            publish=publish)  # fmt: skip
     return state.models
 
 

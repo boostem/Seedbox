@@ -11,7 +11,8 @@ from pathlib import Path
 
 # model name -> (exporter module, the checkpoint it exports)
 EXPORTERS = {"beat_this": ("seedbox2.models.export.beat_this", "final0"),
-             "beat_this_small": ("seedbox2.models.export.beat_this", "small0")}
+             "beat_this_small": ("seedbox2.models.export.beat_this", "small0"),
+             "htdemucs": ("seedbox2.models.export.htdemucs", "htdemucs")}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -20,7 +21,7 @@ def main(argv: list[str] | None = None) -> int:
     what = p.add_mutually_exclusive_group(required=True)
     what.add_argument("--out", type=Path, help="export the ONNX file here, then check it")
     what.add_argument("--check", type=Path, help="only check this ONNX file against torch")
-    p.add_argument("--tolerance", type=float, default=None, help="max absolute difference (default 1e-3)")
+    p.add_argument("--tolerance", type=float, default=None, help="max absolute difference (default: the model's, else 1e-3)")
     args = p.parse_args(argv)
 
     from seedbox2.models.export import common
@@ -31,8 +32,9 @@ def main(argv: list[str] | None = None) -> int:
     import onnxruntime as ort
 
     name = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"]).get_inputs()[0].name
-    report = common.parity(mod.reference(checkpoint), path, mod.cases(name=name),
-                           common.TOLERANCE if args.tolerance is None else args.tolerance)  # fmt: skip
+    cases = mod.cases(name=name) if "name" in mod.cases.__code__.co_varnames else mod.cases()
+    report = common.parity(mod.reference(checkpoint), path, cases,
+                           getattr(mod, "TOLERANCE", common.TOLERANCE) if args.tolerance is None else args.tolerance)  # fmt: skip
     out = {"model": args.model, **common.registry_entry(path), "parity": report.cases, "max_error": report.max_error,
            "tolerance": report.tolerance, "ok": report.ok}
     print(json.dumps(out, indent=1))

@@ -123,6 +123,7 @@ class Supervisor:
         self._thread: threading.Thread | None = None
         self._stopping = False
         self.waiting_for_ram = False
+        self._listeners: list[Callable[[dict], None]] = []
 
     # --- lifecycle -------------------------------------------------------------------------------------------------
 
@@ -167,6 +168,11 @@ class Supervisor:
             thread.join(timeout)
 
     # --- the public API --------------------------------------------------------------------------------------------
+
+    def add_listener(self, fn: Callable[[dict], None]) -> None:
+        """Call `fn(row)` on the dispatcher thread after each job ends (done, failed or cancelled): keep it short.
+        What a job leads to (stems -> their waveform rows) goes here, since a worker can't reach the queue."""
+        self._listeners.append(fn)
 
     def submit(self, kind: str, payload: dict | None = None, *, priority: int | str = "library",
                front: bool = False) -> dict:  # fmt: skip
@@ -426,8 +432,9 @@ class Supervisor:
             if now - job.persisted_at >= PROGRESS_PERSIST_S:
                 job.persisted_at = now
                 self.library.update_job(job.id, progress=job.progress)
-            self._publish("job.progress", {"id": job.id, "kind": job.kind, "progress": job.progress,
-                                           "message": msg[3]}, key=f"job.progress:{job.id}")  # fmt: skip
+            self._publish("job.progress", {"id": job.id, "kind": job.kind, "hash": job.payload.get("hash"),
+                                           "progress": job.progress, "message": msg[3]},
+                          key=f"job.progress:{job.id}")  # fmt: skip
             return
         if kind == "done":
             result = json.loads(msg[2]) if msg[2] is not None else None
@@ -448,6 +455,11 @@ class Supervisor:
             row = self.library.update_job(job.id, state=state, **fields)
             self._changed.notify_all()
         self._publish(f"job.{state}", row, terminal=True)
+        for fn in self._listeners:
+            try:
+                fn(row)
+            except Exception:
+                log.exception("job listener failed on %s", job.id)
 
     def _worker_died(self, w: _Worker, reason: str) -> None:
         w.dead = True

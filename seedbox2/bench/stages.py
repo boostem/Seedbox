@@ -2,13 +2,12 @@
 
 Until Seedbox 2's own code lands they run Seedbox 1's (`IMPL` says which): analysis is musicreco.structure until
 #43 (beats), #45 (key) and #49 (waveforms), planning and rendering are musicreco.mixplan / mixrender until #51 and
-the v2 mix engine. Stems have no Seedbox 1 counterpart: the stage is skipped until #44 adds
-`seedbox2.analysis.stems.separate(path, out_dir)`. Point the wrappers below at the new code as each ticket lands.
+the v2 mix engine. Stems run Seedbox 2's own code (#44) and are skipped until the model is downloaded. Point the
+wrappers below at the new code as each ticket lands.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 
@@ -19,7 +18,7 @@ from musicreco.paths import ffmpeg_path
 
 IMPL = {
     "analysis": "musicreco.structure.analyze (Seedbox 1, until #43/#45/#49)",
-    "stems": "seedbox2.analysis.stems.separate (#44)",
+    "stems": "seedbox2.analysis.stems.separate, htdemucs (#44)",
     "plan": "musicreco.mixplan.generate, 32 bars (Seedbox 1, until #51)",
     "render": "musicreco.mixrender.render_audio (Seedbox 1, until the v2 engine)",
 }
@@ -29,13 +28,12 @@ ORDER = ("analysis", "stems", "plan", "render")
 def missing(stage: str) -> str | None:
     """Why `stage` can't run here, or None."""
     if stage == "stems":
-        try:
-            found = importlib.util.find_spec("seedbox2.analysis.stems") is not None
-        except ModuleNotFoundError:
-            found = False
-        if not found:
-            return "not implemented yet (#44)"
-    if stage in ("analysis", "render"):
+        from seedbox2.models import store
+        from seedbox2.models.registry import MODELS
+
+        if not store.installed(MODELS["htdemucs"], store.models_dir()):
+            return "needs the htdemucs model (python -m seedbox2 downloads it; Settings -> Models)"
+    if stage in ("analysis", "stems", "render"):
         if ffmpeg_path() is None:
             return "needs ffmpeg"
     return None
@@ -48,7 +46,7 @@ def analysis(path: str, out_json: str) -> dict:
 
 
 def stems(path: str, out_dir: str) -> dict:
-    from seedbox2.analysis import stems as impl  # #44
+    from seedbox2.analysis import stems as impl
 
     impl.separate(Path(path), Path(out_dir))
     return {}

@@ -14,9 +14,9 @@ The numbers that count come from the two reference laptops, on battery; please r
 
 Until the Seedbox 2 versions land, the stages run Seedbox 1's code (`seedbox2/bench/stages.py` says which, and the
 results record it per stage): analysis is `musicreco.structure` (until #43, #45, #49), planning and rendering are
-`musicreco.mixplan` and `mixrender` (until #51 and the v2 engine). Stems are skipped until #44 adds
-`seedbox2.analysis.stems.separate(path, out_dir)`. When one of those tickets lands, point its wrapper in `stages.py`
-at the new code.
+`musicreco.mixplan` and `mixrender` (until #51 and the v2 engine). Stems are `seedbox2.analysis.stems.separate`
+(#44), and skipped until the `htdemucs` model is downloaded (start Seedbox 2 once, or Settings → Models). When one of
+those tickets lands, point its wrapper in `stages.py` at the new code.
 
 The corpus is 10 tracks by Kevin MacLeod ([incompetech.com](https://incompetech.com), CC BY 4.0), 2:40 to 4:28
 long, downloaded once (about 70 MB) into `bench/corpus` in Seedbox 2's cache folder (`$SEEDBOX_BENCH_DIR/corpus` if

@@ -4,6 +4,8 @@
   gzipped (`Content-Encoding: gzip`, as stored) to clients that accept it. The ETag is the track's content hash, the
   format version and its stem count, so an unchanged waveform is a 304. Not computed yet: 202 with the queued job
   (at the front of the light queue); the `job.done` event says when to fetch again.
+- `GET /tracks/{hash}/stems/{stem}` (#44): one stem's file (FLAC or Opus, with Range requests), which also counts as
+  using the track's stems for the cache's eviction. 404 until they are separated.
 - `GET /tracks/{hash}/artwork` (#73): the cover saved from the file's tags at import, for the library table.
 """
 
@@ -16,7 +18,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
 
-from seedbox2.analysis import waveform
+from seedbox2.analysis import stems, waveform
 from seedbox2.server.deps import LibraryDep, get_jobs
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
@@ -43,6 +45,20 @@ def track_waveform(hash_: str, request: Request, lib: LibraryDep) -> Response:
     if "gzip" in request.headers.get("accept-encoding", ""):
         return Response(data, media_type="application/octet-stream", headers={**headers, "Content-Encoding": "gzip"})
     return Response(gzip.decompress(data), media_type="application/octet-stream", headers=headers)
+
+
+_STEM_TYPES = {".flac": "audio/flac", ".opus": "audio/ogg"}
+
+
+@router.get("/{hash_}/stems/{stem}", response_class=Response, responses={200: {"content": {"audio/*": {}}}, 404: {}})
+def track_stem(hash_: str, stem: str, lib: LibraryDep) -> Response:
+    folder = stems.current(lib, hash_)
+    files = waveform.stem_files(folder) if folder is not None else None
+    if not files or stem not in files:
+        raise HTTPException(404, "no such stem yet")
+    stems.touch(folder)  # type: ignore[arg-type]
+    return FileResponse(files[stem], media_type=_STEM_TYPES.get(files[stem].suffix, "application/octet-stream"),
+                        headers={"Cache-Control": "no-cache"})  # fmt: skip
 
 
 _IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
