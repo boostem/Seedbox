@@ -31,7 +31,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_bridge.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py tests/test_seedbox2_longset.py tests/test_seedbox2_now_playing.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_bridge.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py tests/test_seedbox2_longset.py tests/test_seedbox2_now_playing.py tests/test_seedbox2_assistant.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -443,6 +443,33 @@ yet.
 - **API:** `POST /api/sets/build` (`sources`, `max_tracks`, `keep_order`, and the order settings), `/build/explain`,
   `/build/bridge` and `/bridges`. Nothing is saved until the result goes to `POST /api/sets`.
 
+**"Why this transition?"** (`explain.why`): the *Why?* link under each transition says it in sentences, from the numbers the
+solver used and the pair's saved mix plan (`service.add_mix_plans`), if it has one. No model writes these, so they work with
+the assistant off and can't invent anything.
+
+**The set assistant** (#63, `seedbox2/assistant/`, optional, off by default): "a 90-minute sunset deep-house set, start
+mellow, peak at 60 minutes, end on something vocal" becomes a draft on `#/sets`. Everything else in the app works without it
+and without a network, and the `anthropic` package isn't imported until a run or a dry run.
+
+- **Settings** (Settings → Set assistant, `config.py`): on or off, the model (`claude-sonnet-5-5` by default) and the API key,
+  which goes in the OS keychain through `keyring` and nowhere else. With no keychain there's no key: it's never written to a
+  file. `settings.json` only notes that a key was stored, so opening Settings doesn't make the keychain ask for a password.
+- **Tools** (`tools.py`): `search_library` (tempo, key, energy, vocals, genre, and a vibe text ranked here by CLAP),
+  `choose_tracks`, `set_energy_arc`, `set_tempo_journey`, `lock_track`, `run_solver` (the order and #60's explanation, for
+  the model to read and improve on) and `finish`. A bad call goes back to the model as a tool error. A run is limited to 15
+  requests and 100 tracks, one runs at a time, and Stop takes effect before the next request.
+- **The result** is a draft that saves nothing. With other tracks than the open set's it's kept as a new set (`POST /sets`,
+  then `PUT /sets/{id}/order`), with the open set's own tracks it's a proposed order; either way it's then a set like any
+  other. The model's reasoning stays with it as `note` in `sets.order_settings`, shown beside the order until dismissed.
+- **What is sent** (the privacy note, and `Session.public_track` holds it true): what you type; titles, artists, genre tags;
+  length, tempo, key, energy, the share that's sung, and a vibe similarity. Only tracks in the crates or set you ticked (none
+  ticked: the whole library). Tracks go under ids local to the run (`t1`), so no content hashes; no audio, embeddings, file
+  paths, albums or crate and set names. The SDK's headers about the computer (OS, architecture, Python) are taken out.
+  "See what would be sent" (`POST /api/assistant/dry-run`) runs the real client up to the socket and shows the exact URL,
+  headers (but the key) and body, without a key or a network.
+- **Not measured:** the tests use a mocked client (`tests/test_seedbox2_assistant.py`, also the real SDK over a fake
+  transport). No run has yet met the real API with a real library, so the system prompt and the tool descriptions are untuned.
+
 **The renderer** (#69, `seedbox2/mix/render.py`, on `stream.py`): plays a stored plan of either version, holding only
 what it plays. A deck decodes the parts of its file the window and its trim need, sample-accurate against a decode of
 the whole file: MP3, FLAC, WAV and AIFF seek; M4A, Ogg, Opus and WebM don't land exactly when ffmpeg seeks, so they decode
@@ -637,7 +664,7 @@ export SEEDBOX2_GOLDEN_AUDIO=/mnt/media/MUSIC:$HOME/golden-free       # folders 
 | Models | `seedbox2/models/` | onnxruntime only (no torch in the app). Weights are downloaded on first run, checksummed and listed with their licences (#42) |
 | Analysis | `seedbox2/analysis/` | beat_this beats and downbeats with a piecewise grid; HTDemucs stems; our own key detection; sections and phrases from the stems; vocal activity; energy; CLAP embeddings; 150 points/s binary waveforms (#43–#49), measured by #50 |
 | Mix engine | `seedbox2/mix/` | One plan schema with per-stem lanes and piecewise grids (#51). The offline renderer and the live engine execute the same plan. Stem-aware transitions, learnt cue points, audio-shaped automation, styles as data, master chain (#52–#59) |
-| Set planning | `seedbox2/sets/` | Ordering on our own analysis with energy arcs and lookahead; multi-crate sets; an optional Claude-powered assistant (#60–#64) |
+| Set planning | `seedbox2/sets/`, `seedbox2/assistant/` | Ordering on our own analysis with energy arcs and lookahead; multi-crate sets; an optional Claude-powered assistant (#60–#64) |
 | UI | `frontend2/` | React 19 + Vite + Tailwind 4 + zustand (forked from `frontend/`). Design language v2 (#71). Performance rules in `frontend2/PERFORMANCE.md`: no React render per frame, narrow selectors, virtualised lists, waveform data in a worker (#84). WebGL2 waveforms (#74). A WebAudio AudioWorklet engine that plays plans live (#65–#67) |
 | Evaluation | `seedbox2/eval/` | `python -m seedbox2.eval analysis/mixes/golden` and the `#/listen` blind A/B page (#50, #54, #86, #87) |
 | Benchmarks | `seedbox2/bench/` | `python -m seedbox2.bench` checks the budgets below, nightly in CI and on real laptops ([how](bench/README.md)) (#68) |

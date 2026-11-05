@@ -2,9 +2,10 @@ import { ListMusic, ListOrdered, Pencil, RotateCcw, Sparkles, X } from "lucide-r
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { onServerEvent } from "@/api/events";
-import type { ArcTemplate, SetOrderResult, SetOrderSettings, SetOrderTrack, SetSummary, SetTimelineData } from "@/api/types";
+import type { ArcTemplate, AssistantDraft, SetOrderResult, SetOrderSettings, SetOrderTrack, SetSummary, SetTimelineData } from "@/api/types";
 import { player } from "@/audio/player";
 import { Button, EmptyState, Field, IconButton, Input, Page, PageBody, PageHeader, Panel, PanelHeader, Select, Skeleton, Tabs } from "@/components/ui";
+import { AssistantBox } from "@/features/assistant/AssistantBox";
 import { TransitionEditor } from "@/features/mix/TransitionEditor";
 import { ARC_GRID, arcPoints, toGrid, toPoints } from "@/features/sets/arc";
 import { BridgePanel } from "@/features/sets/BridgePanel";
@@ -24,6 +25,11 @@ function missingNote(u: SetOrderResult["unknown"], total: number): string | null
   ].filter(Boolean);
   return total && parts.length ? `Not analysed yet: ${parts.join(", ")}. The order ignores what it doesn't know.` : null;
 }
+
+const sameTracks = (a: { hash: string }[], b: { hash: string }[]): boolean => {
+  const names = (l: { hash: string }[]) => l.map((t) => t.hash).sort().join();
+  return names(a) === names(b);
+};
 
 const number = (s: string): number | null => (s.trim() === "" || !Number.isFinite(Number(s)) ? null : Number(s));
 
@@ -91,12 +97,22 @@ export function SetsPage() {
   const [tempoStart, setTempoStart] = useState("");
   const [tempoEnd, setTempoEnd] = useState("");
   const [pins, setPins] = useState<SetOrderSettings["pins"]>([]);
+  const [note, setNote] = useState<string | null>(null);
+  const [draft, setDraft] = useState<AssistantDraft | null>(null);
   const [busy, setBusy] = useState<"order" | "apply" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [bridgeAt, setBridgeAt] = useState<number | null>(null);
   const [drawing, setDrawing] = useState(false);
   const [editing, setEditing] = useState<{ position: number; from: string; to: string } | null>(null);
   const reorders = useRef(0);
+
+  const fillFrom = useCallback((s: SetOrderSettings) => {
+    setArc(s.arc);
+    setTempoStart(s.tempo_start === null ? "" : String(s.tempo_start));
+    setTempoEnd(s.tempo_end === null ? "" : String(s.tempo_end));
+    setPins(s.pins);
+    setNote(s.note ?? null);
+  }, []);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -119,31 +135,37 @@ export function SetsPage() {
     setSaved(null);
     setProposal(null);
     setBridgeAt(null);
+    setDraft(null);
     setError(null);
     setEditing(null);
     setDrawing(false);
     api.sets.order(setId, { quiet: true, signal: ctrl.signal }).then(
       (r) => {
         setSaved(r);
-        setArc(r.settings.arc);
-        setTempoStart(r.settings.tempo_start === null ? "" : String(r.settings.tempo_start));
-        setTempoEnd(r.settings.tempo_end === null ? "" : String(r.settings.tempo_end));
-        setPins(r.settings.pins);
+        fillFrom(r.settings);
       },
       (e) => {
         if (!ctrl.signal.aborted) setError((e as Error).message);
       },
     );
     return () => ctrl.abort();
-  }, [setId]);
+  }, [setId, fillFrom]);
 
   const settings = useCallback((): SetOrderSettings => {
     const start = number(tempoStart);
     const end = number(tempoEnd);
-    return { arc, pins, tempo_start: start !== null && end !== null ? start : null, tempo_end: start !== null && end !== null ? end : null };
-  }, [arc, pins, tempoStart, tempoEnd]);
+    return { arc, pins, tempo_start: start !== null && end !== null ? start : null, tempo_end: start !== null && end !== null ? end : null, ...(note ? { note } : {}) };
+  }, [arc, pins, tempoStart, tempoEnd, note]);
 
   const shown = proposal ?? saved;
+  /** A draft with other tracks than the open set's: it can only become a set of its own. */
+  const newSet = draft !== null && (saved === null || !sameTracks(draft.result.order, saved.order));
+
+  const takeDraft = (d: AssistantDraft) => {
+    setDraft(d);
+    setProposal(d.result);
+    fillFrom(d.result.settings);
+  };
   const pinned = useMemo(() => new Set(pins.map((p) => p.position)), [pins]);
   const hashes = useMemo(() => shown?.order.map((t) => t.hash) ?? [], [shown]);
   const { data: timeline, refresh: refreshTimeline, retry: planAgain } = useTimelineData(setId, hashes);
@@ -223,12 +245,31 @@ export function SetsPage() {
     }
   };
 
+  const keepAsNewSet = async () => {
+    if (!draft) return;
+    setBusy("apply");
+    try {
+      const created = await api.sets.create(draft.name, draft.result.order.map((t) => t.hash));
+      await api.sets.applyOrder(created.id, draft.result.order.map((t) => t.hash), settings());
+      setSets((list) => [...(list ?? []), created]);
+      setSetId(created.id); // loads it like any other set
+      toast.success(`Saved “${draft.name}”`);
+    } catch {
+      // the client has shown it
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const apply = async () => {
-    if (setId === null || !proposal) return;
+    if (!proposal) return;
+    if (newSet) return keepAsNewSet();
+    if (setId === null) return;
     setBusy("apply");
     try {
       setSaved(await api.sets.applyOrder(setId, proposal.order.map((t) => t.hash), settings()));
       setProposal(null);
+      setDraft(null);
       toast.success("Saved the new order");
     } catch {
       // the client has shown it
@@ -247,14 +288,28 @@ export function SetsPage() {
   const discard = () => {
     setEditing(null);
     setProposal(null);
+    if (draft) {
+      setDraft(null);
+      if (saved) fillFrom(saved.settings);
+      else setNote(null);
+      return;
+    }
     setPins(saved?.settings.pins ?? []);
   };
 
-  if (sets && sets.length === 0) {
+  const dismissNote = () => {
+    setNote(null);
+    if (proposal || setId === null || !saved) return; // goes with the order when it's kept
+    const { note: _gone, ...rest } = saved.settings;
+    void api.sets.applyOrder(setId, saved.order.map((t) => t.hash), rest).then(setSaved, () => {});
+  };
+
+  if (sets && sets.length === 0 && !draft) {
     return (
       <Page>
         <PageHeader title="Sets" />
-        <PageBody>
+        <PageBody className="flex flex-col gap-3">
+          <AssistantBox onDraft={takeDraft} className="max-w-4xl" />
           <EmptyState
             icon={ListMusic}
             title="No sets yet"
@@ -270,7 +325,7 @@ export function SetsPage() {
     );
   }
 
-  const note = shown && missingNote(shown.unknown, shown.order.length);
+  const missing = shown && missingNote(shown.unknown, shown.order.length);
   const points = arcPoints(arc, arcs);
   const arcTab = Array.isArray(arc) ? CUSTOM : (arc ?? "peak_time");
   const arcItems = [...arcs.map((t) => ({ id: t.name, label: t.label, title: t.description })), { id: CUSTOM, label: "Custom", title: "Draw on the timeline" }];
@@ -291,7 +346,7 @@ export function SetsPage() {
         title="Sets"
         subtitle={shown ? `${shown.order.length} tracks` : undefined}
         actions={
-          sets && (
+          sets && sets.length > 0 && (
             <Select aria-label="Set" value={setId ?? ""} onChange={(e) => setSetId(Number(e.target.value))}>
               {sets.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -311,7 +366,9 @@ export function SetsPage() {
             <Skeleton className="h-64" />
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-3">
+          <div className="flex w-full min-w-0 flex-1 flex-col gap-3">
+            <AssistantBox set={setId !== null ? { id: setId, name: sets?.find((s) => s.id === setId)?.name ?? "" } : null} onDraft={takeDraft} />
             <Panel>
               <PanelHeader
                 title="Timeline"
@@ -355,13 +412,15 @@ export function SetsPage() {
                   {proposal ? (
                     <>
                       <Button icon={RotateCcw} onClick={discard}>
-                        Keep the saved order
+                        {newSet ? "Discard this draft" : "Keep the saved order"}
                       </Button>
-                      <Button icon={ListOrdered} onClick={order} loading={busy === "order"}>
-                        Order again
-                      </Button>
+                      {!newSet && (
+                        <Button icon={ListOrdered} onClick={order} loading={busy === "order"}>
+                          Order again
+                        </Button>
+                      )}
                       <Button variant="primary" onClick={apply} loading={busy === "apply"}>
-                        Use this order
+                        {newSet ? "Keep as a new set" : "Use this order"}
                       </Button>
                     </>
                   ) : (
@@ -383,10 +442,10 @@ export function SetsPage() {
             )}
             <Panel>
               <PanelHeader
-                title={proposal ? "Proposed order" : "Running order"}
-                description={proposal ? (saving > 0.0005 ? `Smoother than the saved order: cost ${proposal.cost_before.toFixed(1)} → ${proposal.cost.toFixed(1)}` : "The saved order is already the best one found") : note ?? undefined}
+                title={newSet ? `Draft: ${draft?.name}` : proposal ? "Proposed order" : "Running order"}
+                description={newSet ? `${shown.order.length} tracks chosen by the assistant. Keep it to edit it like any other set.` : proposal ? (saving > 0.0005 ? `Smoother than the saved order: cost ${proposal.cost_before.toFixed(1)} → ${proposal.cost.toFixed(1)}` : "The saved order is already the best one found") : missing ?? undefined}
               />
-              {proposal && note && <p className="border-b border-line/60 px-4 py-1.5 text-xs text-fg-subtle">{note}</p>}
+              {proposal && missing && <p className="border-b border-line/60 px-4 py-1.5 text-xs text-fg-subtle">{missing}</p>}
               {shown.order.length ? (
                 <OrderList
                   result={shown}
@@ -401,6 +460,16 @@ export function SetsPage() {
                 <EmptyState icon={ListMusic} title="This set is empty" description="Add tracks to it from the library." />
               )}
             </Panel>
+          </div>
+          {note && (
+            <aside aria-label="The assistant's reasoning" className="w-64 shrink-0 rounded-md border border-line bg-panel p-3">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <h2 className="text-xs font-medium text-fg">The assistant's reasoning</h2>
+                <IconButton size="sm" icon={X} label="Dismiss the assistant's reasoning" onClick={dismissNote} />
+              </div>
+              <p className="whitespace-pre-wrap text-xs leading-relaxed text-fg-muted">{note}</p>
+            </aside>
+          )}
           </div>
         )}
       </PageBody>

@@ -4,9 +4,11 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SetOrderResult, SetTimelineData } from "@/api/types";
 
-const sets = vi.hoisted(() => ({ list: vi.fn(), arcs: vi.fn(), order: vi.fn(), solveOrder: vi.fn(), applyOrder: vi.fn(), timeline: vi.fn(), bridge: vi.fn(), bridgeOnline: vi.fn(), insertBridge: vi.fn() }));
+const sets = vi.hoisted(() => ({ list: vi.fn(), arcs: vi.fn(), order: vi.fn(), solveOrder: vi.fn(), applyOrder: vi.fn(), timeline: vi.fn(), bridge: vi.fn(), bridgeOnline: vi.fn(), insertBridge: vi.fn(), create: vi.fn() }));
+const assistant = vi.hoisted(() => ({ status: vi.fn(), run: vi.fn(), cancel: vi.fn(), dryRun: vi.fn() }));
+const library = vi.hoisted(() => ({ crates: vi.fn() }));
 const navigate = vi.hoisted(() => vi.fn());
-vi.mock("@/api/client", () => ({ api: { sets, tunebat: { download: vi.fn() }, mixes: { livePlan: vi.fn() } }, apiUrl: (p: string) => p, openEventStream: vi.fn() }));
+vi.mock("@/api/client", () => ({ api: { sets, assistant, library, tunebat: { download: vi.fn() }, mixes: { livePlan: vi.fn() } }, apiUrl: (p: string) => p, openEventStream: vi.fn() }));
 vi.mock("@/features/mix/TransitionEditor", () => ({ TransitionEditor: ({ from, to }: { from: string; to: string }) => <div>Editor {from} to {to}</div> }));
 vi.mock("@/features/waveform/waveData", () => ({ loadWave: () => new Promise(() => {}) }));
 vi.mock("@/lib/router", () => ({ navigate }));
@@ -60,6 +62,18 @@ beforeEach(() => {
   sets.list.mockResolvedValue([{ id: 1, name: "Friday", track_count: 3 }]);
   sets.arcs.mockResolvedValue(ARCS);
   sets.order.mockResolvedValue(result(["a", "b", "c"]));
+  assistant.status.mockResolvedValue({ enabled: false, model: "claude-sonnet-5-5", models: [], has_key: false, keychain: true });
+  library.crates.mockResolvedValue([{ id: 7, name: "Deep", folder: null, source: "local", track_count: 4, updated_at: "" }]);
+});
+
+const ON = { enabled: true, model: "claude-sonnet-5-5", models: [], has_key: true, keychain: true };
+const draft = (hashes: string[], over: Partial<SetOrderResult> = {}) => ({
+  name: "Sunset",
+  reasoning: "Mellow first, peak at two thirds.",
+  result: result(hashes, { settings: { arc: "sunset", tempo_start: 120, tempo_end: 124, pins: [{ position: 1, hash: hashes[1] }], note: "Mellow first, peak at two thirds." }, ...over }),
+  steps: ["Ordering the set"],
+  model: "claude-sonnet-5-5",
+  usage: { input_tokens: 10, output_tokens: 5 },
 });
 afterEach(cleanup);
 
@@ -244,5 +258,107 @@ describe("SetsPage", () => {
     sets.order.mockResolvedValue(r);
     render(<SetsPage />);
     expect(await screen.findByLabelText("Check this one")).toBeTruthy();
+  });
+
+  it("shows no assistant while it's off", async () => {
+    render(<SetsPage />);
+    await screen.findByText("Song a");
+    expect(screen.queryByLabelText("Describe the set")).toBeNull();
+    expect(screen.queryByText("Set assistant")).toBeNull();
+  });
+
+  it("sends you to Settings when it's on without a key", async () => {
+    assistant.status.mockResolvedValue({ ...ON, has_key: false });
+    render(<SetsPage />);
+    await userEvent.click(await screen.findByRole("button", { name: "Open Settings" }));
+    expect(navigate).toHaveBeenCalledWith({ name: "settings" });
+  });
+
+  it("makes a draft with new tracks into a set of its own, with its reasoning, and only when asked", async () => {
+    assistant.status.mockResolvedValue(ON);
+    assistant.run.mockResolvedValue(draft(["x", "y", "z"]));
+    sets.create.mockResolvedValue({ id: 2, name: "Sunset", track_count: 3 });
+    sets.applyOrder.mockResolvedValue(result(["x", "y", "z"]));
+    render(<SetsPage />);
+    await userEvent.type(await screen.findByLabelText("Describe the set"), "a sunset set");
+    await userEvent.click(screen.getByRole("button", { name: "Build a draft" }));
+    expect(await screen.findByText("Draft: Sunset")).toBeTruthy();
+    expect(assistant.run).toHaveBeenCalledWith({ prompt: "a sunset set", set_id: undefined, crate_ids: [] }, { quiet: true });
+    expect(screen.getByRole("complementary", { name: "The assistant's reasoning" }).textContent).toContain("Mellow first");
+    expect(sets.create).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Order again" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Keep as a new set" }));
+    await waitFor(() => expect(sets.create).toHaveBeenCalledWith("Sunset", ["x", "y", "z"]));
+    await waitFor(() =>
+      expect(sets.applyOrder).toHaveBeenCalledWith(2, ["x", "y", "z"], { arc: "sunset", tempo_start: 120, tempo_end: 124, pins: [{ position: 1, hash: "y" }], note: "Mellow first, peak at two thirds." }),
+    );
+  });
+
+  it("offers a draft of the open set's own tracks as a new order", async () => {
+    assistant.status.mockResolvedValue(ON);
+    assistant.run.mockResolvedValue(draft(["c", "a", "b"]));
+    render(<SetsPage />);
+    await userEvent.type(await screen.findByLabelText("Describe the set"), "reorder it");
+    await userEvent.click(screen.getByText("This set (Friday)"));
+    await userEvent.click(screen.getByText("Deep"));
+    await userEvent.click(screen.getByRole("button", { name: "Build a draft" }));
+    expect(await screen.findByText("Proposed order")).toBeTruthy();
+    expect(assistant.run).toHaveBeenCalledWith({ prompt: "reorder it", set_id: 1, crate_ids: [7] }, { quiet: true });
+    expect(screen.getByRole("button", { name: "Use this order" })).toBeTruthy();
+  });
+
+  it("goes back to the set as it was when a draft is discarded", async () => {
+    assistant.status.mockResolvedValue(ON);
+    assistant.run.mockResolvedValue(draft(["x", "y"]));
+    render(<SetsPage />);
+    await userEvent.type(await screen.findByLabelText("Describe the set"), "a set");
+    await userEvent.click(screen.getByRole("button", { name: "Build a draft" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Discard this draft" }));
+    expect(await screen.findByText("Running order")).toBeTruthy();
+    expect(screen.queryByRole("complementary", { name: "The assistant's reasoning" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "Peak time" })).toBeTruthy();
+    expect(((screen.getByLabelText("Tempo from")) as HTMLInputElement).value).toBe("");
+  });
+
+  it("says why there's no draft, in place", async () => {
+    assistant.status.mockResolvedValue(ON);
+    assistant.run.mockRejectedValue(new Error("Anthropic rejected the API key: check it in Settings"));
+    render(<SetsPage />);
+    await userEvent.type(await screen.findByLabelText("Describe the set"), "a set");
+    await userEvent.click(screen.getByRole("button", { name: "Build a draft" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("rejected");
+  });
+
+  it("offers the assistant when there's no set yet", async () => {
+    assistant.status.mockResolvedValue(ON);
+    sets.list.mockResolvedValue([]);
+    assistant.run.mockResolvedValue(draft(["x", "y"]));
+    render(<SetsPage />);
+    await userEvent.type(await screen.findByLabelText("Describe the set"), "a set");
+    await userEvent.click(screen.getByRole("button", { name: "Build a draft" }));
+    expect(await screen.findByText("Draft: Sunset")).toBeTruthy();
+  });
+
+  it("keeps a saved set's reasoning until it's dismissed", async () => {
+    sets.order.mockResolvedValue(result(["a", "b"], { settings: { arc: null, tempo_start: null, tempo_end: null, pins: [], note: "Because." } }));
+    sets.applyOrder.mockResolvedValue(result(["a", "b"]));
+    render(<SetsPage />);
+    expect((await screen.findByRole("complementary", { name: "The assistant's reasoning" })).textContent).toContain("Because.");
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss the assistant's reasoning" }));
+    expect(screen.queryByRole("complementary", { name: "The assistant's reasoning" })).toBeNull();
+    await waitFor(() => expect(sets.applyOrder).toHaveBeenCalledWith(1, ["a", "b"], { arc: null, tempo_start: null, tempo_end: null, pins: [] }));
+  });
+
+  it("explains a transition in plain words when asked", async () => {
+    const r = result(["a", "b"]);
+    r.transitions[0].why = ["8A into 9A is next door on the Camelot wheel, so the two harmonise."];
+    sets.order.mockResolvedValue(r);
+    render(<SetsPage />);
+    expect(await screen.findByText("Song a")).toBeTruthy();
+    expect(screen.queryByText(/next door/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Why does Song b follow Song a?" }));
+    expect(screen.getByText(/next door/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Why does Song b follow Song a?" }));
+    expect(screen.queryByText(/next door/)).toBeNull();
   });
 });

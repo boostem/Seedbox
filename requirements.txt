@@ -14,5 +14,8 @@ pedalboard
 python-stretch
 psutil
 watchdog
+anthropic>=2.6,<3
+httpx2
+keyring
 onnxruntime; sys_platform != "win32" or platform_machine != "AMD64"
 onnxruntime-directml; sys_platform == "win32" and platform_machine == "AMD64"

@@ -4,7 +4,7 @@
  */
 import { toast } from "@/store/toasts";
 import type { MixPlan } from "./mixplan.generated";
-import type { ArcTemplate, CrateLink, LongSetResult, SetSourceRef, LibraryBridges, OnlineBridges, MasterStatus, MasterTarget, SetSession, SetOrderResult, SetOrderSettings, SetTimelineData, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
+import type { ArcTemplate, AssistantDraft, AssistantDryRun, AssistantScope, AssistantStatus, CrateLink, LongSetResult, SetSourceRef, LibraryBridges, OnlineBridges, MasterStatus, MasterTarget, SetSession, SetOrderResult, SetOrderSettings, SetTimelineData, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -191,6 +191,17 @@ export const api = {
     crateHashes: (id: number, opts?: RequestOptions) => get<{ hashes: string[] }>(`/api/library/crates/${id}/hashes`, opts),
     smartCrates: (opts?: RequestOptions) => get<{ crates: SmartCrateJson[] }>("/api/library/smart-crates", opts),
     saveSmartCrates: (crates: SmartCrateJson[], opts?: RequestOptions) => put<{ crates: SmartCrateJson[] }>("/api/library/smart-crates", { crates }, opts),
+  },
+  assistant: {
+    status: (opts?: RequestOptions) => get<AssistantStatus>("/api/assistant", opts),
+    update: (change: { enabled?: boolean; model?: string }, opts?: RequestOptions) => post<AssistantStatus>("/api/assistant/settings", change, opts),
+    setKey: (key: string, opts?: RequestOptions) => put<AssistantStatus>("/api/assistant/key", { key }, opts),
+    deleteKey: (opts?: RequestOptions) => request<AssistantStatus>("DELETE", "/api/assistant/key", undefined, opts),
+    /** A draft set from a sentence. Saves nothing. */
+    run: (body: { prompt: string } & AssistantScope, opts?: RequestOptions) => post<AssistantDraft>("/api/assistant/run", body, opts),
+    cancel: (opts?: RequestOptions) => post<{ stopping: boolean }>("/api/assistant/cancel", undefined, opts),
+    /** What a run would send first. Sends nothing. */
+    dryRun: (body: { prompt: string } & AssistantScope, opts?: RequestOptions) => post<AssistantDryRun>("/api/assistant/dry-run", body, opts),
   },
   sets: {
     list: (opts?: RequestOptions) => get<SetSummary[]>("/api/sets", opts),

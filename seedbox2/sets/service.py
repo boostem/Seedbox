@@ -10,7 +10,7 @@ import numpy as np
 
 from seedbox2.sets.arcs import Arc, arc_from
 from seedbox2.sets.cost import Problem, TempoJourney, Weights
-from seedbox2.sets.explain import rating, transitions
+from seedbox2.sets.explain import plan_words, rating, transitions
 from seedbox2.sets.features import TrackFeatures, load_features
 from seedbox2.sets.solver import SolverError, check_locks, solve
 
@@ -24,6 +24,7 @@ class OrderRequest:
     tempo_end: float | None = None
     pins: list[dict] = field(default_factory=list)  # [{position, hash}]
     weights: Weights | None = None
+    note: str | None = None  # the assistant's reasoning, kept with the set it made (#63)
 
     def journey(self) -> TempoJourney | None:
         if self.tempo_start is None and self.tempo_end is None:
@@ -34,14 +35,15 @@ class OrderRequest:
 
     def settings(self) -> dict:
         """What's kept with the set, so it opens as it was left."""
-        return {"version": SETTINGS_VERSION, "arc": self.arc, "tempo_start": self.tempo_start, "tempo_end": self.tempo_end,
-                "pins": self.pins}  # fmt: skip
+        out = {"version": SETTINGS_VERSION, "arc": self.arc, "tempo_start": self.tempo_start, "tempo_end": self.tempo_end,
+               "pins": self.pins}  # fmt: skip
+        return {**out, "note": self.note} if self.note else out
 
 
 def request_from_settings(settings: dict | None) -> OrderRequest:
     s = settings if isinstance(settings, dict) else {}
     return OrderRequest(arc=s.get("arc"), tempo_start=s.get("tempo_start"), tempo_end=s.get("tempo_end"),
-                        pins=list(s.get("pins") or []))  # fmt: skip
+                        pins=list(s.get("pins") or []), note=s.get("note") or None)  # fmt: skip
 
 
 def _locks(hashes: Sequence[str], pins: Sequence[dict]) -> dict[int, int]:
@@ -127,12 +129,22 @@ def _tracks_of(lib: Any, hashes: Sequence[str]) -> list[TrackFeatures]:
     return [features[h] for h in hashes]
 
 
+def add_mix_plans(lib: Any, result: dict) -> dict:
+    """Adds what the saved mix plan of each transition does, if it has one, to the transition's `why`."""
+    for t in result["transitions"]:
+        saved = lib.plan(t["from"], t["to"])
+        words = plan_words(saved["plan"], t["from"], t["to"]) if saved else None
+        if words:
+            t["why"] = [*t["why"], words]
+    return result
+
+
 def order_set(lib: Any, set_id: int, request: OrderRequest | None = None) -> dict | None:
     """The set's best order, not saved. None if there is no such set."""
     hashes = lib.set_hashes(set_id)
-    return None if hashes is None else order_tracks(_tracks_of(lib, hashes), request)
+    return None if hashes is None else add_mix_plans(lib, order_tracks(_tracks_of(lib, hashes), request))
 
 
 def evaluate_set(lib: Any, set_id: int, request: OrderRequest | None = None) -> dict | None:
     hashes = lib.set_hashes(set_id)
-    return None if hashes is None else evaluate_tracks(_tracks_of(lib, hashes), request)
+    return None if hashes is None else add_mix_plans(lib, evaluate_tracks(_tracks_of(lib, hashes), request))

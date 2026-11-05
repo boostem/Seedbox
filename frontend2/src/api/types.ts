@@ -487,6 +487,8 @@ export interface SetOrderSettings {
   tempo_start: number | null;
   tempo_end: number | null;
   pins: SetPin[];
+  /** The assistant's reasoning, when it made this set (#63). */
+  note?: string | null;
 }
 
 export interface SetOrderTrack {
@@ -520,6 +522,8 @@ export interface SetTransition {
   score: number;
   /** Under the threshold: worth finding a bridge. */
   gap: boolean;
+  /** "Why this transition?" in plain sentences, from the same numbers (and the saved mix plan, if there is one). */
+  why?: string[];
 }
 
 /** What would fit between two neighbours (#64). */
@@ -711,4 +715,37 @@ export interface TimelineTransition {
 export interface SetTimelineData {
   tracks: TimelineTrack[];
   transitions: TimelineTransition[];
+}
+
+// --- the set assistant (#63) ---
+
+export interface AssistantStatus {
+  enabled: boolean;
+  model: string;
+  models: { id: string; label: string }[];
+  has_key: boolean;
+  /** Is there an OS keychain to keep the key in? */
+  keychain: boolean;
+}
+
+/** Which tracks a run may use. Neither: the whole library. */
+export interface AssistantScope {
+  set_id?: number;
+  crate_ids: number[];
+}
+
+export interface AssistantDraft {
+  name: string;
+  reasoning: string;
+  result: SetOrderResult;
+  steps: string[];
+  model: string;
+  usage: { input_tokens: number; output_tokens: number };
+}
+
+export interface AssistantDryRun {
+  url: string;
+  headers: Record<string, string>;
+  body: unknown & object;
+  example_search_result: unknown;
 }

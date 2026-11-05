@@ -145,6 +145,7 @@ const FIRST_RUN = { "/api/onboarding": { first_run: true }, "/api/library/view":
 const sessionTrack = (hash: string, title: string) => ({ hash, title, artist: "Someone", duration: 240, grid: null, sections: [], key: { key: null, camelot: null }, integrated_lufs: null });
 const TRACK_A = sessionTrack("a", "Losing It");
 const TRACK_B = sessionTrack("b", "Favour");
+const ASSISTANT_OFF = { enabled: false, model: "claude-sonnet-5-5", models: [{ id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (balanced)" }], has_key: false, keychain: true };
 
 /** What the stub /api answers to a GET in the `live` state (a shot's `data` overrides these). */
 const SET_ARCS = [
@@ -228,7 +229,8 @@ const API: Record<string, unknown> = {
   "/api/library/view": { total: TRACKS.length, items: rows(TRACKS.length) },
   "/api/library/crates": [{ id: 1, name: "Peak time", folder: null, source: "local", track_count: 8 }, { id: 2, name: "Warm-up", folder: null, source: "local", track_count: 4 }],
   "/api/library/smart-crates": { crates: [] },
-  "/api/sets": [{ id: 1, name: "Friday", crate_id: null, source: "local", track_count: 6, updated_at: "2026-10-01T12:00:00Z" }],
+  "/api/assistant": ASSISTANT_OFF,
+    "/api/sets": [{ id: 1, name: "Friday", crate_id: null, source: "local", track_count: 6, updated_at: "2026-10-01T12:00:00Z" }],
   "/api/sets/arcs": SET_ARCS,
   "/api/sets/1/order": SET_ORDER,
   "/api/models": modelsStatus(model()),
@@ -290,6 +292,7 @@ const SHOTS: Shot[] = [
   { name: "crates-gap", hash: "#/crates", posts: LONG_SET, clicks: ["Peak time", "Warm-up", "Build the set", "Find a bridge"] },
   { name: "sets", hash: "#/sets" },
   { name: "sets-empty", hash: "#/sets", data: { "/api/sets": [] } },
+  { name: "sets-assistant", hash: "#/sets", data: { "/api/assistant": { ...ASSISTANT_OFF, enabled: true, has_key: true }, "/api/sets/1/order": { ...SET_ORDER, settings: { ...SET_ORDER.settings, note: "A slow start in the low energies, a peak two thirds in with the two biggest tracks, and the one vocal track held for the end." } } } },
   { name: "sets-loading", hash: "#/sets", api: "loading" },
   { name: "sets-load-failed", hash: "#/sets", fail: ["/api/sets/1/order"] },
   { name: "discover", hash: "#/discover" },
