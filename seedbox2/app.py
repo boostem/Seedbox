@@ -3,7 +3,8 @@
   --port N        fixed port (default: a free one; 8766 with --dev, where frontend2's Vite proxies /api)
   --dev           the window loads frontend2's Vite dev server (http://localhost:5174) instead of frontend2/dist
   --debug         verbose logs, web inspector
-  --self-test     print a JSON report (binaries, imports, the server and the built UI), exit
+  --self-test     print a JSON report (binaries, imports, onnxruntime, the server and the built UI), exit
+  --report FILE   with --self-test: also write the report to FILE (a windowed app on Windows has no stdout)
   --version       print the version, exit
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (seedbox2/paths.py), so trying it never
@@ -15,6 +16,7 @@ first two).
 from __future__ import annotations
 
 import argparse
+import sys
 
 from seedbox2 import __version__
 from seedbox2.paths import APP_NAME, apply_data_dirs, data_dirs  # noqa: F401 - data_dirs re-exported
@@ -27,6 +29,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--dev", action="store_true", help="load frontend2's Vite dev server (localhost:5174) in the window")
     p.add_argument("--debug", action="store_true", help="verbose logs, web inspector")
     p.add_argument("--self-test", action="store_true", help="print a diagnostics report and exit")
+    p.add_argument("--report", default=None, help="with --self-test: also write the report to this file")
     p.add_argument("--version", action="store_true", help="print the version and exit")
     # macOS may pass -psn_0_12345 to apps launched from Finder on old systems
     args, _unknown = p.parse_known_args(argv)
@@ -48,11 +51,11 @@ def main(argv: list[str] | None = None) -> int:
 
     gui = not (args.server_only or args.self_test)
     log_file = shell.setup_logging(console=not (gui and shell.frozen()), debug=args.debug)
-    if gui and shell.frozen():
+    if shell.frozen() and (gui or sys.stdout is None):  # a windowed app on Windows has no streams, uvicorn needs them
         shell.redirect_std_streams(log_file)
     shell.log.info("Seedbox 2 %s starting (frozen=%s)", __version__, shell.frozen())
     if args.self_test:
-        return shell.self_test()
+        return shell.self_test(args.report)
     if args.server_only:
         return shell.run_server_only(args)
     return shell.run_window(args, log_file)

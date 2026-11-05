@@ -1,0 +1,68 @@
+# Builds the Seedbox 2 installers (#88: macOS arm64 and x86_64, Windows x64) and smoke tests the built app and what the
+# installer installs, headless (packaging/check_seedbox2.py runs `--self-test`). macOS minutes are expensive in a
+# private repository, so this runs on pull requests touching the packaging and once a week, not on every push.
+name: Installers
+
+on:
+  pull_request:
+    paths:
+      - packaging/**
+      - requirements.txt
+      - seedbox2/__main__.py
+      - seedbox2/app.py
+      - seedbox2/shell.py
+      - seedbox2/models/selftest.py
+      - .github/workflows/installers.yml
+  schedule:
+    - cron: "37 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installers-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS arm64, os: macos-15 }
+          - { name: macOS x86_64, os: macos-15-intel }
+          - { name: Windows x64, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: requirements.txt
+      - name: Tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install nasm pkgconf
+      - name: Tools (Windows)
+        if: runner.os == 'Windows'
+        run: choco install innosetup -y --no-progress
+      - name: Keep the ffmpeg build
+        if: runner.os == 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: packaging/dist/seedbox2/.cache/ffmpeg-*
+          key: ffmpeg-${{ matrix.os }}-${{ hashFiles('packaging/build_ffmpeg.sh') }}
+      - name: Build and smoke test
+        run: uv run --no-project --python 3.13 packaging/build_seedbox2.py
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Seedbox 2 ${{ matrix.name }}
+          path: |
+            packaging/dist/seedbox2/Seedbox-2-*.dmg
+            packaging/dist/seedbox2/Seedbox-2-*-setup.exe
+            packaging/dist/seedbox2/versions.txt
+          if-no-files-found: error
+          compression-level: 0

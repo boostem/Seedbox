@@ -384,18 +384,53 @@ def run_window(args: argparse.Namespace, log_file: Path) -> int:
 
 # ---------------------------------------------------------------- self-test
 
-def self_test() -> int:
-    """Diagnostics as JSON on stdout: binaries, imports, and the server answering /api/health and serving the UI.
-    Exit code 0 when everything passed."""
+def _binary_version(path: str | None) -> str | None:
+    """The first line of `path --version`, or None when it doesn't run (say, a binary for another architecture)."""
+    if not path:
+        return None
+    flag = "-version" if Path(path).stem == "ffmpeg" else "--version"
+    try:
+        r = subprocess.run([path, flag], capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL,  # noqa: S603
+                           check=False, **_no_window())
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.partition("\n")[0].strip() or None if r.returncode == 0 else None
+
+
+def _no_window() -> dict[str, Any]:
+    """On Windows, a windowed app's child console programs would each flash a console window."""
+    return {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+
+
+def _window_backend_check() -> str:
+    """Import pywebview's backend for this OS without opening a window: "ok", or what went wrong."""
+    import importlib
+
+    module = {"darwin": "webview.platforms.cocoa", "win32": "webview.platforms.edgechromium"}.get(sys.platform)
+    if module is None:
+        return "ok"
+    try:
+        importlib.import_module(module)
+    except Exception as e:  # noqa: BLE001 - the report says what went wrong
+        return f"{type(e).__name__}: {e}"
+    return "ok"
+
+
+def self_test(report_file: str | None = None) -> int:
+    """Diagnostics as JSON on stdout (and in `report_file`): binaries, imports, onnxruntime running a tiny model, and
+    the server answering /api/health and serving the UI. Exit code 0 when everything passed."""
     import importlib
 
     from musicreco import paths
+    from seedbox2.models import selftest
 
     report: dict[str, Any] = {"app": __version__, "frozen": frozen(), "python": sys.version.split()[0],
                               "platform": sys.platform, "executable": sys.executable}
     report["ffmpeg"] = paths.ffmpeg_path()
     report["deno"] = paths.deno_path()
-    ok = bool(report["ffmpeg"])
+    report["ffmpeg_version"] = _binary_version(report["ffmpeg"])
+    report["deno_version"] = _binary_version(report["deno"])
+    ok = bool(report["ffmpeg_version"])
     modules = {}
     for name in SELF_TEST_MODULES:
         try:
@@ -405,6 +440,10 @@ def self_test() -> int:
             modules[name] = f"{type(e).__name__}: {e}"
     report["modules"] = modules
     ok &= all(v == "ok" for k, v in modules.items() if k != "webview")  # no window still runs in the browser
+    if frozen():  # the backend the installed app will open its window with (packaging/check_seedbox2.py requires it)
+        report["window_backend"] = _window_backend_check()
+    report["onnxruntime"] = selftest.check()
+    ok &= bool(report["onnxruntime"]["ok"])
     static = static_dir()
     report["frontend"] = str(static) if static else None
     try:
@@ -423,5 +462,8 @@ def self_test() -> int:
         report["server"] = {"ok": False, "error": f"{type(e).__name__}: {e}"}
         ok = False
     report["ok"] = bool(ok)
-    print(json.dumps(report, indent=2), flush=True)
+    text = json.dumps(report, indent=2)
+    print(text, flush=True)
+    if report_file:
+        Path(report_file).write_text(text, encoding="utf-8")
     return 0 if ok else 1
