@@ -47,6 +47,29 @@ def track_waveform(hash_: str, request: Request, lib: LibraryDep) -> Response:
     return Response(gzip.decompress(data), media_type="application/octet-stream", headers=headers)
 
 
+@router.get("/{hash_}/waveform/stems", response_class=Response,
+            responses={200: {"content": {"application/octet-stream": {}}}, 202: {}, 304: {}, 404: {}})  # fmt: skip
+def track_stem_waveform(hash_: str, request: Request, lib: LibraryDep) -> Response:
+    """The stem detail file (#78). 404 until the track has stems; 202 while the waveform job writes it. Stems can be
+    separated again, so the ETag goes by the file's time."""
+    if lib.track(hash_) is None:
+        raise HTTPException(404, "no such track")
+    path = waveform.current_stem_artifact(lib, hash_)
+    if path is None:
+        if stems.current(lib, hash_) is None:
+            raise HTTPException(404, "no stems yet")
+        job = waveform.submit(get_jobs(request), hash_, front=True)
+        return JSONResponse({"state": job["state"], "job": job}, status_code=202)
+    etag = f'"{hash_}.stems.v{waveform.STEM_VERSION}.{path.stat().st_mtime_ns}"'
+    headers = {"ETag": etag, "Cache-Control": "no-cache", "Vary": "Accept-Encoding"}
+    if etag in [t.strip().removeprefix("W/") for t in request.headers.get("if-none-match", "").split(",")]:
+        return Response(status_code=304, headers=headers)
+    data = path.read_bytes()
+    if "gzip" in request.headers.get("accept-encoding", ""):
+        return Response(data, media_type="application/octet-stream", headers={**headers, "Content-Encoding": "gzip"})
+    return Response(gzip.decompress(data), media_type="application/octet-stream", headers=headers)
+
+
 _STEM_TYPES = {".flac": "audio/flac", ".opus": "audio/ogg"}
 
 

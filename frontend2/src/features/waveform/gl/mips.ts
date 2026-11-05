@@ -10,6 +10,7 @@
  * (i % width, rows[k] + floor(i / width)). Pure functions: tests run them, the renderer uploads the result once.
  */
 import type { WaveData } from "../prepare";
+import type { StemWave } from "../stems";
 
 export const MIN_LEVEL = 256;
 export const MAX_LEVELS = 16;
@@ -39,6 +40,11 @@ export function waveMips(wave: Pick<WaveData, "n" | "low" | "mid" | "high">): Ui
     base[i * 4 + 2] = h;
     base[i * 4 + 3] = Math.max(l, m, h);
   }
+  return mipChain(base);
+}
+
+/** The chain above an interleaved RGBA level 0: each level holds the peak, per channel, of two points below it. */
+function mipChain(base: Uint8Array): Uint8Array[] {
   const levels = [base];
   let prev = base;
   while (prev.length / 4 > MIN_LEVEL && levels.length < MAX_LEVELS) {
@@ -58,8 +64,23 @@ export function waveMips(wave: Pick<WaveData, "n" | "low" | "mid" | "high">): Ui
 
 /** Packs the mip chain into one atlas at most `maxWidth` texels wide (the GPU's MAX_TEXTURE_SIZE, or less). */
 export function waveAtlas(wave: Pick<WaveData, "n" | "low" | "mid" | "high">, maxWidth = 4096): WaveAtlas {
-  const levels = waveMips(wave);
-  const width = Math.max(1, Math.min(maxWidth, wave.n));
+  return packLevels(waveMips(wave), wave.n, maxWidth);
+}
+
+/** A stem waveform as an atlas of the same layout: R drums, G bass, B vocals, A other, each with its own peaks. */
+export function stemAtlas(stems: Pick<StemWave, "n" | "drums" | "bass" | "vocals" | "other">, maxWidth = 4096): WaveAtlas {
+  const base = new Uint8Array(stems.n * 4);
+  for (let i = 0; i < stems.n; i++) {
+    base[i * 4] = byte(stems.drums[i]);
+    base[i * 4 + 1] = byte(stems.bass[i]);
+    base[i * 4 + 2] = byte(stems.vocals[i]);
+    base[i * 4 + 3] = byte(stems.other[i]);
+  }
+  return packLevels(mipChain(base), stems.n, maxWidth);
+}
+
+function packLevels(levels: Uint8Array[], n: number, maxWidth: number): WaveAtlas {
+  const width = Math.max(1, Math.min(maxWidth, n));
   const rows: number[] = [];
   const lengths: number[] = [];
   let height = 0;

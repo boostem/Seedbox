@@ -3,6 +3,7 @@
  * the Canvas 2D painter. Every waveform view selects `mode` and redraws when it changes.
  */
 import { create } from "zustand";
+import type { StemView } from "./stems";
 
 export type WaveMode = "rgb" | "bands" | "stacked";
 
@@ -12,7 +13,13 @@ export const WAVE_MODES: { id: WaveMode; label: string; title: string }[] = [
   { id: "stacked", label: "Stacked", title: "Each band in its own row: highs on top, lows at the bottom" },
 ];
 
+export const STEM_VIEWS: { id: StemView; label: string; title: string }[] = [
+  { id: "stacked", label: "Stacked", title: "One waveform split into four coloured layers" },
+  { id: "lanes", label: "Lanes", title: "Each stem in its own thin lane" },
+];
+
 const MODE_KEY = "seedbox2.waveMode";
+const STEM_VIEW_KEY = "seedbox2.stemView";
 const GPU_KEY = "seedbox2.waveGpu";
 
 function stored<T extends string>(key: string, ok: readonly T[], fallback: T): T {
@@ -34,12 +41,15 @@ function store(key: string, v: string): void {
 
 interface WaveSettings {
   mode: WaveMode;
+  /** how stem waveforms draw: one stacked colour view or four lanes */
+  stemView: StemView;
   /** false: always the Canvas 2D painter (for comparing, or a GPU driver that draws it wrong) */
   gpu: boolean;
 }
 
 export const useWaveSettings = create<WaveSettings>()(() => ({
   mode: stored(MODE_KEY, ["rgb", "bands", "stacked"], "bands"),
+  stemView: stored(STEM_VIEW_KEY, ["stacked", "lanes"], "stacked"),
   gpu: stored(GPU_KEY, ["on", "off"], "on") === "on",
 }));
 
@@ -47,6 +57,10 @@ export const waveSettings = {
   setMode(mode: WaveMode) {
     store(MODE_KEY, mode);
     useWaveSettings.setState({ mode });
+  },
+  setStemView(stemView: StemView) {
+    store(STEM_VIEW_KEY, stemView);
+    useWaveSettings.setState({ stemView });
   },
   setGpu(gpu: boolean) {
     store(GPU_KEY, gpu ? "on" : "off");

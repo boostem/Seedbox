@@ -18,7 +18,7 @@ export interface WaveData {
 const cache = new WeakMap<Waveform, WaveData>();
 
 /** Robust per-band ceiling (99th percentile), so a few spikes don't flatten the rest. */
-function ceiling(v: ArrayLike<number>): number {
+export function ceiling(v: ArrayLike<number>): number {
   if (!v.length) return 1;
   const step = Math.max(1, Math.floor(v.length / 4000));
   const sample: number[] = [];

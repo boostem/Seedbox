@@ -3,13 +3,19 @@ import { useMemo } from "react";
 import { InfoRow, Panel, PanelHeader, Switch, Tabs } from "@/components/ui";
 import { demoAnalysis } from "@/lib/demo/analysis";
 import { webgl2Available } from "./gl/renderer";
-import { useWaveSettings, WAVE_MODES, waveSettings } from "./settings";
+import { STEM_VIEWS, useWaveSettings, WAVE_MODES, waveSettings } from "./settings";
 import { WaveOverview } from "./WaveOverview";
 
 /** RGB / 3-band / stacked, as a segmented control. */
 export function WaveModeTabs({ className }: { className?: string }) {
   const mode = useWaveSettings((s) => s.mode);
   return <Tabs variant="segmented" items={WAVE_MODES} value={mode} onChange={waveSettings.setMode} className={className} />;
+}
+
+/** Stacked / lanes, as a segmented control. */
+export function StemViewTabs({ className }: { className?: string }) {
+  const view = useWaveSettings((s) => s.stemView);
+  return <Tabs variant="segmented" items={STEM_VIEWS} value={view} onChange={waveSettings.setStemView} className={className} />;
 }
 
 export function WaveSettingsPanel({ className }: { className?: string }) {
@@ -21,6 +27,9 @@ export function WaveSettingsPanel({ className }: { className?: string }) {
       <PanelHeader title="Waveforms" description="How every waveform looks: the library, the track view, the transition editor and the decks" />
       <InfoRow label="Mode">
         <WaveModeTabs />
+      </InfoRow>
+      <InfoRow label="Stems">
+        <StemViewTabs />
       </InfoRow>
       <InfoRow label="Renderer">
         <Switch checked={gpu && available} disabled={!available} onChange={waveSettings.setGpu} label="Draw on the GPU (WebGL2)" size="sm" />
