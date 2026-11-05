@@ -1,20 +1,24 @@
-"""Plan v3 through the offline renderer: Seedbox 1's mixrender, which takes its plan format, plus the stem lanes.
+"""Plan v3 through the offline renderer: Seedbox 1's mixrender, which takes its plan format, plus the stem lanes, with
+Seedbox 2's track gain and master chain (#58) in place of its overlap trim and leveller.
 
 Seedbox 2's own stretching lands with #52; until then a v3 plan is rendered by turning it back into what mixrender
 reads. `render_adapted` is the whole path from a generated plan to audio: fit the automation to the tracks, render.
+`export` is that audio in a file, with a tracklist holding what the render measures.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
 
 from musicreco import mixrender
 
+from ..analysis import loudness, waveform
 from ..analysis import stems as stem_cache
-from ..analysis import waveform
 from . import automation, convert
+from . import master as master_chain
 from .plan import STEM_LANES, Deck, MixPlan, fold_stem_lanes
 
 Stems = dict[str, Path]
@@ -52,18 +56,20 @@ def _decode(files: Stems, sr: int) -> dict[str, np.ndarray]:
     return {name: mixrender.decode_stereo(path, sr) for name, path in files.items()}
 
 
+def track_gain_db(audio: np.ndarray, sr: int, spans: list[dict] | None = None) -> float:
+    """`loudness.track_gain_db` of decoded audio, for a track with no stored analysis to read it from. 0 if silent."""
+    blocks = mixrender._block_power(audio, sr, loudness.BLOCK_S, loudness.HOP_S)
+    data = {"lufs": np.asarray(loudness.energy_to_lufs(blocks)).tolist()}
+    return loudness.track_gain_db(data, spans, master_chain.DECK_LUFS) or 0.0
+
+
 def deck_audio(plan: MixPlan, path_a: Path, path_b: Path, stems_a: Stems | None = None, stems_b: Stems | None = None,
                sr: int = mixrender.SR) -> tuple[automation.DeckAudio, automation.DeckAudio]:  # fmt: skip
-    """Both decks' audio as `automation.adapt` wants it, with the trims the renderer will apply."""
-    norm = mixrender._normalise(to_seedbox1(plan))
-    decks = [norm["a"], norm["b"]]
-    w0, w1 = norm["window"]["start_beat"], norm["window"]["end_beat"]
+    """Both decks' audio as `automation.adapt` wants it, with the track gains the renderer will apply."""
     out = []
-    for path, deck, rng, files in zip((path_a, path_b), decks, mixrender._overlap_beats(decks, w0, w1),
-                                      (stems_a, stems_b), strict=True):  # fmt: skip
+    for path, files in ((path_a, stems_a), (path_b, stems_b)):
         audio = mixrender.decode_stereo(Path(path), sr)
-        trim, _ = mixrender._deck_trim_db(Path(path), deck, audio, rng, sr)
-        out.append(automation.DeckAudio(audio, sr, trim, _decode(files, sr) if files else None))
+        out.append(automation.DeckAudio(audio, sr, track_gain_db(audio, sr), _decode(files, sr) if files else None))
     return out[0], out[1]
 
 
@@ -75,12 +81,14 @@ def _stem_tracks(deck: Deck, audio: automation.DeckAudio) -> list[tuple[np.ndarr
 
 
 def render(plan: MixPlan, path_a: Path, path_b: Path, audio_a: automation.DeckAudio, audio_b: automation.DeckAudio,
-           sr: int = mixrender.SR) -> dict:  # fmt: skip
-    """A plan as it plays on these tracks: `mixrender.render_audio`'s result."""
+           sr: int = mixrender.SR, master: Callable[[np.ndarray, int], tuple[np.ndarray, dict]] | None = None) -> dict:  # fmt: skip
+    """A plan as it plays on these tracks: `mixrender.render_audio`'s result, through `master` (default: for streaming)."""
     playing = fold_stem_lanes(plan, lambda track: (audio_a if track == plan.a.track_id else audio_b).stems is not None)
     deck_stems = {"A": _stem_tracks(playing.a, audio_a), "B": _stem_tracks(playing.b, audio_b)}
     return mixrender.render_audio(to_seedbox1(playing), Path(path_a), Path(path_b), sr,
-                                  deck_stems={k: v for k, v in deck_stems.items() if v})  # fmt: skip
+                                  deck_stems={k: v for k, v in deck_stems.items() if v},
+                                  trims_db={"A": audio_a.trim_db, "B": audio_b.trim_db},
+                                  master=master or master_chain.Master(sr=sr))  # fmt: skip
 
 
 def _measured(r: dict, plan: dict) -> tuple[np.ndarray, np.ndarray, float] | None:
@@ -96,7 +104,7 @@ def _measured(r: dict, plan: dict) -> tuple[np.ndarray, np.ndarray, float] | Non
 
 
 def render_adapted(raw: dict, path_a: Path, path_b: Path, stems_a: Stems | None = None, stems_b: Stems | None = None,
-                   sr: int = mixrender.SR) -> tuple[dict, dict]:  # fmt: skip
+                   sr: int = mixrender.SR, master: master_chain.Master | None = None) -> tuple[dict, dict]:  # fmt: skip
     """A generated Seedbox 1 plan with its automation fitted to the tracks, rendered and corrected from what the render
     measures, up to MEASURED_PASSES times; a pass that makes it worse is dropped. (the render, the plan in Seedbox 1's
     format, with `adaptive` holding the report)."""
@@ -104,7 +112,7 @@ def render_adapted(raw: dict, path_a: Path, path_b: Path, stems_a: Stems | None 
     audio_a, audio_b = deck_audio(plan, path_a, path_b, stems_a, stems_b, sr)
     adapted = automation.adapt(plan, audio_a, audio_b)
     best_plan, report = adapted.plan, adapted.report
-    best = render(best_plan, path_a, path_b, audio_a, audio_b, sr)
+    best = render(best_plan, path_a, path_b, audio_a, audio_b, sr, master)
     if "cuts_db" in report:  # there is a blend to ride
         worst = None
         for _ in range(MEASURED_PASSES):
@@ -115,10 +123,35 @@ def render_adapted(raw: dict, path_a: Path, path_b: Path, stems_a: Stems | None 
             next_plan = automation.ride_measured(best_plan, beats, dev)
             if next_plan is None:
                 break
-            r = render(next_plan, path_a, path_b, audio_a, audio_b, sr)
+            r = render(next_plan, path_a, path_b, audio_a, audio_b, sr, master)
             again = _measured(r, to_seedbox1(next_plan))
             if again is None or again[2] >= worst:
                 break
             best, best_plan, worst = r, next_plan, again[2]
         report = {**report, "measured_lu": None if worst is None else round(worst, 2)}
     return best, {**to_seedbox1(best_plan), "adaptive": report}
+
+
+def export(plan: MixPlan, path_a: Path, path_b: Path, out_path: Path, *, names: tuple[str, str] | None = None,
+           stems_a: Stems | None = None, stems_b: Stems | None = None, target_lufs: float = master_chain.TARGETS[master_chain.DEFAULT_TARGET],
+           sr: int = mixrender.SR) -> dict:  # fmt: skip
+    """A plan to an audio file and a tracklist next to it (`<out>.txt`). The render is measured and the make-up corrected
+    until it meets the target; the result has `measured`, what the tracklist says, and the `makeup_db` that
+    makes the live engine play it at this level. Whole sets come with #70."""
+    audio_a, audio_b = deck_audio(plan, path_a, path_b, stems_a, stems_b, sr)
+    found: list[float] = []
+
+    def closed_loop(mix: np.ndarray, rate: int) -> tuple[np.ndarray, dict]:
+        found.append(master_chain.find_makeup(mix, target_lufs, rate))
+        return master_chain.Master(target_lufs, found[-1], rate)(mix, rate)
+
+    r = render(plan, path_a, path_b, audio_a, audio_b, sr, closed_loop)
+    measured = master_chain.measure(r["mix"], sr)
+    mixrender.encode_m4a(r["mix"], sr, Path(out_path))
+    a, b = names or (plan.a.track_id, plan.b.track_id)
+    w0 = plan.window.start_beat
+    entries = [(float(r["clock"].time(max(deck.play_from_beat, w0))), name) for deck, name in ((plan.a, a), (plan.b, b))]
+    text = master_chain.tracklist(sorted(entries), measured, target_lufs)
+    tracklist = Path(out_path).with_suffix(".txt")
+    tracklist.write_text(text, "utf-8")
+    return {"measured": measured, "makeup_db": found[0], "tracklist": str(tracklist), "master": r["master"]}

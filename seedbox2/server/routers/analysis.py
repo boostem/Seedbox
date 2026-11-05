@@ -11,7 +11,7 @@
 - `GET /analysis/stems`: the stems cache: its settings, what it holds and which model low-power mode would use.
 - `POST /analysis/stems/settings`: `{limit_gb, format, low_power}`; a lower limit evicts at once.
 - `GET /analysis/{hash}/energy` (#48): per-bar energy 0-1 and the track's 1-10. 202 while its job is queued.
-- `GET /analysis/{hash}/loudness`: the 400 ms LUFS curve, the integrated LUFS and true peak, and both per section (the
+- `GET /analysis/{hash}/loudness`: the 400 ms LUFS curve, the integrated LUFS and true peak, and both per section, and the gain for playing the track (`track_gain_db`, #58; the
   sections analysis, or the energy curve's intro, main and outro until there is one). 202 while its job is queued.
 - `GET /analysis/{hash}/vibe`: which windows were embedded. 202 while its job is queued, 503 without the model.
 - `GET /analysis/{hash}/similar?limit&window&bpm&key&bpm_pct`: the nearest tracks by vibe, compatible with this track's
@@ -114,7 +114,7 @@ def track_loudness(hash_: str, request: Request, lib: LibraryDep) -> dict | JSON
         return data
     row = lib.analysis(hash_, energy.ANALYSER, energy.VERSION)
     spans = vibe.spans_of(lib, hash_, row["data"] if row else None)
-    return {**data, "sections": loudness.sections(data, spans)}
+    return {**data, "sections": loudness.sections(data, spans), "track_gain_db": loudness.track_gain_db(data, spans)}
 
 
 @router.get("/{hash_}/vibe", responses={200: {}, 202: {}, 404: {}, 503: {}}, response_model=None)

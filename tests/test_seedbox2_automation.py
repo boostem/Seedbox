@@ -9,12 +9,12 @@ import pytest
 from scipy import signal
 from scipy.io import wavfile
 
-from musicreco.paths import ffmpeg_path
 from musicreco import mixrender
+from musicreco.paths import ffmpeg_path
 from seedbox2.analysis import stems as stem_cache
 from seedbox2.eval import mixes
 from seedbox2.eval.mixmetrics import measure
-from seedbox2.mix import automation, convert, offline
+from seedbox2.mix import automation, convert, master, offline
 from seedbox2.mix import plan as v3
 
 SR = 44100
@@ -219,9 +219,7 @@ def test_the_prediction_uses_the_renderers_numbers():
     assert automation.FILTER_LP_HZ == (mixrender.FILTER_LP_MIN_HZ, mixrender.FILTER_LP_MAX_HZ)
     assert automation.FILTER_HP_HZ == (mixrender.FILTER_HP_MIN_HZ, mixrender.FILTER_HP_MAX_HZ)
     assert (automation.XOVER_LOW_HZ, automation.XOVER_HIGH_HZ) == (mixrender.XOVER_LOW_HZ, mixrender.XOVER_HIGH_HZ)
-    assert (automation.DECK_LUFS, automation.LEVEL_THRESHOLD_DB, automation.LEVEL_RATIO, automation.MAKEUP_DB) == (
-        mixrender.DECK_LUFS, mixrender.LEVEL_THRESHOLD_DB, mixrender.LEVEL_RATIO, mixrender.MAKEUP_DB,
-    )  # fmt: skip
+    assert (automation.GLUE_THRESHOLD_LUFS, automation.GLUE_RATIO) == (master.GLUE_THRESHOLD_DB, master.GLUE_RATIO)
 
 
 def test_filter_values_and_cutoffs_are_inverse():

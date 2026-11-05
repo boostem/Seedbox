@@ -2,8 +2,7 @@
 
 Every case renders a pair of synthetic tracks with `musicreco.mixrender` and with the live engine's core
 (`frontend2/src/audio/engine/`, run by `frontend2/scripts/engine-render.ts` under deno), and subtracts them. The core is
-the code the AudioWorklet runs. The master's leveller and limiter have to look ahead offline and can't live (#58), so the
-fixtures stay under both; a test checks that they did.
+the code the AudioWorklet runs. The master chain (#58, `seedbox2/mix/master.py`) is causal in both, so it nulls too.
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ from scipy.io import wavfile
 
 from musicreco import mixrender
 from musicreco.paths import deno_path
-from seedbox2.mix import convert, plan as v3
+from seedbox2.mix import convert, master, plan as v3
 
 ROOT = Path(__file__).resolve().parents[1]
 SR = mixrender.SR
@@ -64,7 +63,7 @@ def _mix(stems: dict[str, np.ndarray]) -> np.ndarray:
 
 def _deck(track_id: str, frm: float, to: float, *, beat0_s: float = 0.5, bpm: float = BPM, **over: object) -> dict:
     lanes = {name: [_kf(0.0, v3.LANE_DEFAULTS[name], "hold")] for name in v3.LANES}
-    lanes["volume"] = [_kf(0.0, 0.38, "hold")]  # low enough to stay under the leveller and limiter
+    lanes["volume"] = [_kf(0.0, 0.38, "hold")]
     lanes.update(over.pop("lanes", {}))  # type: ignore[arg-type]
     return {"track_id": track_id, "beat0_s": beat0_s, "native_bpm": bpm, "play_from_beat": frm, "play_to_beat": to,
             "lanes": lanes, "loops": [], "fx": [], "echo_beats": 0.75, "echo_tap": "pre_eq", "reverb_size": 0.75,
@@ -96,7 +95,8 @@ def _write_f32(path: Path, audio: np.ndarray) -> None:
 
 
 def _engine(tracks: dict, plan3: dict, trims: dict[str, float], name: str, *, stems: dict[str, dict] | None = None,
-            block: int = 128, swap: dict[str, np.ndarray] | None = None, fold: bool = False) -> tuple[np.ndarray, dict]:  # fmt: skip
+            block: int = 128, swap: dict[str, np.ndarray] | None = None, fold: bool = False,
+            target_lufs: float = -14.0) -> tuple[np.ndarray, dict]:  # fmt: skip
     """The plan through the live engine's core: `stems` per deck plays those, else the full mixes (or `swap`'s)."""
     work = tracks["root"] / name
     work.mkdir(exist_ok=True)
@@ -117,7 +117,8 @@ def _engine(tracks: dict, plan3: dict, trims: dict[str, float], name: str, *, st
             streams[key] = f"{key}.f32"
             sources = [{"key": key, "stem": None}]
         audio[deck] = {"sources": sources, "trimDb": trims[deck.upper()]}
-    job = {"plan": plan3, "audio": audio, "streams": streams, "out": "out.f32", "block": block}
+    job = {"plan": plan3, "audio": audio, "streams": streams, "out": "out.f32", "block": block,
+           "master": {"targetLufs": target_lufs}}
     if fold:
         job["fold"] = "fold.json"
     (work / "job.json").write_text(json.dumps(job))
@@ -138,10 +139,10 @@ def _residual_db(ref: np.ndarray, got: np.ndarray) -> float:
     return 10 * np.log10(float(np.mean((ref.astype(np.float64) - got) ** 2)) / power + 1e-20)
 
 
-def _offline(tracks: dict, plan2: dict, a_path: Path | None = None, b_path: Path | None = None) -> dict:
-    r = mixrender.render_audio(plan2, a_path or tracks["a_path"], b_path or tracks["b_path"])
-    assert r["leveller_db"] == 0.0 and r["limiter_db"] == 0.0, "a fixture must stay under the leveller and limiter"
-    return r
+def _offline(tracks: dict, plan2: dict, a_path: Path | None = None, b_path: Path | None = None,
+             target_lufs: float = -14.0) -> dict:  # fmt: skip
+    return mixrender.render_audio(plan2, a_path or tracks["a_path"], b_path or tracks["b_path"],
+                                  master=master.Master(target_lufs))  # fmt: skip
 
 
 def _case_blend() -> dict:
@@ -220,6 +221,23 @@ def test_a_plan_without_stretch_nulls_against_the_renderer(tracks, name):
     residual = _residual_db(ref["mix"], got)
     print(f"{name}: {residual:.1f} dB")
     assert residual < LIMIT_DB
+
+
+@pytest.mark.parametrize("target", sorted(master.TARGETS))
+def test_the_chain_under_load_matches_the_renderer_within_half_a_lu(tracks, target):
+    """Hot enough that glue and limiter both work: the ticket's 0.5 LU, and the true peak held by both."""
+    lufs = master.TARGETS[target]
+    hot = {"volume": [_kf(0.0, 1.0, "hold")]}
+    plan2 = _plan(_deck("a", -32.0, 32.0, beat0_s=8.0, lanes=hot), _deck("b", 0.0, 64.0, lanes=hot))
+    ref = _offline(tracks, plan2, target_lufs=lufs)
+    assert ref["master"]["glue_db"] > 3
+    assert ref["master"]["limiter_db"] > 1
+    got, _ = _engine(tracks, convert.from_seedbox1(plan2).model_dump(), ref["trim_db"], f"hot-{target}", target_lufs=lufs)
+    live, offline = master.measure(got), master.measure(ref["mix"])
+    print(f"{target}: {_residual_db(ref['mix'], got):.1f} dB, {live} {offline}")
+    assert abs(live["integrated_lufs"] - offline["integrated_lufs"]) < 0.5
+    assert _residual_db(ref["mix"], got) < LIMIT_DB
+    assert max(live["true_peak_dbtp"], offline["true_peak_dbtp"]) <= master.CEILING_DBTP + 0.1
 
 
 def test_the_block_size_changes_nothing(tracks):

@@ -54,6 +54,9 @@ class EngineProcessor extends AudioWorkletProcessor {
       case "endScrub":
         core.endScrub();
         break;
+      case "master":
+        core.setMaster(m.targetLufs, m.makeupDb);
+        break;
       case "ping":
         this.port.postMessage({ type: "pong", id: m.id });
         break;

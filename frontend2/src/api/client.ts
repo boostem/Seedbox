@@ -4,7 +4,7 @@
  */
 import { toast } from "@/store/toasts";
 import type { MixPlan } from "./mixplan.generated";
-import type { ArcTemplate, SetOrderResult, SetOrderSettings, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
+import type { ArcTemplate, MasterStatus, MasterTarget, SetOrderResult, SetOrderSettings, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -126,6 +126,10 @@ export const api = {
   power: {
     status: (opts?: RequestOptions) => get<PowerStatus>("/api/power", opts),
     setMode: (mode: PowerMode, opts?: RequestOptions) => post<PowerStatus>("/api/power/settings", { mode }, opts),
+  },
+  master: {
+    status: (opts?: RequestOptions) => get<MasterStatus>("/api/mixes/master", opts),
+    setTarget: (target: MasterTarget, opts?: RequestOptions) => post<MasterStatus>("/api/mixes/master", { target }, opts),
   },
   key: {
     /** Before it is computed (202) the answer is the queued job: `job.done` says when to ask again. */

@@ -67,7 +67,7 @@ RIDE_BOUNDS = (-9.0, 6.0)  # dB
 RIDE_ITERATIONS = 6
 MEASURED_TRIGGER_LU, MEASURED_GAIN = 0.7, 0.7  # correcting from a render: a bar's worst moment, not its mean
 RIDE_GAIN = 0.8
-DECK_LUFS, LEVEL_THRESHOLD_DB, LEVEL_RATIO, MAKEUP_DB = -12.0, 1.0, 3.0, 1.0  # the renderer's bus leveller
+GLUE_THRESHOLD_LUFS, GLUE_RATIO = -12.0, 2.0  # the master chain's glue, roughly (`master.py`)
 
 REF_CENTROID_HZ = 270.0  # the median over the golden corpus: at this the cutoffs are as the generator set them
 CENTROID_RATIO = (0.5, 2.0)
@@ -264,11 +264,10 @@ def masking_index(lead: np.ndarray, other: np.ndarray) -> float:
 
 
 def _short_term(a: np.ndarray, b: np.ndarray, frames: int) -> np.ndarray:
-    """The levelled sum's short-term LUFS per grid point."""
+    """The glued sum's short-term LUFS per grid point, before the make-up."""
     p = (a * _K[:, None]).sum(axis=0) + (b * _K[:, None]).sum(axis=0)
     st = -0.691 + 10 * np.log10(ndimage.uniform_filter1d(p, max(1, frames), mode="nearest") + 1e-12)
-    over = np.maximum(st - (DECK_LUFS + LEVEL_THRESHOLD_DB), 0.0)
-    return st - over * (1 - 1 / LEVEL_RATIO) + MAKEUP_DB
+    return st - np.maximum(st - GLUE_THRESHOLD_LUFS, 0.0) * (1 - 1 / GLUE_RATIO)
 
 
 def _line(st: np.ndarray, mask: np.ndarray, frames: int, ref_frames: int) -> np.ndarray | None:
@@ -673,7 +672,7 @@ def _write_cuts(side: _Side, deck: Deck, name: str, bars: _Bars, cuts: dict[str,
 
 def ride_measured(plan: MixPlan, beats: np.ndarray, deviation: np.ndarray) -> MixPlan | None:
     """The plan corrected for loudness measured on a render: `deviation` (LU against the line between the tracks) at
-    master `beats`. What a prediction can't see, the leveller and effect returns, shows up here. None: nothing to do."""
+    master `beats`. What a prediction can't see, the glue and effect returns, shows up here. None: nothing to do."""
     if not beats.size:
         return None
     bars = _Bars(beats, np.ones(beats.size, bool))
