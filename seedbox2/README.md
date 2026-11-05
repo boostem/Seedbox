@@ -92,6 +92,17 @@ the track view and the transition editor; `WaveOverview` is the strip for previe
 exist, with its playhead on an overlay. RGB, 3-band and stacked modes are chosen in `#/settings`, and Canvas 2D takes
 over when WebGL2 isn't there.
 
+**The centred waveform** (#76, `TrackWaveform` with `deck`): the waveform scrolls under a fixed playhead, as on a
+Rekordbox or Serato deck, with a beat-phase ruler (the bar's four beats) and the bars.beats to the next phrase; the
+Centred/Page switch beside the zoom buttons is kept in localStorage, and page mode stays for editing (a view without
+`deck` pages, as the transition editor will). A drag or horizontal scroll takes the view for 2.5 s. The playhead comes
+from `AudioContext.currentTime` every animation frame, with no store or React: `player.time()` anchors the audio element
+to a context that runs while it plays, `LiveEngine.seconds()` has its own, and `engineSource(engine, toTrack)` passes
+that to the view as `source`. As `currentTime` moves in steps of the output buffer, `FrameSmoother`
+(`frontend2/src/audio/playhead.ts`) predicts from the display's frame times and follows the clock slowly. Measured with
+`python -m seedbox2.bench frontend` (scenario `play_centred`, headless Chrome on SwiftShader, 10 s, on a 12-thread desktop under other load, not yet the reference laptops): 59.6 fps,
+frame time spread 1.36 ms, no long tasks, no React commits; the raw clock's unevenness 8.98 ms a frame, the playhead's 0.41 ms.
+
 **Waveforms** (#49, `seedbox2/analysis/waveform.py`): the `waveform` job (light pool, so it never waits behind
 stems) decodes a track to mono at 22,050 Hz, a second at a time, and splits it with 4th-order Bessel filters
 (low-pass 600 Hz, band-pass 600-4,000 Hz, high-pass 4,000 Hz, as Mixxx). Each band keeps its peak and RMS at 150

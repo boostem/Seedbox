@@ -78,7 +78,7 @@ export function UiPage() {
         <Panel>
           <PanelHeader title="Waveform" description="features/waveform on a synthetic 128 BPM track" />
           <div className="p-4">
-            <TrackWaveform analysis={analysis} trackId="demo" hotkeys onSeek={(t) => player.seek(t)} toolbar={<WaveModeTabs />} />
+            <TrackWaveform analysis={analysis} trackId="demo" deck hotkeys onSeek={(t) => player.seek(t)} toolbar={<WaveModeTabs />} />
             <div className="mt-4 mb-1.5 text-xs text-fg-subtle">Overviews (library rows, decks): the same renderer</div>
             <div className="flex flex-col gap-1.5">
               {[28, 36, 22].map((h) => (

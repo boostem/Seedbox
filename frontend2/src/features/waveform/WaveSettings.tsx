@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import { InfoRow, Panel, PanelHeader, Switch, Tabs } from "@/components/ui";
 import { demoAnalysis } from "@/lib/demo/analysis";
 import { webgl2Available } from "./gl/renderer";
-import { STEM_VIEWS, useWaveSettings, WAVE_MODES, waveSettings } from "./settings";
+import { STEM_VIEWS, useWaveSettings, WAVE_FOLLOWS, WAVE_MODES, waveSettings } from "./settings";
 import { WaveOverview } from "./WaveOverview";
 
 /** RGB / 3-band / stacked, as a segmented control. */
@@ -16,6 +16,12 @@ export function WaveModeTabs({ className }: { className?: string }) {
 export function StemViewTabs({ className }: { className?: string }) {
   const view = useWaveSettings((s) => s.stemView);
   return <Tabs variant="segmented" items={STEM_VIEWS} value={view} onChange={waveSettings.setStemView} className={className} />;
+}
+
+/** Centred / page, as a segmented control. */
+export function WaveFollowTabs({ className }: { className?: string }) {
+  const follow = useWaveSettings((s) => s.follow);
+  return <Tabs variant="segmented" items={WAVE_FOLLOWS} value={follow} onChange={waveSettings.setFollow} className={className} />;
 }
 
 export function WaveSettingsPanel({ className }: { className?: string }) {

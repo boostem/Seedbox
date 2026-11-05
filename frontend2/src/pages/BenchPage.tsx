@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from "react";
 import { player, usePlayer } from "@/audio/player";
 import { Page, PageBody, PageHeader, Panel, PanelHeader } from "@/components/ui";
-import { TrackWaveform, waveRendererInfo } from "@/features/waveform";
+import { headTrace, traceJitter } from "@/audio/playhead";
+import { TrackWaveform, type WaveFollow, waveRendererInfo, waveSettings } from "@/features/waveform";
 import { demoAnalysis } from "@/lib/demo/analysis";
 import { toneWav } from "@/lib/demo/tone";
 import { DemoTrackTable } from "@/lib/demo/tracks";
@@ -13,6 +14,11 @@ export interface BenchHooks {
    * the player's status ("playing", or "error" when the browser can't play). */
   play: (startAt?: number) => Promise<string>;
   stop: () => void;
+  /** How the waveform follows the playhead. */
+  follow: (mode: WaveFollow) => void;
+  /** Records the playhead every frame; `traceStop` says how even it was, in ms. */
+  traceStart: () => void;
+  traceStop: () => ReturnType<typeof traceJitter>;
   /** What draws the waveforms: "webgl2 (<GPU>)" or "canvas2d". */
   gpu: () => string;
   /** The audio engine's benchmark: `python -m seedbox2.bench engine`. */
@@ -41,6 +47,17 @@ export function BenchPage() {
         return usePlayer.getState().status;
       },
       stop: () => player.stop(),
+      follow: waveSettings.setFollow,
+      traceStart: () => {
+        headTrace.frames = [];
+        headTrace.clock = [];
+        headTrace.head = [];
+        headTrace.on = true;
+      },
+      traceStop: () => {
+        headTrace.on = false;
+        return traceJitter(headTrace);
+      },
       gpu: waveRendererInfo,
       engine: async (seconds, offTempo) => (await import("@/audio/engine/bench")).engineBench(seconds, offTempo),
       liveEngine: async () => new (await import("@/audio/engine")).LiveEngine(),
@@ -58,7 +75,7 @@ export function BenchPage() {
         <Panel>
           <PanelHeader title="Waveform" />
           <div className="p-4" data-bench="waveform">
-            <TrackWaveform analysis={analysis} trackId="demo" height={160} />
+            <TrackWaveform analysis={analysis} trackId="demo" height={160} deck />
           </div>
         </Panel>
         <Panel className="mt-4">

@@ -52,12 +52,15 @@ window.__benchMeter ??= (() => {
       const seconds = (performance.now() - s.t0) / 1000, commits = (window.__benchCommits ?? 0) - s.c0;
       const f = s.frames, d = [];
       for (let i = 1; i < f.length; i++) d.push(f[i] - f[i - 1]);
+      const mean = d.length ? d.reduce((a, b) => a + b, 0) / d.length : 0;
+      const stddev = d.length ? Math.sqrt(d.reduce((a, b) => a + (b - mean) ** 2, 0) / d.length) : 0;
       d.sort((a, b) => a - b);
       const span = f.length > 1 ? (f[f.length - 1] - f[0]) / 1000 : 0;
       return {
         seconds,
         frames: f.length,
         fps: span ? (f.length - 1) / span : 0,
+        frame_stddev_ms: stddev,
         frame_p95_ms: d.length ? d[Math.floor(0.95 * (d.length - 1))] : 0,
         frame_max_ms: d.length ? d[d.length - 1] : 0,
         long_tasks: s.tasks.length,
@@ -213,11 +216,17 @@ def scenarios(cdp: Cdp, seconds: float) -> dict[str, dict]:
     out["hover"] = _measure(cdp, hover)
     cdp.call("Input.dispatchMouseEvent", type="mouseMoved", x=1, y=1)
     time.sleep(2.6)  # the waveform only follows the playhead 2.5 s after the last manual scroll
+    cdp.eval("window.__seedboxBench.follow('page')")
     status = cdp.eval("window.__seedboxBench.play(0)")
     if status != "playing":
-        out["play"] = {"error": f"playback didn't start (player status {status!r})"}
+        out["play"] = out["play_centred"] = {"error": f"playback didn't start (player status {status!r})"}
     else:
         out["play"] = _measure(cdp, lambda: time.sleep(seconds))
+        # the waveform scrolls under a fixed playhead: everything repaints, and the playhead has to run evenly
+        cdp.eval("window.__seedboxBench.follow('centred')")
+        cdp.eval("window.__seedboxBench.traceStart()")
+        out["play_centred"] = _measure(cdp, lambda: time.sleep(seconds))
+        out["play_centred"].update({k: round(v, 3) for k, v in cdp.eval("window.__seedboxBench.traceStop()").items() if k != "frames"})
         cdp.eval("window.__seedboxBench.stop()")
 
     cdp.eval("document.querySelector('[data-bench=table]').scrollIntoView({block: 'center'})")
