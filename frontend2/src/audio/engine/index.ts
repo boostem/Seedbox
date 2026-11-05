@@ -212,6 +212,11 @@ export class LiveEngine {
     }
   }
 
+  /** Whether this deck's track has its stems here, so it can play stem lanes. */
+  hasStems(deck: DeckId): boolean {
+    return !!this.tracks[deck]?.stems;
+  }
+
   /**
    * Runs this plan from now on, with what the decks have now: without stems, its stem lanes fold into EQ. While playing
    * this is a live edit: the position (in beats) and the loop region carry over, and it's heard in 5 ms without a click.

@@ -19,6 +19,7 @@ from mutagen.id3 import APIC, ID3, TIT2, TPE1, TRCK, TXXX, ID3NoHeaderError
 
 from seedbox2.library import Database, Library, db, hashing
 from seedbox2.library.import_seedbox1 import import_seedbox1
+from seedbox2.mix import plan as v3
 from seedbox2.server import start_server
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -427,3 +428,89 @@ def test_the_server_renders_no_audio_for_playback(tmp_path, monkeypatch):
     routers = Path(__file__).parent.parent / "seedbox2" / "server" / "routers"
     for source in routers.glob("*.py"):
         assert "mixrender" not in source.read_text("utf-8"), f"{source.name} imports the offline renderer"
+
+
+def _edit_plan(a: str, b: str, *, technique: str = "long blend", edited: bool = False) -> dict:
+    deck = lambda h: {  # noqa: E731
+        "track_id": h, "grid": [{"start_beat": 0.0, "start_s": 0.0, "bpm": 120.0}], "play_from_beat": 0.0, "play_to_beat": 64.0,
+        "lanes": {name: [{"beat": 0.0, "value": v3.LANE_DEFAULTS[name], "curve": "linear"}] for name in v3.LANES},
+    }  # fmt: skip
+    return {"version": 3, "technique": technique, "bars": 8, "window": {"start_beat": 0.0, "end_beat": 64.0},
+            "tempo": [{"beat": 0.0, "value": 120.0, "curve": "linear"}], "a": deck(a), "b": deck(b), "edited": edited}  # fmt: skip
+
+
+def test_an_edit_keeps_the_plan_it_started_from_until_it_is_reset(tmp_path):
+    lib = Library.open(tmp_path / "lib.sqlite3")
+    a = lib.add_file(_mp3(tmp_path / "a.mp3", 330))["hash"]
+    b = lib.add_file(_mp3(tmp_path / "b.mp3", 550))["hash"]
+    assert not lib.save_plan_edit(a, b, {"no": "plan yet"})
+    lib.put_plan(a, b, {"auto": 1}, user_edited=False)
+    assert lib.plan(a, b)["auto_plan"] is None
+    assert not lib.reset_plan_edit(a, b)
+
+    assert lib.save_plan_edit(a, b, {"edit": 1})
+    assert lib.save_plan_edit(a, b, {"edit": 2})
+    p = lib.plan(a, b)
+    assert p["plan"] == {"edit": 2} and p["auto_plan"] == {"auto": 1} and p["user_edited"] is True
+
+    # a newly generated or imported plan replaces both
+    lib.put_plan(a, b, {"auto": 2}, user_edited=False)
+    assert lib.plan(a, b)["auto_plan"] is None
+
+    assert lib.save_plan_edit(a, b, {"edit": 3})
+    assert lib.reset_plan_edit(a, b)
+    p = lib.plan(a, b)
+    assert p["plan"] == {"auto": 2} and p["auto_plan"] is None and p["user_edited"] is False
+
+    # what it started from was a person's own, as an imported plan is: it stays marked so
+    lib.put_plan(a, b, {"edited": True}, user_edited=True)
+    lib.save_plan_edit(a, b, {"edit": 4})
+    lib.reset_plan_edit(a, b)
+    assert lib.plan(a, b)["user_edited"] is True
+    lib.close()
+
+
+def test_the_editor_saves_and_resets_a_plan_over_the_api(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDBOX_SUPPORT_DIR", str(tmp_path / "support"))
+    monkeypatch.setenv("SEEDBOX_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("SEEDBOX_LOG_DIR", str(tmp_path / "logs"))
+    (tmp_path / "support").mkdir()
+    lib = Library.open(tmp_path / "support" / "library.sqlite3")
+    a = lib.add_file(_mp3(tmp_path / "a.mp3", 330))["hash"]
+    b = lib.add_file(_mp3(tmp_path / "b.mp3", 550))["hash"]
+    lib.put_plan(a, b, _edit_plan(a, b), user_edited=False)
+    lib.close()
+
+    handle = start_server(tmp_path / "nodist", port=0)
+    client = _Client(handle.url)
+    path = f"/api/mixes/plans/{a}/{b}"
+    try:
+        live = client.get(f"{path}/live")
+        assert live["auto"] is None and live["user_edited"] is False
+
+        # what the browser sends: JSON numbers without a decimal point too
+        edit = _edit_plan(a, b, technique="echo out", edited=True)
+        edit["bars"] = 4
+        edit["tempo"][0]["value"] = 124
+        edit["a"]["pinned"] = ["volume"]
+        assert client.request("PUT", path, edit)[0] == 200
+        live = client.get(f"{path}/live")
+        assert live["plan"]["technique"] == "echo out" and live["plan"]["a"]["pinned"] == ["volume"]
+        assert live["auto"]["technique"] == "long blend" and live["user_edited"] is True
+        assert "auto_plan" not in client.get("/api/mixes/plans")[0]
+
+        # refused: not a plan, somebody else's tracks, and a pair with no plan
+        bad = _edit_plan(a, b)
+        bad["a"]["lanes"]["volume"][0]["value"] = 2.0
+        assert client.request("PUT", path, bad)[0] == 422
+        assert client.request("PUT", path, _edit_plan(b, a))[0] == 422
+        assert client.request("PUT", f"/api/mixes/plans/{b}/{a}", _edit_plan(b, a))[0] == 404
+        assert client.get(f"{path}/live")["plan"]["technique"] == "echo out"
+
+        assert client.request("POST", f"{path}/reset")[0] == 200
+        live = client.get(f"{path}/live")
+        assert live["plan"]["technique"] == "long blend" and live["auto"] is None and live["user_edited"] is False
+        assert client.request("POST", f"{path}/reset")[1]["reset"] is False
+        assert client.request("POST", f"/api/mixes/plans/{b}/{a}/reset")[0] == 404
+    finally:
+        handle.stop()

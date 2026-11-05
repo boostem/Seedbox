@@ -151,7 +151,12 @@ _V3 = """
 ALTER TABLE sets ADD COLUMN order_settings TEXT;
 """
 
-MIGRATIONS: list[Migration] = [_V1, _V2, _V3]
+# v4 (#79): the plan as it was before a person's edit (JSON), for "reset to auto"; null while it hasn't been edited here
+_V4 = """
+ALTER TABLE plans ADD COLUMN auto_plan TEXT;
+"""
+
+MIGRATIONS: list[Migration] = [_V1, _V2, _V3, _V4]
 SCHEMA_VERSION = len(MIGRATIONS)
 
 

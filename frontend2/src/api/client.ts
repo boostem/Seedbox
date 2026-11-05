@@ -100,7 +100,10 @@ export const api = {
   mixes: {
     plans: (opts?: RequestOptions) => get<SavedPlan[]>("/api/mixes/plans", { quiet: true, ...opts }),
     /** A saved plan as v3, for the live engine. */
-    livePlan: (from: string, to: string, opts?: RequestOptions) => get<{ plan: MixPlan; user_edited: boolean }>(`/api/mixes/plans/${from}/${to}/live`, { quiet: true, ...opts }),
+    livePlan: (from: string, to: string, opts?: RequestOptions) => get<{ plan: MixPlan; user_edited: boolean; auto: MixPlan | null }>(`/api/mixes/plans/${from}/${to}/live`, { quiet: true, ...opts }),
+    /** The editor's edit. `plan` stays what plays; what it started from stays on the server until `resetPlan`. */
+    savePlan: (from: string, to: string, plan: MixPlan, opts?: RequestOptions) => put<{ saved: boolean }>(`/api/mixes/plans/${from}/${to}`, plan, { quiet: true, ...opts }),
+    resetPlan: (from: string, to: string, opts?: RequestOptions) => post<{ reset: boolean }>(`/api/mixes/plans/${from}/${to}/reset`, undefined, { quiet: true, ...opts }),
   },
   onboarding: {
     status: (opts?: RequestOptions) => get<Onboarding>("/api/onboarding", opts),

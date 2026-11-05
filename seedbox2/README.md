@@ -391,7 +391,19 @@ What it doesn't do yet:
 
 `scrub(beat)` / `endScrub()` play 40 ms bursts forward from the pointer with 3 ms fades, on one graph, so scrubbing costs what playing costs. It goes quiet when the pointer rests, and playing carries on from where it lets go if it was playing. A/B (`features/mix/session.ts`) is just `schedule` of the other plan.
 
-`#/mixes` is the first screen on all this: a saved plan with scrubbing on the waveforms, a loop selection on the ruler, "loop the transition", A/B and draggable keyframes. The library keeps one plan per pair and nothing generates auto plans until #53, so side A is "Saved" for an edited plan. Edits aren't saved yet (#79). `trimDb` is 0 there because the library has no loudness to work it out from yet.
+`#/mixes` is the first screen on all this: a saved plan with scrubbing on the waveforms, a loop selection on the ruler, "loop the transition" and A/B. The library keeps one plan per pair and nothing generates auto plans until #53, so side A is "Original" for an imported plan. `trimDb` is 0 there because the library has no loudness to work it out from yet.
+
+**The transition editor** (#79, `TransitionEditor` in `frontend2/src/features/mix/`) is that screen at three levels, and the choice stays in localStorage:
+
+- **Simple** (`styles.ts`): a style, a length and two amounts, how smooth and how much FX, write every lane of the plan in the browser, and a coloured ribbon shows the result. The styles are a table of recipes after Seedbox 1's techniques, until a generator (#53) and styles as data (#57) replace it. A deck with stems hands over on its stem lanes, one without on its EQ.
+- **Advanced** (`LaneStack.tsx`): the fader and four stem rows per deck, each stem's curve drawn on its own waveform, which dims as the curve turns it down. A deck whose track has no stems gets EQ rows on its band waveforms instead.
+- **Manual:** a row for every lane of both decks. Drag a keyframe, double-click to add one, right-click to remove it, Alt-click to change its curve, or click it to set its numbers.
+
+Every edit goes straight to `schedule`, so it's heard as the pointer moves. A drag or a held slider is one step of undo (Ctrl+Z, Ctrl+Shift+Z; `session.ts`). An edit is saved 0.6 s after the last change: `PUT /api/mixes/plans/{from}/{to}` refuses anything `validate` refuses, and `plans.auto_plan` keeps the plan the edits started from. "Reset to auto" goes back to it (`POST .../reset`), and undo can bring the edit back.
+
+**The checks** (`checks.ts`) are bass overlap, vocal overlap, key and tempo stretch, and loudness dip and bump, estimated from the plan and the waveforms after every edit, because nothing has been rendered. They use `mixmetrics.checks`' limits, but they're estimates: the levels come from waveform peaks rather than measured loudness, so an exported render's `mixmetrics` still has the last word. Vocal overlap needs both tracks' stems. A 128-bar overlap takes about 5 ms to check in Node, and a fix about 10 ms.
+
+Each Fix button is one undoable edit: bass and vocals hand over on one bar in the middle of where they clash (a person's lanes are pinned as usual), loudness rides the faders and then the mids and highs that aren't killed, and key and tempo shifts B by up to 2 semitones and meets the two tempos halfway. The live engine doesn't play `key_shift` or `key_lock` until #66, so those two parts of the fix aren't audible live yet.
 
 **The server renders for export only** (#70). Nothing under `/api` renders audio to listen to: `tests/test_seedbox2_library.py` holds that, and playing or auditioning a plan is the live engine's job. The listening page (`#/listen`) plays files rendered offline, and `python -m seedbox2.eval` renders for its reports.
 
