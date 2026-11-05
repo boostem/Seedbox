@@ -30,6 +30,7 @@ for (const [key, file] of Object.entries(job.streams as Record<string, string>))
     core.setChunk(key, i, data.slice(i * CHUNK, end), data.slice(frames + i * CHUNK, frames + end));
   }
 }
+if (job.master) core.setMaster(job.master.targetLufs, job.master.makeupDb);
 core.setPlan(plan, job.audio);
 core.play();
 const total = core.windowFrames + LATENCY;

@@ -13,6 +13,7 @@ export type EngineMessage =
   | { type: "loop"; startBeat: number | null; endBeat: number | null }
   | { type: "scrub"; beat: number }
   | { type: "endScrub" }
+  | { type: "master"; targetLufs: number; makeupDb?: number | null }
   | { type: "ping"; id: number };
 
 export type EngineReport =

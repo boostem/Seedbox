@@ -5,6 +5,7 @@ import { IconButton, InfoRow, Page, PageBody, PageHeader, Panel, PanelHeader, Sk
 import { WatchFoldersPanel } from "@/features/import/WatchFoldersPanel";
 import { ModelsPanel } from "@/features/models/ModelsPanel";
 import { StemsPanel } from "@/features/models/StemsPanel";
+import { MasterPanel } from "@/features/system/MasterPanel";
 import { PowerPanel } from "@/features/system/PowerPanel";
 import { WaveSettingsPanel } from "@/features/waveform";
 import { useApp } from "@/store/app";
@@ -74,6 +75,7 @@ export function SystemPage() {
         <WatchFoldersPanel />
         <ModelsPanel />
         <StemsPanel />
+        <MasterPanel />
         <PowerPanel />
         <WaveSettingsPanel className="max-w-3xl" />
         <FoldersPanel />

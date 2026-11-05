@@ -30,6 +30,9 @@ ABSOLUTE_GATE = -70.0
 RELATIVE_GATE = -10.0
 OFFSET = -0.691
 SILENCE = -120.0  # what a silent block's loudness is stored as
+TRACK_GAIN_LIMIT_DB = 12.0
+BODY_SHARE = 0.25  # a track's body: its loudest sections, as many as cover this share of what's audible
+BODY_WINDOW_S, BODY_HOP_S = 16.0, 8.0  # the stretches that stand in for sections when a track has none
 MAX_MATCH_DB = 12.0  # a gain beyond this means one side is a breakdown, not that the tracks differ by that much
 
 # BS.1770's two K-weighting biquads at 48 kHz
@@ -134,6 +137,31 @@ def stretch(data: dict, start_s: float, end_s: float) -> dict:
 def sections(data: dict, spans: Iterable[dict]) -> list[dict]:
     """`stretch` for each `{kind, start_s, end_s}`."""
     return [{"kind": s.get("kind"), **stretch(data, float(s["start_s"]), float(s["end_s"]))} for s in spans]
+
+
+def track_gain_db(data: dict, spans: Iterable[dict] | None = None, target_lufs: float = -12.0) -> float | None:
+    """The one gain for a whole track (#58): its body at `target_lufs`, measured per section rather than where a blend
+    happens to be. A quiet intro stays as much quieter than the drop as the track made it, so it isn't boosted into the
+    next track's drop. Without sections, 16 s stretches. Within ±TRACK_GAIN_LIMIT_DB; None if the track is silent."""
+    length = len(data.get("lufs") or []) * HOP_S + BLOCK_S - HOP_S
+    stretches = list(spans) if spans else []
+    if not stretches and length > 0:
+        starts = np.arange(0.0, max(length - BODY_WINDOW_S, 0.0) + BODY_HOP_S / 2, BODY_HOP_S)
+        stretches = [{"start_s": float(t), "end_s": min(float(t) + BODY_WINDOW_S, length)} for t in starts]
+    found = [(m["integrated_lufs"], m["end_s"] - m["start_s"]) for m in sections(data, stretches)
+             if m["integrated_lufs"] is not None]  # fmt: skip
+    if not found:
+        return None
+    found.sort(key=lambda f: -f[0])
+    need = BODY_SHARE * sum(seconds for _, seconds in found)
+    energy, covered = 0.0, 0.0
+    for lufs, seconds in found:
+        energy += float(lufs_to_energy([lufs])[0]) * seconds
+        covered += seconds
+        if covered >= need:
+            break
+    body = float(energy_to_lufs(energy / covered))
+    return round(float(np.clip(target_lufs - body, -TRACK_GAIN_LIMIT_DB, TRACK_GAIN_LIMIT_DB)), 2)
 
 
 def overlap_gain_db(outgoing: dict, out_span: tuple[float, float], incoming: dict,

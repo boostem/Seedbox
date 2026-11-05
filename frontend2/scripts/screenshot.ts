@@ -183,6 +183,7 @@ const API: Record<string, unknown> = {
   "/api/models": modelsStatus(model()),
   "/api/onboarding": { first_run: false },
   "/api/power": POWER,
+  "/api/mixes/master": { target: "streaming", target_lufs: -14, ceiling_dbtp: -1.6, makeup_db: 0.5, targets: { streaming: -14, club: -9 } },
 };
 
 // Every route, and the states each one has so far. Area tickets add their screens' states (empty, loading,

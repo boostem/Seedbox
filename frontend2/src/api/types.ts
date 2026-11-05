@@ -114,6 +114,18 @@ export interface PowerStatus {
   };
 }
 
+// ---- The master chain: GET /api/mixes/master (#58) ----
+
+export type MasterTarget = "streaming" | "club";
+
+export interface MasterStatus {
+  target: MasterTarget;
+  target_lufs: number;
+  ceiling_dbtp: number;
+  makeup_db: number; // open-loop: what the live engine plays with until a render has measured one
+  targets: Record<MasterTarget, number>;
+}
+
 // ---- Stems: GET /api/analysis/stems, /api/sets/{id}/stems (#44) ----
 
 export interface StemsStatus {

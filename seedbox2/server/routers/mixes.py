@@ -3,13 +3,38 @@ here renders audio to listen to: the server renders for export only (#70)."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from pathlib import Path
+from typing import Literal
 
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from seedbox2.library.service import SETTINGS_FILE, Settings
 from seedbox2.mix import convert
 from seedbox2.mix import plan as v3
+from seedbox2.mix import master as master_chain
 from seedbox2.server.deps import LibraryDep
 
 router = APIRouter(prefix="/mixes", tags=["mixes"])
+
+
+class MasterSettings(BaseModel):
+    target: Literal["streaming", "club"]
+
+
+def _settings(lib: LibraryDep) -> Settings:
+    return Settings(Path(lib.db.path).parent / SETTINGS_FILE)
+
+
+@router.get("/master")
+def master(lib: LibraryDep) -> dict:
+    """The master chain's loudness target (#58), chosen in Settings: its LUFS, ceiling and open-loop make-up."""
+    return master_chain.status(_settings(lib))
+
+
+@router.post("/master")
+def set_master(body: MasterSettings, lib: LibraryDep) -> dict:
+    return master_chain.set_target(_settings(lib), body.target)
 
 
 @router.get("/plans")

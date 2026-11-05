@@ -14,7 +14,7 @@ import { BLOCK, pyRound, SR } from "./constants";
 import { EDIT_FADE } from "./control";
 import { DeckVoice } from "./deck";
 import type { DeckSource } from "./deck";
-import { LATENCY, Leveller, Limiter, MAKEUP } from "./master";
+import { Glue, LATENCY, Limiter, openLoopMakeupDb } from "./master";
 import { AudioStream } from "./stream";
 
 export type DeckId = "a" | "b";
@@ -61,12 +61,13 @@ export class EngineCore {
   private readonly dryR = new Float64Array(BLOCK);
   private readonly fxL = new Float64Array(BLOCK);
   private readonly fxR = new Float64Array(BLOCK);
-  private readonly levelGain = new Float64Array(BLOCK);
   private readonly oldL = new Float64Array(BLOCK);
   private readonly oldR = new Float64Array(BLOCK);
   private readonly oldFxL = new Float64Array(BLOCK);
   private readonly oldFxR = new Float64Array(BLOCK);
-  private readonly leveller = new Leveller();
+  private readonly glueGain = new Float64Array(BLOCK);
+  private readonly glue = new Glue();
+  private makeup = Math.pow(10, openLoopMakeupDb() / 20);
   private readonly limiter = new Limiter();
 
   private transport: Transport = "stopped";
@@ -94,6 +95,11 @@ export class EngineCore {
   private grainLeft = 0;
   private frame = 0;
   private endedFlag = false;
+
+  /** The master chain's target. `makeupDb`: what a render measured for it, instead of the open-loop make-up. */
+  setMaster(targetLufs: number, makeupDb?: number | null): void {
+    this.makeup = Math.pow(10, (makeupDb ?? openLoopMakeupDb(targetLufs)) / 20);
+  }
 
   /** A source's audio: the same stream stays when a new plan uses the same track. */
   addStream(key: string, frames: number, chunkFrames: number): void {
@@ -358,6 +364,10 @@ export class EngineCore {
     this.q = q;
     for (const d of this.decks) d.relocate(clearTails);
     if (this.editLeft > 0) this.endEdit();
+    if (clearTails) {
+      this.limiter.clear();
+      this.glue.reset();
+    }
   }
 
   /** The window's fades and the loop region's, on the graph's own position. */
@@ -442,22 +452,20 @@ export class EngineCore {
   }
 
   private renderBlock(m: number, outL: Float32Array, outR: Float32Array, offset: number): void {
-    const { dryL, dryR, fxL, fxR, levelGain } = this;
+    const { dryL, dryR, fxL, fxR, glueGain, makeup } = this;
     dryL.fill(0, 0, m);
     dryR.fill(0, 0, m);
     fxL.fill(0, 0, m);
     fxR.fill(0, 0, m);
     const q = this.q;
     for (const d of this.decks) if (q + m > d.qa) d.render(q, m, dryL, dryR, fxL, fxR);
-    if (this.oldDecks.length) this.mixOldGraph(m);
-    this.leveller.run(dryL, dryR, m, levelGain);
     let env = this.env;
     let step = this.envStep;
     let closed = false;
     for (let i = 0; i < m; i++) {
       const g = env * this.edgeGain(q + i);
-      dryL[i] = (dryL[i] * levelGain[i] + fxL[i] * MAKEUP) * g;
-      dryR[i] = (dryR[i] * levelGain[i] + fxR[i] * MAKEUP) * g;
+      dryL[i] = (dryL[i] + fxL[i]) * g;
+      dryR[i] = (dryR[i] + fxR[i]) * g;
       if (step !== 0) {
         env += step;
         if (env >= 1) {
@@ -473,6 +481,11 @@ export class EngineCore {
     this.env = env;
     this.envStep = step;
     this.q = q + m;
+    this.glue.run(dryL, dryR, m, glueGain);
+    for (let i = 0; i < m; i++) {
+      dryL[i] *= glueGain[i] * makeup;
+      dryR[i] *= glueGain[i] * makeup;
+    }
     this.limiter.run(dryL, dryR, m, outL, outR, offset);
     if (this.editLeft > 0) {
       this.editLeft -= m;

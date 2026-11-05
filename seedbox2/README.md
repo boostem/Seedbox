@@ -31,7 +31,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -336,6 +336,34 @@ in `track-loudness.json` in the cache folder. It sounds like Seedbox 1's rendere
 the difference between the two at least 120 dB down). Rubber Band is what's left over budget: it wants the whole deck and
 a float64 ratio per sample, all of it in `_stretched`, until the Signalsmith engine (#52) replaces it.
 
+**The master chain** (#58, `seedbox2/mix/master.py`, `frontend2/src/audio/engine/master.ts`): a render and the live engine run
+the same causal chain, so they null. Each track gets one gain, the bus gets the chain.
+
+- **Track gain:** `loudness.track_gain_db` puts a track's body at -12 LUFS: the loudest sections (16 s stretches where a track has none)
+  that cover a quarter of it, from the stored curve, so no new decode. `GET /api/analysis/{hash}/loudness` returns it as `track_gain_db`, the live
+  engine's `trimDb`. Seedbox 1 trims to the bars in the overlap, up to 6 dB over the whole-track trim: a quiet intro is
+  boosted, and so is the drop after it. Seedbox 2 renders keep the track's own dynamics. Seedbox 1's renderer is unchanged:
+  `render_audio`'s `trims_db` and `master` are what Seedbox 2 passes.
+- **Glue:** 2:1, stereo linked, 30 ms attack, 300 ms release, 6 dB knee at -12 dB RMS: its deepest moment averaged about 2 dB on 24 real tracks.
+- **Limiter:** ceiling -1.6 dBTP. 4x true peak (24-tap interpolator: 12 taps under-read noise by 0.3 dB and clipped audio by
+  1.4), the minimum required over 25 ms, averaged over 25 ms, so 25 ms of latency. It held every fixture and real track within 0.03 dB.
+- **Target:** Settings → Master, streaming (-14 LUFS) or club (-9), `GET`/`POST /api/mixes/master`, `master.target` in `settings.json`.
+  It only sets the make-up. With nothing measured (`open_loop_makeup_db`), which is how the live engine and transition renders play,
+  on 24 real whole tracks: streaming averaged +0.25 LU from the target (sd 0.9), club +0.4 (sd 2.2, with one outlier 5 LU over).
+  Club needs 8 dB of make-up on ordinary tracks, so expect about 9 dB of momentary limiting on the deepest peak.
+  `find_makeup` measures a render and closes in within 0.1 LU unless that takes over 12 dB of limiting; those mixes stay
+  quieter (up to 1.5 LU under -9 on the 8 of those tracks this was run on) and the tracklist says what they reached. `offline.export` returns that make-up,
+  and `LiveEngine.setMaster(targetLufs, makeupDb)` plays at the same level.
+- **Parity:** with the same make-up, offline and live are within 0.01 LU and null at -69 to -75 dB, with glue and limiter working
+  hard or not (`tests/test_seedbox2_engine_parity.py`; the ticket's limit is 0.5 LU).
+- **Export:** `offline.export` writes the audio and `<name>.txt`: the tracks with their start times, then the target, integrated
+  LUFS, LRA (EBU Tech 3342) and true peak measured on the render, which agree with ffmpeg's `ebur128` on the test
+  signals (0.15 LU, 0.3 LU, 0.2 dB). It takes one plan. Whole sets, `.cue` and the UI for them are #70, which
+  can feed the chain chunk by chunk (`Master.process`, `flush`). Nothing in the app calls `export` until then.
+
+The glue replaces Seedbox 1's leveller, so `automation` predicts it instead. The golden numbers under "Automation shaped by the
+audio" above were measured before this and need a new run on the owner's machine.
+
 ## Evaluating the analysis
 
 `seedbox2/eval/` (#50) scores analysers against labelled real audio, so every analysis ticket has a number to beat.
@@ -377,7 +405,7 @@ It needs `mir_eval` (in `requirements-dev.txt`).
 track -> per-stem gain -> trim -> FX -> LR4 isolator -> filter -> fader, with echo and reverb sends. The core has no browser
 in it, so the same code runs under deno for the parity test: `tests/test_seedbox2_engine_parity.py` nulls it against
 `musicreco/mixrender.py` on blends, EQ, filter sweeps, loops, effects, sends and varispeed (-69 to -75 dB without stretch,
-against a limit of -40 dB; -42 dB in varispeed). When changing either engine's DSP, change both: `constants.ts` lists what they share.
+against a limit of -40 dB; -42 dB in varispeed). The master chain nulls as well (#58, under "The master chain"). When changing either engine's DSP, change both: `constants.ts` lists what they share.
 
 Audio comes in 20 s chunks: `GET /api/tracks/{hash}/audio/{source}/{index}`, FLAC at 44.1 kHz, cut so that they're a whole
 decode sample for sample. `loader.ts` fetches what the plan plays over the next 25 s and evicts what it doesn't need, with

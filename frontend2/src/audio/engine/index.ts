@@ -2,7 +2,7 @@
  * The live engine: plays mix plans in the browser, sample-accurately, without a server render.
  *
  *   const engine = new LiveEngine();
- *   await engine.load("a", { hash, trimDb });    // a deck's track; `trimDb` is its gain to DECK_LUFS, as the renderer's
+ *   await engine.load("a", { hash, trimDb });    // a deck's track; `trimDb` is its `track_gain_db`, as the renderer's
  *   await engine.load("b", { hash: other });
  *   engine.schedule(plan);                       // a plan v3 for those tracks; stem lanes fold into EQ without stems
  *   await engine.play();                         // or play(when), in AudioContext seconds, on the sample
@@ -37,7 +37,7 @@ const PUMP_MS = 500;
 export interface TrackRequest {
   /** The library's content hash. */
   hash: string;
-  /** Gain that brings the track to DECK_LUFS over the mix: the renderer's trim. */
+  /** Gain that brings the track's body to DECK_LUFS: `track_gain_db` of `GET /api/analysis/{hash}/loudness`, the renderer's trim. */
   trimDb?: number;
 }
 
@@ -378,6 +378,11 @@ export class LiveEngine {
     this.loop =
       this.loopBeats && this.clock ? { from: this.clock.time(this.loopBeats[0]), to: this.clock.time(this.loopBeats[1]) } : null;
     this.pump();
+  }
+
+  /** The master chain's loudness target in LUFS (`GET /api/mixes/master`). `makeupDb`: what a render measured, if there is one. */
+  setMaster(targetLufs: number, makeupDb?: number | null): void {
+    this.post({ type: "master", targetLufs, makeupDb });
   }
 
   /** Master seconds now, as heard; for playheads in a requestAnimationFrame loop. */

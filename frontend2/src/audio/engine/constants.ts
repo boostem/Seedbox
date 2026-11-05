@@ -1,5 +1,5 @@
 /**
- * The numbers the live engine shares with the offline renderer (`musicreco/mixrender.py`). Change one here only with
+ * The numbers the live engine shares with the offline renderer (`musicreco/mixrender.py`, `seedbox2/mix/master.py`). Change one here only with
  * its twin there: `tests/test_seedbox2_engine_parity.py` nulls the two engines against each other.
  */
 export const SR = 44100;
@@ -29,11 +29,22 @@ export const SPINBACK_SPEED = 3;
 export const STUTTER_DUTY = 0.7;
 export const FX_FADE_S = 0.003;
 
+// the master chain's twin is `seedbox2/mix/master.py`
 export const DECK_LUFS = -12;
-export const LEVEL_THRESHOLD_DB = 1;
-export const LEVEL_RATIO = 3;
-export const MAKEUP_DB = 1;
+export const DEFAULT_TARGET_LUFS = -14;
+export const OPEN_LOOP_DB = 1.9;
+export const OPEN_LOOP_PER_LU = 0.64;
 export const CEILING_DBTP = -1.6;
+export const GLUE_HOP = 64;
+export const GLUE_RATIO = 2;
+export const GLUE_THRESHOLD_DB = -12;
+export const GLUE_KNEE_DB = 6;
+export const GLUE_DETECT_S = 0.01;
+export const GLUE_ATTACK_S = 0.03;
+export const GLUE_RELEASE_S = 0.3;
+export const LIMIT_WINDOW_S = 0.025;
+export const TP_TAPS = 24;
+export const TP_PHASES = 4;
 
 /** Python's `round`: halves go to the even neighbour. The renderer rounds this way, and a sample off is a null lost. */
 export function pyRound(x: number): number {

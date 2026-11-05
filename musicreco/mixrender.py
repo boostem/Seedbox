@@ -813,9 +813,13 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
 
 def render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
                   progress: Callable[[float], None] | None = None,
-                  deck_stems: dict[str, list[tuple[np.ndarray, list[dict]]]] | None = None) -> dict:
+                  deck_stems: dict[str, list[tuple[np.ndarray, list[dict]]]] | None = None,
+                  trims_db: dict[str, float] | None = None,
+                  master: Callable[[np.ndarray, int], tuple[np.ndarray, dict]] | None = None) -> dict:
     """Everything render() does except encoding; also returns the master mix and per-deck stems (for tests).
-    `deck_stems`: {"A": [(stem audio, gain lane), ...]} plays that deck from its stems (Seedbox 2's stem lanes)."""
+    `deck_stems`: {"A": [(stem audio, gain lane), ...]} plays that deck from its stems (Seedbox 2's stem lanes).
+    `trims_db`: {"A": dB, "B": dB} replaces the overlap trim. `master`: the master chain instead of the leveller and
+    limiter below, `(faded mix, sr) -> (mix, report)`; the report is in the result as `master` (both Seedbox 2's)."""
     def report(f: float) -> None:
         if progress is not None:
             try:
@@ -837,9 +841,11 @@ def render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
     report(0.02)
     with ThreadPoolExecutor(2) as pool:
         audios = list(pool.map(lambda p: decode_stereo(Path(p), sr), (a_path, b_path)))
-        trims_db = [_deck_trim_db(Path(p), d, au, rng, sr)
+        measured = [_deck_trim_db(Path(p), d, au, rng, sr)
                     for p, d, au, rng in zip((a_path, b_path), decks, audios, _overlap_beats(decks, w0, w1))]
-        trims = [10 ** (t / 20) for t, _ in trims_db]
+        if trims_db is not None:
+            measured = [(trims_db[nm], whole) for nm, (_, whole) in zip("AB", measured)]
+        trims = [10 ** (t / 20) for t, _ in measured]
         report(0.1)
         futs = [pool.submit(_deck_stage, nm, d, au, tr, clock, w0, w1, m_total, sr, norm["key_lock"],
                             (deck_stems or {}).get(nm))
@@ -887,15 +893,25 @@ def render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
             stems[f"{st['name']} reverb"] = ret
             fx += ret
     report(0.8)
-    # the leveller only tames the dry decks' blend bump; echo and reverb returns ride on top of it unlevelled
-    ref_power = 10 ** ((DECK_LUFS + 0.691) / 10)
-    gain, lev_red = _level(dry_mix, ref_power, sr)
-    mix = dry_mix * gain + fx * 10 ** (MAKEUP_DB / 20)
-    del dry_mix, fx
-    mix, lim_red = _limit(mix, CEILING_DBTP)
     fi, fo = int(0.005 * sr), int(0.03 * sr)
-    mix[:, :fi] *= np.linspace(0, 1, fi, dtype=np.float32)
-    mix[:, -fo:] *= np.linspace(1, 0, fo, dtype=np.float32)
+    report_master = None
+    if master is not None:  # causal, so what goes in has its fades already, as the live engine's does
+        gain = None
+        mix = dry_mix + fx
+        del dry_mix, fx
+        mix[:, :fi] *= np.linspace(0, 1, fi, dtype=np.float32)
+        mix[:, -fo:] *= np.linspace(1, 0, fo, dtype=np.float32)
+        mix, report_master = master(mix, sr)
+        lev_red, lim_red = report_master.get("glue_db", 0.0), report_master.get("limiter_db", 0.0)
+    else:
+        # the leveller only tames the dry decks' blend bump; echo and reverb returns ride on top of it unlevelled
+        ref_power = 10 ** ((DECK_LUFS + 0.691) / 10)
+        gain, lev_red = _level(dry_mix, ref_power, sr)
+        mix = dry_mix * gain + fx * 10 ** (MAKEUP_DB / 20)
+        del dry_mix, fx
+        mix, lim_red = _limit(mix, CEILING_DBTP)
+        mix[:, :fi] *= np.linspace(0, 1, fi, dtype=np.float32)
+        mix[:, -fo:] *= np.linspace(1, 0, fo, dtype=np.float32)
     if lim_red > 8:
         warnings.append(f"limiter worked hard ({lim_red:.1f} dB): the overlap is very loud")
     beats = np.arange(math.ceil(w0 - 1e-9), math.floor(w1 + 1e-9) + 1)
@@ -908,9 +924,9 @@ def render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
         "lufs": round(integrated_lufs(mix, sr), 2),
         "true_peak_db": round(true_peak_db(mix), 2),
         "warnings": warnings,
-        "leveller_db": round(lev_red, 2), "limiter_db": round(lim_red, 2),
-        "trim_db": {nm: round(t, 2) for nm, (t, _) in zip("AB", trims_db)},
-        "track_trim_db": {nm: round(w, 2) for nm, (_, w) in zip("AB", trims_db)},
+        "leveller_db": round(lev_red, 2), "limiter_db": round(lim_red, 2), "master": report_master,
+        "trim_db": {nm: round(t, 2) for nm, (t, _) in zip("AB", measured)},
+        "track_trim_db": {nm: round(w, 2) for nm, (_, w) in zip("AB", measured)},
     }
 
 
