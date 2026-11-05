@@ -41,11 +41,12 @@ def start_jobs(app: Any) -> Supervisor:
             if state.jobs is None:
                 if state.library is None:
                     state.library = Library.open(Path(state.library_path) if state.library_path else default_path())
-                from seedbox2.analysis import stems
+                from seedbox2.analysis import key, stems
 
                 lib, events = state.library, state.events
                 jobs = Supervisor(lib, events)
                 jobs.add_listener(lambda row: stems.on_job_finished(jobs, lib, events, row))
+                jobs.add_listener(lambda row: key.on_job_finished(jobs, lib, row))
                 monitor = power(app)
                 monitor.attach(jobs)  # before it starts: jobs left from the last run obey the limits too
                 monitor.start()
@@ -56,8 +57,9 @@ def start_jobs(app: Any) -> Supervisor:
 
 
 def _queue_missing_stems(app: Any) -> None:
-    """The stems of tracks imported before the model was there, or left out when the cache was full."""
-    from seedbox2.analysis import stems
+    """The stems of tracks imported before the model was there, or left out when the cache was full, and the keys of
+    tracks imported before there was key detection."""
+    from seedbox2.analysis import key, stems
     from seedbox2.library.service import SETTINGS_FILE, Settings
 
     state = app.state
@@ -65,6 +67,10 @@ def _queue_missing_stems(app: Any) -> None:
         stems.queue_missing(state.jobs, state.library, Settings(Path(state.library.db.path).parent / SETTINGS_FILE))
     except Exception:
         log.exception("couldn't queue the missing stems")
+    try:
+        key.queue_missing(state.jobs, state.library)
+    except Exception:
+        log.exception("couldn't queue the missing keys")
 
 
 JobsDep = Annotated[Supervisor, Depends(get_jobs)]

@@ -64,7 +64,7 @@ let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 const marks = new Map<string, "queued" | "analysing">();
 let markTimer: ReturnType<typeof setTimeout> | undefined;
 
-function refreshSoon(hash: string) {
+export function refreshSoon(hash: string) {
   stale.add(hash);
   refreshTimer ??= setTimeout(() => {
     refreshTimer = undefined;

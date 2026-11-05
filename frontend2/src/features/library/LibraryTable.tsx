@@ -12,12 +12,43 @@ import { apiUrl } from "@/api/client";
 import type { LibraryRow } from "@/api/types";
 import { CoverArt, KeyBadge, Skeleton, Table, TableScroll, TBody, Td, Th, THead, Tooltip, Tr, VirtualRows, waveBars, WaveSkeleton } from "@/components/ui";
 import { useFrame } from "@/features/waveform/hooks";
+import { formatKey } from "@/lib/camelot";
 import { cn } from "@/lib/cn";
 import { fmtTime } from "@/lib/format";
+import { ui, useUi } from "@/store/ui";
 import { energy10, type Sort, type SortKey } from "./filter";
 import { overviews } from "./overviews";
 
 export const LIBRARY_ROW_H = 34;
+const HINT_SOURCE: Record<string, string> = { rekordbox: "Rekordbox", tunebat: "Tunebat", file: "the file's tags", itunes: "iTunes" };
+
+function keyTitle(r: LibraryRow): string | undefined {
+  const hint = r.key_hint ? `${HINT_SOURCE[r.key_hint_from ?? ""] ?? "A tag"} says ${r.key_hint}` : "";
+  if (r.key_from === "tags") return "From the file's tags or another app: a hint until our analysis";
+  if (r.key_from === "unknown") return `Our analysis isn't sure of the key. ${hint}`.trim();
+  if (r.key_from === "user") return `Your own key. ${hint}`.trim();
+  return hint || undefined;
+}
+
+/** Ours (or "?"), and the hint that disagrees with it. A click opens the key editor. */
+function KeyCell({ row: r }: { row: LibraryRow }) {
+  const notation = useUi((s) => s.keyNotation);
+  return (
+    <button
+      type="button"
+      aria-label="Edit the key"
+      className="inline-flex items-center gap-1 align-middle"
+      onClick={(e) => {
+        e.stopPropagation();
+        ui.editKey(r.hash);
+      }}
+    >
+      <KeyBadge camelot={r.key} size="xs" dim={r.key_from === "tags" || r.key_from === "unknown"} />
+      {r.key_hint && <span className="text-2xs text-fg-subtle italic">{formatKey(r.key_hint, notation)}</span>}
+    </button>
+  );
+}
+
 export const TRACKS_MIME = "application/x-seedbox-tracks";
 const WAVE_PAD_X = 8;
 const WAVE_PAD_Y = 6;
@@ -140,7 +171,7 @@ function LibraryHead({ sort, onSort, waveRef }: { sort?: Sort; onSort?: (key: So
               <Th align="right" width={62} {...th("bpm")}>
                 BPM
               </Th>
-              <Th align="center" width={52} {...th("key")}>
+              <Th align="center" width={84} {...th("key")}>
                 Key
               </Th>
               <Th width={74} {...th("energy")} title="Energy, 1-10">
@@ -279,8 +310,8 @@ const Row = memo(function Row({ row: r, index, selected, onSelect, dragHashes }:
       <Td num align="right" className={cn(r.bpm_from === "tags" && "text-fg-subtle italic")} title={r.bpm_from === "tags" ? tagHint : undefined}>
         {r.bpm ? (Number.isInteger(r.bpm) ? r.bpm : r.bpm.toFixed(1)) : coming && <Skeleton still={waiting} className="ml-auto w-7" />}
       </Td>
-      <Td align="center" title={r.key_from === "tags" ? tagHint : undefined}>
-        {r.key ? <KeyBadge camelot={r.key} size="xs" dim={r.key_from === "tags"} /> : coming && <Skeleton still={waiting} className="mx-auto h-4 w-7" />}
+      <Td align="center" title={keyTitle(r)}>
+        {r.key || r.key_from ? <KeyCell row={r} /> : coming && <Skeleton still={waiting} className="mx-auto h-4 w-7" />}
       </Td>
       <Td>
         {r.energy === null && coming ? <Skeleton still={waiting} className="w-10" /> : <EnergyMeter energy={r.energy} hint={r.energy_from === "tags"} />}

@@ -7,6 +7,7 @@ import { EMPTY_FILTER, filterRows, type LibraryFilter, type Sort, type SortKey, 
 import { FilterBar } from "@/features/library/FilterBar";
 import { FailedAnalysisBar } from "@/features/library/FailedAnalysisBar";
 import { LibrarySkeleton, LibraryTable } from "@/features/library/LibraryTable";
+import { KeyEditor } from "@/features/library/KeyEditor";
 import { plural } from "@/lib/format";
 import { navigate } from "@/lib/router";
 import { importFix, importSummary, useImports } from "@/store/imports";
@@ -262,6 +263,7 @@ export function LibraryPage() {
           </PageBody>
         </div>
       </div>
+      <KeyEditor />
     </Page>
   );
 }

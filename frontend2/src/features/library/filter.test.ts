@@ -18,6 +18,8 @@ export function row(p: Partial<LibraryRow> & { state?: LibraryRow["status"]["sta
     bpm_from: null,
     key: null,
     key_from: null,
+    key_hint: null,
+    key_hint_from: null,
     energy: null,
     energy_from: null,
     genre: "",

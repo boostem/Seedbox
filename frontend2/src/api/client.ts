@@ -3,7 +3,7 @@
  * show an error toast, unless `{ quiet: true }` (then the caller handles it).
  */
 import { toast } from "@/store/toasts";
-import type { PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
+import type { PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -117,6 +117,12 @@ export const api = {
   power: {
     status: (opts?: RequestOptions) => get<PowerStatus>("/api/power", opts),
     setMode: (mode: PowerMode, opts?: RequestOptions) => post<PowerStatus>("/api/power/settings", { mode }, opts),
+  },
+  key: {
+    /** Before it is computed (202) the answer is the queued job: `job.done` says when to ask again. */
+    status: (hash: string, opts?: RequestOptions) => get<KeyStatus | { state: string }>(`/api/analysis/${hash}/key`, opts),
+    override: (hash: string, key: string, opts?: RequestOptions) => request<KeyStatus>("PUT", `/api/analysis/${hash}/key/override`, { key }, opts),
+    clearOverride: (hash: string, opts?: RequestOptions) => request<KeyStatus>("DELETE", `/api/analysis/${hash}/key/override`, undefined, opts),
   },
   stems: {
     status: (opts?: RequestOptions) => get<StemsStatus>("/api/analysis/stems", opts),

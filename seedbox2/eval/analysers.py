@@ -2,11 +2,15 @@
 
 `seedbox1` (Seedbox 1's `musicreco/structure.py`, run without the tunebat BPM hint) is the baseline every Seedbox 2
 analysis ticket has to beat. `seedbox2` and `seedbox2-small` are Seedbox 2's beats (#43) with Beat This! final0 and
-small0 (the models must be downloaded). A new analyser registers itself here with `@analyser("name")`.
+small0 and the key (#45) of the mix (the models must be downloaded). `seedbox2-stems` is the same with the key of the
+harmonic stems, as the app does once a track has them: it separates every track, so it takes minutes per track. Key
+scores use `best_guess`, the key even when it isn't confident, so holding back doesn't flatter the number. A new
+analyser registers itself here with `@analyser("name")`.
 """
 
 from __future__ import annotations
 
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -78,10 +82,16 @@ def seedbox1(path: Path) -> Estimate:
                     sections=sections, vocals=vocals, cues=[(c["time_s"], c["label"]) for c in a["cues"]])
 
 
-def _beat_this(path: Path, model: str) -> Estimate:
-    """Seedbox 2's beats analysis (#43) with the model from the models folder (`python -m seedbox2.models`
-    or the app downloads it), without tag hints."""
+def _key_name(result: dict) -> str | None:
+    guess = result.get("best_guess")
+    return guess["key"] if guess else None
+
+
+def _beat_this(path: Path, model: str, *, stems: bool = False) -> Estimate:
+    """Seedbox 2's beats (#43) with the model from the models folder (`python -m seedbox2.models` or the app downloads
+    it), without tag hints, and key (#45) of the mix or, with `stems`, of the harmonic stems."""
     from seedbox2.analysis import beats as sb2  # noqa: PLC0415
+    from seedbox2.analysis import key as key_impl  # noqa: PLC0415
     from seedbox2.models import load_session  # noqa: PLC0415
 
     session = load_session(model)
@@ -89,13 +99,27 @@ def _beat_this(path: Path, model: str) -> Estimate:
         r = sb2.analyse(path, session, model=model)
     except sb2.NoBeats:  # as the job does
         r = sb2.seedbox1_fallback(path)
-    return Estimate(duration_s=r["duration_s"], bpm=r["bpm"], beats=sb2.beat_times(r).round(4).tolist(),
+    beat_times = sb2.beat_times(r)
+    if stems:
+        from seedbox2.analysis import stems as stems_impl  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as tmp:
+            stems_impl.separate(path, tmp)
+            k = key_impl.analyse_signal(key_impl.harmonic_signal(Path(tmp)), beat_times, source="stems")
+    else:
+        k = key_impl.analyse_signal(key_impl.decode_mono(path), beat_times)
+    return Estimate(duration_s=r["duration_s"], bpm=r["bpm"], key=_key_name(k), beats=beat_times.round(4).tolist(),
                     downbeats=sb2.beat_times(r, sb2.BEATS_PER_BAR).round(4).tolist())
 
 
 @analyser("seedbox2")
 def seedbox2_beats(path: Path) -> Estimate:
     return _beat_this(path, "beat_this")
+
+
+@analyser("seedbox2-stems")
+def seedbox2_stems(path: Path) -> Estimate:
+    return _beat_this(path, "beat_this", stems=True)
 
 
 @analyser("seedbox2-small")
