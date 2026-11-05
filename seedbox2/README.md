@@ -31,7 +31,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py tests/test_seedbox2_now_playing.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py tests/test_seedbox2_now_playing.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -279,6 +279,33 @@ so.
 
 Validation refuses bad values rather than clamping them. Loops start, end and read from whole beats, and last whole
 beats or ½, ¼, ⅛ or 1/16 of one (Seedbox 1's loop rolls end in ½-beat loops).
+
+**Stretching** (#52, `seedbox2/mix/stretch.py`): `render_deck(plan, "a", audio, sr)` gives a deck's audio on the
+master timeline, and `render_stems` does that for each stem. The engine is Signalsmith Stretch (`python-stretch`):
+
+| 32 bars at a tempo ramp | Timing | CPU per minute of audio (this machine, one core) |
+|---|---|---|
+| Seedbox 1: Rubber Band R3 + pilot track | as measured by the pilot | 4.2 s at a constant ratio, 13 s on a ramp |
+| Signalsmith Stretch, this engine | within 1 ms, from the plan alone | 1.0 s at a constant ratio, 1.2 s on a ramp |
+
+Rubber Band R3 was the other candidate. It can't follow a map from the plan through either binding: `pylibrb`'s
+`set_keyframe_map` can't be called (no type caster for its argument), and R3 in real-time mode with the ratio set by
+hand drifts 11 to 17 ms over 32 bars at a constant ratio.
+
+The time map comes from the plan: the tempo lane integrated gives each output sample its master beat, and `deck_time`
+gives that beat's place in the file. The binding restarts the engine on every call, so a changing ratio plays as
+constant-ratio pieces, cut on master beats, no more of them than keep it within 0.5 ms of the map. Each seam is a 20 ms
+crossfade ending on the cut. A constant ratio has no seams.
+
+`key_shift` (±2 semitones, per deck) is applied by the engine. With `key_lock` the pitch stays at the file's plus the
+shift. Without it the pitch also follows the tempo, as on a turntable. A lone sine lands within 9 cents of the
+semitone. Drum stems use 40 ms blocks instead of 120 ms, which cuts pre-echo in the tests. Four stems of one deck cost
+about four times the full mix, and `python-stretch` holds the GIL, so threads can't share that out. On one deck, 32 bars
+took 1.2 s of CPU as a full mix and 4.3 s as four stems here, so stems are over the 2 s render budget for now.
+
+`python -m seedbox2.eval stretch cpu` measures the CPU table, and `stretch listen` renders the golden pairs with a
+tempo gap for `#/listen`, with one Seedbox 1 plan and mixer on both sides so that only the stretcher differs.
+
 
 `convert.load(raw)` reads a stored plan of either version. Imports keep Seedbox 1's JSON, so user-edited plans
 convert when read: lanes, markers, notes and `edited` carry over, and loops off the beat move to the nearest beat with

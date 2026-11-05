@@ -17,7 +17,7 @@ Seedbox 1 and Seedbox 2 renders are compared like for like.
 - masking: per band, the share of the two decks' energy that is common to both, sum(2·min(Ea, Eb)) / sum(Ea + Eb)
   over the overlap's STFT frames: 0 when one deck owns the band, 1 when both are equally loud all the time.
 - key and stretch: each deck's tempo ratio (master BPM / native BPM) over the bars it plays, the pitch shift that
-  results (none with key lock, plus any `pitch_semitones` the plan asks for) and the Camelot distance of the keys as
+  results (none with key lock, plus any `key_shift` the plan asks for) and the Camelot distance of the keys as
   heard.
 
 `checks()` turns the numbers into pass/warn/fail items for the transition editor.
@@ -333,7 +333,8 @@ def key_and_stretch(r: Render) -> dict:
             worst = float(ratio[np.argmax(np.abs(ratio - 1))])
             out[f"{k}_stretch"] = round(worst, 4)
             devs.append(abs(worst - 1) * 100)
-            semis = float(d.get("pitch_semitones", 0) or 0) + (0.0 if lock else 12 * math.log2(worst))
+            shift = d.get("key_shift", d.get("pitch_semitones", 0))  # Seedbox 2's plan, or Seedbox 1's
+            semis = float(shift or 0) + (0.0 if lock else 12 * math.log2(worst))
             out[f"{k}_semitones"] = round(semis, 2)
         out["max_stretch_pct"] = _round(max(devs)) if devs else None
     ka, kb = out["key_a"], out["key_b"]

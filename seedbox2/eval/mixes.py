@@ -69,6 +69,10 @@ def _analysis(path: Path) -> dict:
     return _analyses[path]
 
 
+def analysis_of(pair: Pair) -> tuple[dict, dict]:
+    return _analysis(pair.a), _analysis(pair.b)
+
+
 def _seedbox1_plan(pair: Pair) -> tuple[dict, dict[str, str]]:
     from musicreco import mixplan
     from musicreco.mixpair import _track
