@@ -148,7 +148,8 @@ def test_eval_mixes_cli(tmp_path, monkeypatch):
     s1 = row["engines"]["seedbox1"]["metrics"]
     assert s1["overlap"]["seconds"] > 4 and s1["beat"]["median_ms"] < 5
     assert s1["loudness"]["clipped_samples"] == 0
-    assert "#51" in row["engines"]["seedbox2"]["error"]
+    s2 = row["engines"]["seedbox2"]["metrics"]
+    assert s2["overlap"]["seconds"] > 4 and s2["loudness"]["clipped_samples"] == 0
 
 
 def test_eval_usage():

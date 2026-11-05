@@ -146,7 +146,7 @@ def test_run_writes_metrics_report_players_plans_and_waveforms(run_dir):
     assert res["metrics"]["overlap"]["seconds"] > 0
     assert len(res["wave"]["mix"]) == golden.WAVE_COLUMNS and max(res["wave"]["mix"]) > 0
     assert (run_dir / res["mix"]).stat().st_size > 10_000 and (run_dir / res["plan_file"]).is_file()
-    assert "unavailable" in rows["one-two"]["results"]["seedbox2"]
+    assert rows["one-two"]["results"]["seedbox2"]["metrics"]["overlap"]["seconds"] > 0
     assert rows["gone"]["missing"] == ["absent"] and rows["gone"]["results"] == {}
 
     page = (run_dir / "report.html").read_text(encoding="utf-8")
@@ -160,7 +160,6 @@ def test_run_writes_metrics_report_players_plans_and_waveforms(run_dir):
 def test_summary_says_what_was_not_rendered(corpus_dir, run_dir):
     text = (corpus_dir / "summary.md").read_text(encoding="utf-8")
     assert "2/3 pairs rendered" in text and "1 pairs not rendered" in text and "gone" in text
-    assert "engine unavailable" in text
 
 
 @needs_ffmpeg

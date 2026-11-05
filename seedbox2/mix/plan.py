@@ -47,6 +47,8 @@ LANE_DEFAULTS: dict[str, float] = {
 }  # fmt: skip
 TEMPO_RANGE = (40.0, 300.0)
 KEY_SHIFT_MAX = 2  # semitones, either way
+SEND_SETTINGS = ("echo_beats", "reverb_size")
+PINNABLE = (*LANES, *STEM_LANES, *SEND_SETTINGS)
 LOOP_DIVISIONS = (0.5, 0.25, 0.125, 0.0625)  # the lengths under a beat: a roll, still started on a beat
 # What a deck without stems does with each stem lane. Drums are broadband and "other" has no band of its own: the top
 # of the kit goes with the highs, and "other" is left alone.
@@ -223,9 +225,13 @@ class Deck(_Model):
     sends: Sends = Sends()
     loops: Annotated[list[Loop], Field(max_length=_MAX_LOOPS), AfterValidator(_no_overlap)] = []
     fx: Annotated[list[Fx], Field(max_length=_MAX_FX), AfterValidator(_no_overlap)] = []
+    pinned: list[str] = Field(default=[], max_length=len(PINNABLE), description="Set by a person: never regenerated.")
 
     @model_validator(mode="after")
     def _consistent(self) -> Deck:
+        for name in self.pinned:
+            if name not in PINNABLE:
+                raise ValueError(f"pinned: {name!r} isn't a lane or a send setting")
         if self.play_from_beat >= self.play_to_beat:
             raise ValueError("play_from_beat must be before play_to_beat")
         for a, b in zip(self.grid, self.grid[1:]):
