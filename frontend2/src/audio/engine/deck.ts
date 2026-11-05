@@ -68,6 +68,21 @@ function sinc(): Float32Array {
   return table;
 }
 
+function sameLane(a: readonly Keyframe[], b: readonly Keyframe[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].beat !== b[i].beat || a[i].value !== b[i].value || a[i].curve !== b[i].curve) return false;
+  }
+  return true;
+}
+
+function sameSends(a: DeckPlan, b: DeckPlan): boolean {
+  const x = a.sends;
+  const y = b.sends;
+  return x.echo_beats === y.echo_beats && x.reverb_size === y.reverb_size;
+}
+
 const WIDE = 4096; // what one varispeed block may read: 128 samples at the 15x a 300 / 20 BPM deck could ask for
 const SEAM_MAX = 512; // a seam is 5 ms
 const SPREAD = 1024; // how far apart the samples an effect reads in one go may be
@@ -88,6 +103,10 @@ export class DeckVoice {
   private readonly seamIn: Float64Array;
   private readonly seamOut: Float64Array;
   private readonly sources: { stream: AudioStream; gain: ControlLane | null }[];
+  private readonly gainKeyframes: (readonly Keyframe[] | null)[];
+  private readonly filterLane: ControlLane;
+  private readonly filterRes: ControlLane | null;
+  private readonly allLanes: ControlLane[];
   private readonly events: FxEvent[];
   private readonly stopAt: number;
   private readonly eqOn: boolean;
@@ -97,14 +116,15 @@ export class DeckVoice {
   private readonly isolator: Isolator | null;
   private readonly filter: DjFilter | null;
   private readonly volume: ControlLane;
-  private readonly echo: Echo | null;
+  private echo: Echo | null;
   private readonly echoSend: ControlLane;
   private readonly echoFeedback: ControlLane;
-  private readonly reverb: Reverb | null;
+  private reverb: Reverb | null;
   private readonly reverbSend: ControlLane;
   private readonly preTap: boolean;
   private echoStarted = false;
   private reverbStarted = false;
+  private warming = false;
 
   private readonly xL = new Float64Array(BLOCK);
   private readonly xR = new Float64Array(BLOCK);
@@ -146,7 +166,7 @@ export class DeckVoice {
   }
 
   private constructor(
-    private readonly plan: DeckPlan,
+    private plan: DeckPlan,
     sources: DeckSource[],
     private readonly clock: Clock,
     w0: number,
@@ -182,6 +202,7 @@ export class DeckVoice {
     const ctl = (lane: readonly Keyframe[], smooth = STEP_RAMP_S): ControlLane =>
       new ControlLane(new Lane(lane), clock, this.qa, this.size, smooth);
     this.sources = sources.map((s) => ({ stream: s.stream, gain: s.gain ? ctl(s.gain) : null }));
+    this.gainKeyframes = sources.map((s) => s.gain);
 
     const seam = this.map.seam;
     this.seamIn = new Float64Array(seam);
@@ -204,9 +225,9 @@ export class DeckVoice {
     this.isolator = this.eqOn ? new Isolator() : null;
     const filterLane = ctl(lanes.filter, FILTER_SMOOTH_S);
     const resOn = lanes.filter_res.some((k) => k.value > 0);
-    this.filter = filterLane.lane.differsFrom(0)
-      ? new DjFilter(filterLane, resOn ? ctl(lanes.filter_res, FILTER_SMOOTH_S) : null, this.size)
-      : null;
+    this.filterLane = filterLane;
+    this.filterRes = resOn ? ctl(lanes.filter_res, FILTER_SMOOTH_S) : null;
+    this.filter = filterLane.lane.differsFrom(0) ? new DjFilter(filterLane, this.filterRes, this.size) : null;
     this.volume = ctl(lanes.volume);
     this.echoSend = ctl(lanes.echo_send);
     this.echoFeedback = ctl(lanes.echo_feedback);
@@ -215,8 +236,69 @@ export class DeckVoice {
     const reverbOn = lanes.reverb_send.some((k) => k.value > 0);
     this.echo = echoOn ? new Echo(Math.ceil((plan.sends.echo_beats * 60 * SR) / 40)) : null;
     this.reverb = reverbOn ? new Reverb(plan.sends.reverb_size) : null;
+    this.allLanes = [this.low, this.mid, this.high, this.volume, this.echoSend, this.echoFeedback, this.reverbSend, filterLane];
+    if (this.filterRes) this.allLanes.push(this.filterRes);
+    for (const source of this.sources) if (source.gain) this.allLanes.push(source.gain);
     this.preTap =
       (echoOn && plan.sends.echo_tap === "pre_eq") || (reverbOn && plan.sends.reverb_tap === "pre_eq");
+  }
+
+  /**
+   * A live edit that only moved keyframes, from master sample `q` on: the lanes that changed fade to their new values
+   * over EDIT_FADE samples. Filters and tails keep their state. `sources` are in the order this voice was made with.
+   */
+  retarget(plan: DeckPlan, sources: DeckSource[], q: number): void {
+    const at = Math.max(q - this.qa, 0);
+    const next = (lane: ControlLane, keyframes: readonly Keyframe[], before: readonly Keyframe[]): void => {
+      if (!sameLane(keyframes, before)) lane.retarget(new Lane(keyframes), at);
+    };
+    const was = this.plan.lanes;
+    const now = plan.lanes;
+    next(this.low, now.eq_low, was.eq_low);
+    next(this.mid, now.eq_mid, was.eq_mid);
+    next(this.high, now.eq_high, was.eq_high);
+    next(this.volume, now.volume, was.volume);
+    next(this.echoSend, now.echo_send, was.echo_send);
+    next(this.echoFeedback, now.echo_feedback, was.echo_feedback);
+    next(this.reverbSend, now.reverb_send, was.reverb_send);
+    next(this.filterLane, now.filter, was.filter);
+    if (this.filterRes) next(this.filterRes, now.filter_res, was.filter_res);
+    this.filter?.relook();
+    sources.forEach((s, i) => {
+      const gain = this.sources[i].gain;
+      const before = this.gainKeyframes[i];
+      if (gain && s.gain && before && !sameLane(s.gain, before)) gain.retarget(new Lane(s.gain), at);
+      this.gainKeyframes[i] = s.gain;
+    });
+    this.plan = plan;
+  }
+
+  /** A live edit's fade has played out. */
+  settle(): void {
+    for (const lane of this.allLanes) lane.settle();
+  }
+
+  /** Takes over the old voice's echo and reverb where they would run the same: a tail rings on through a live edit. */
+  takeTails(old: DeckVoice): void {
+    if (!sameSends(this.plan, old.plan)) return;
+    if (this.echo && old.echo) {
+      this.echo = old.echo;
+      this.echoStarted = old.echoStarted;
+      old.echo = null;
+    }
+    if (this.reverb && old.reverb) {
+      this.reverb = old.reverb;
+      this.reverbStarted = old.reverbStarted;
+      old.reverb = null;
+    }
+  }
+
+  /** Settles a new voice's filters on the `n` samples before master sample `q`, without feeding its sends. */
+  warm(q: number, n: number, left: Float64Array, right: Float64Array): void {
+    if (!this.isolator && !this.filter) return;
+    this.warming = true;
+    for (let at = Math.max(q - n, 0); at < q; at += BLOCK) this.render(at, Math.min(BLOCK, q - at), left, right, left, right);
+    this.warming = false;
   }
 
   /** The (fractional) source sample at a master sample: what the varispeed read follows. */
@@ -507,7 +589,7 @@ export class DeckVoice {
         dryR[at + i] += xR[i];
       }
     }
-    if (q + n <= this.qa) return;
+    if (q + n <= this.qa || this.warming) return;
     if (this.echo) this.runEcho(q, k, n, m, at, fxL, fxR);
     if (this.reverb) this.runReverb(k, n, m, at, fxL, fxR);
   }
@@ -558,10 +640,7 @@ export class DeckVoice {
 
   /** The playhead jumped: the running sums and filter settle again. `clear` also silences the effect tails. */
   relocate(clear: boolean): void {
-    for (const lane of [this.low, this.mid, this.high, this.volume, this.echoSend, this.echoFeedback, this.reverbSend]) {
-      lane.relocate();
-    }
-    for (const s of this.sources) s.gain?.relocate();
+    for (const lane of this.allLanes) lane.relocate();
     this.filter?.relocate();
     this.isolator?.reset();
     if (clear) {

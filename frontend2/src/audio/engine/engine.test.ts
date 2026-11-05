@@ -319,3 +319,226 @@ describe("the fallback without stems", () => {
     expect(out.notes).toEqual(["Deck A has no stems: its stem lanes play on its EQ."]);
   });
 });
+
+describe("live edits", () => {
+  /** A steady tone, so that any jump in the output is the engine's doing. */
+  function toneCore(p: MixPlan, tone = 220): EngineCore {
+    const frames = SR * 40;
+    const c = new EngineCore();
+    const left = new Float32Array(frames);
+    for (let i = 0; i < frames; i++) left[i] = 0.25 * Math.sin((2 * Math.PI * tone * i) / SR);
+    c.addStream("a", frames, frames);
+    c.addStream("b", frames, frames);
+    c.setChunk("a", 0, left, left);
+    c.setChunk("b", 0, new Float32Array(frames), new Float32Array(frames));
+    c.setPlan(p, AUDIO);
+    return c;
+  }
+  const AUDIO = {
+    a: { sources: [{ key: "a", stem: null }], trimDb: 0 },
+    b: { sources: [{ key: "b", stem: null }], trimDb: 0 },
+  };
+  const volume = (value: number): Deck => {
+    const d = deck("a");
+    return { ...d, lanes: { ...d.lanes, volume: [kf(0, value, "hold")] } };
+  };
+  const biggestStep = (x: Float32Array, from = 0, to = x.length): number => {
+    let big = 0;
+    for (let i = from + 1; i < to; i++) big = Math.max(big, Math.abs(x[i] - x[i - 1]));
+    return big;
+  };
+  const dB = (a: Float32Array, b: Float32Array): number => {
+    let err = 0;
+    let sig = 0;
+    for (let i = 0; i < a.length; i++) {
+      err += (a[i] - b[i]) ** 2;
+      sig += b[i] ** 2;
+    }
+    return 10 * Math.log10(err / sig);
+  };
+  const ONE_S = SR;
+  const SETTLED = 2 * SR; // after the leveller's slow gain has settled on both
+
+  it("moves a lane within 5 ms, without a click, and then sounds as if it had always been that plan", () => {
+    const c = toneCore(plan(volume(0.8), deck("b", { play_from_beat: 40, play_to_beat: 41 }), 64));
+    c.play();
+    const PEAK = ONE_S + 50; // the tone's crest, a quarter of its period past a whole second: a jump here is the worst one
+    const before = run(c, PEAK);
+    c.setPlan(plan(volume(0.2), deck("b", { play_from_beat: 40, play_to_beat: 41 }), 64), AUDIO);
+    const after = run(c, LATENCY + ONE_S, PEAK);
+    // the steepest a 220 Hz tone at this level goes: more than that is a click
+    const tone = biggestStep(before, ONE_S / 2);
+    expect(biggestStep(after)).toBeLessThanOrEqual(tone * 1.02);
+    // at a quarter of the level from 5 ms after it comes out of the limiter (these lanes have no ramp of their own)
+    const peak = (x: Float32Array) => x.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+    expect(peak(after.subarray(LATENCY + 225, LATENCY + 6000))).toBeLessThan(peak(before.subarray(ONE_S / 2)) * 0.27);
+  });
+
+  it("nulls against the new plan once an edit has played out", () => {
+    const moved = (v: number) => plan(deck("a", { lanes: { ...deck("a").lanes, volume: [kf(0, 0.5), kf(16, v)] } }), deck("b"), 64);
+    const edited = toneCore(moved(0.7));
+    edited.play();
+    run(edited, ONE_S);
+    edited.setPlan(moved(0.3), AUDIO);
+    const a = run(edited, SETTLED, ONE_S);
+    const fresh = toneCore(moved(0.3));
+    fresh.play();
+    const b = run(fresh, ONE_S + SETTLED).subarray(ONE_S);
+    // after the fade and what's in the limiter, away from the different gains the leveller saw before
+    expect(dB(a.subarray(LATENCY + 1000), b.subarray(LATENCY + 1000))).toBeLessThan(-40);
+  });
+
+  it("fades to a new graph for an edit that changes the structure, keeping the beat", () => {
+    const c = toneCore(plan(volume(0.5), deck("b"), 64));
+    c.play();
+    const before = run(c, ONE_S);
+    const beat = c.beat;
+    const d = volume(0.5);
+    // the isolator switches on, flat: a new graph, sounding the same
+    c.setPlan(plan({ ...d, lanes: { ...d.lanes, eq_low: [kf(0, 0.001, "hold")] } }, deck("b"), 64), AUDIO);
+    expect(c.beat).toBeCloseTo(beat, 9);
+    const after = run(c, 4000, ONE_S);
+    expect(biggestStep(after)).toBeLessThanOrEqual(biggestStep(before, ONE_S / 2) * 1.1);
+  });
+
+  it("keeps the beat across a tempo edit and fades without a click", () => {
+    const c = toneCore(plan(volume(0.5), deck("b"), 64));
+    c.play();
+    const before = run(c, ONE_S);
+    const beat = c.beat;
+    c.setPlan({ ...plan(volume(0.5), deck("b"), 64), tempo: [kf(0, 130, "hold")] }, AUDIO);
+    expect(c.beat).toBeCloseTo(beat, 1); // the sample's rounding, and the limiter's latency on another tempo
+    const after = run(c, 4000, ONE_S);
+    expect(biggestStep(after)).toBeLessThanOrEqual(biggestStep(before, ONE_S / 2) * 1.5);
+  });
+
+  it("keeps an echo's tail ringing through an edit that makes a new graph", () => {
+    const d = volume(0.5);
+    const echo: Deck = {
+      ...d,
+      play_to_beat: 4,
+      lanes: { ...d.lanes, echo_send: [kf(0, 1, "hold")], echo_feedback: [kf(0, 0.8, "hold")] },
+    };
+    const c = toneCore(plan(echo, deck("b"), 64));
+    c.play();
+    run(c, 3 * SR); // past the deck's end (beat 4 is 2 s), with the repeats going on
+    c.setPlan(plan({ ...echo, lanes: { ...echo.lanes, eq_mid: [kf(0, -3, "hold")] } }, deck("b"), 64), AUDIO);
+    const after = run(c, SR, 3 * SR);
+    const peak = (x: Float32Array) => x.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+    expect(peak(after.subarray(SR / 2))).toBeGreaterThan(0.002);
+  });
+
+  it("takes only the newest of the edits that come during a fade", () => {
+    const c = toneCore(plan(volume(0.8), deck("b"), 64));
+    c.play();
+    run(c, ONE_S);
+    c.setPlan(plan(volume(0.6), deck("b"), 64), AUDIO);
+    c.setPlan(plan(volume(0.4), deck("b"), 64), AUDIO);
+    c.setPlan(plan(volume(0.1), deck("b"), 64), AUDIO);
+    const a = run(c, SETTLED, ONE_S);
+    const peak = (x: Float32Array) => x.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+    expect(peak(a.subarray(SETTLED - 2000))).toBeLessThan(0.1 * 0.25 * 2); // the tone at 0.1, plus the make-up gain
+  });
+
+  it("keeps the loop region through an edit", () => {
+    const c = toneCore(plan(volume(0.5), deck("b"), 64));
+    c.seek(4);
+    c.setLoop(4, 6);
+    c.play();
+    run(c, 20000);
+    c.setPlan({ ...plan(volume(0.5), deck("b"), 64), tempo: [kf(0, 130, "hold")] }, AUDIO);
+    run(c, 3 * SR, 20000);
+    expect(c.beat).toBeGreaterThanOrEqual(3.9);
+    expect(c.beat).toBeLessThan(6.1);
+  });
+
+  it("seeks without a click: what's in the limiter's lookahead still plays out", () => {
+    const c = toneCore(plan(volume(0.5), deck("b"), 64));
+    c.play();
+    const before = run(c, ONE_S);
+    c.seek(20);
+    const after = run(c, 8000, ONE_S);
+    expect(biggestStep(after)).toBeLessThanOrEqual(biggestStep(before, ONE_S / 2) * 1.1);
+  });
+});
+
+describe("scrubbing", () => {
+  const AUDIO = {
+    a: { sources: [{ key: "a", stem: null }], trimDb: 0 },
+    b: { sources: [{ key: "b", stem: null }], trimDb: 0 },
+  };
+  const ramped = () => core(plan(deck("a"), deck("b"), 32));
+  const peak = (x: Float32Array) => x.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+
+  it("is heard from where the pointer is, from a standstill, in short bursts", () => {
+    const c = ramped();
+    c.scrub(16); // 8 s of the 20 s ramp, whose every sample says where it is: 0.2 x the volume and master gain
+    expect(c.position).toBe(pyRound(8 * SR));
+    expect(c.playing).toBe(false);
+    const out = run(c, 8000);
+    expect(peak(out)).toBeGreaterThan(0.05);
+    // the ramp at 8 s, not the 0 s where the transport was
+    const loudest = peak(out);
+    c.scrub(4);
+    const earlier = run(c, 8000, 8000);
+    expect(peak(earlier.subarray(4000))).toBeLessThan(loudest);
+  });
+
+  it("goes quiet when the pointer rests, and stays where it let go", () => {
+    const c = ramped();
+    c.scrub(8);
+    run(c, 4000);
+    const resting = run(c, 8000, 4000);
+    expect(peak(resting.subarray(4000))).toBe(0);
+    c.endScrub();
+    run(c, 4000, 12000);
+    expect(c.playing).toBe(false);
+    expect(c.position).toBe(pyRound(4 * SR));
+  });
+
+  it("carries on playing from where it let go, if it was playing", () => {
+    const c = ramped();
+    c.play();
+    run(c, 4000);
+    c.scrub(12);
+    run(c, 8000, 4000);
+    c.scrub(14);
+    run(c, 4000, 12000);
+    c.endScrub();
+    const out = run(c, LATENCY + 8000, 16000);
+    expect(c.playing).toBe(true);
+    expect(peak(out.subarray(out.length - 1000))).toBeGreaterThan(0.05);
+    expect(c.beat).toBeGreaterThan(14);
+    expect(c.beat).toBeLessThan(14.5);
+  });
+
+  it("doesn't click: every burst fades", () => {
+    const frames = SR * 40;
+    const c = new EngineCore();
+    const tone = new Float32Array(frames);
+    for (let i = 0; i < frames; i++) tone[i] = 0.25 * Math.sin((2 * Math.PI * 220 * i) / SR);
+    c.addStream("a", frames, frames);
+    c.addStream("b", frames, frames);
+    c.setChunk("a", 0, tone, tone);
+    c.setChunk("b", 0, new Float32Array(frames), new Float32Array(frames));
+    c.setPlan(plan(deck("a"), deck("b"), 64), AUDIO);
+    c.play();
+    const played = run(c, SR);
+    let steepest = 0;
+    for (let i = SR / 2; i < SR; i++) steepest = Math.max(steepest, Math.abs(played[i] - played[i - 1]));
+    for (let k = 0; k < 40; k++) {
+      c.scrub(2 + k * 0.37);
+      const out = run(c, 735, SR + k * 735); // a pointer event every 1/60 s
+      for (let i = 1; i < out.length; i++) expect(Math.abs(out[i] - out[i - 1])).toBeLessThanOrEqual(steepest * 1.2);
+    }
+  });
+
+  it("takes a live edit between bursts and keeps the pointer's beat", () => {
+    const c = ramped();
+    c.scrub(16);
+    run(c, 4000);
+    c.setPlan({ ...plan(deck("a"), deck("b"), 32), tempo: [kf(0, 60, "hold")] }, AUDIO);
+    expect(c.position).toBe(pyRound(16 * SR));
+    expect(c.beat).toBeCloseTo(16, 6);
+  });
+});

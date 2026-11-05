@@ -11,6 +11,8 @@ export type EngineMessage =
   | { type: "pause" }
   | { type: "seek"; beat: number }
   | { type: "loop"; startBeat: number | null; endBeat: number | null }
+  | { type: "scrub"; beat: number }
+  | { type: "endScrub" }
   | { type: "ping"; id: number };
 
 export type EngineReport =

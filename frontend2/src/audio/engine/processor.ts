@@ -48,6 +48,12 @@ class EngineProcessor extends AudioWorkletProcessor {
       case "loop":
         core.setLoop(m.startBeat, m.endBeat);
         break;
+      case "scrub":
+        core.scrub(m.beat);
+        break;
+      case "endScrub":
+        core.endScrub();
+        break;
       case "ping":
         this.port.postMessage({ type: "pong", id: m.id });
         break;

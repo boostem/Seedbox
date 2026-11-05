@@ -1,4 +1,4 @@
-import { Boxes, Compass, Disc3, ListMusic } from "lucide-react";
+import { Boxes, Compass, ListMusic } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useServerEvents } from "@/api/events";
 import { AppShell } from "@/components/shell/AppShell";
@@ -11,6 +11,7 @@ import { BenchPage } from "@/pages/BenchPage";
 import { HomePage } from "@/pages/HomePage";
 import { LibraryPage } from "@/pages/LibraryPage";
 import { ListenPage } from "@/pages/ListenPage";
+import { MixesPage } from "@/pages/MixesPage";
 import { SystemPage } from "@/pages/SystemPage";
 import { UiPage } from "@/pages/UiPage";
 import { useApp } from "@/store/app";
@@ -33,7 +34,7 @@ function Page({ route }: { route: Route }) {
     case "discover":
       return <AreaPage title="Discover" icon={Compass} description="Tracks that fit a gap in a set, by key, energy and vibe (#48, #64)." />;
     case "mixes":
-      return <AreaPage title="Mixes" icon={Disc3} description="Stem-aware transitions, the live engine and the transition editor (#51–#59, #65–#67, #79)." />;
+      return <MixesPage />;
     case "settings":
       return <SystemPage />;
     case "ui":

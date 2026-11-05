@@ -273,6 +273,11 @@ export class DjFilter {
     }
   }
 
+  /** The lane changed under a live edit: look around again, with the filter's state left as it is. */
+  relook(): void {
+    this.block = -1;
+  }
+
   relocate(): void {
     this.block = -1;
     this.lp.running = this.hp.running = false;

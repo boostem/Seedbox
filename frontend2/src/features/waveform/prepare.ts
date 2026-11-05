@@ -83,11 +83,37 @@ export const DB_RANGE = 60;
 
 const fromLog = new Float32Array(256).map((_, b) => (b === 0 ? 0 : 10 ** (((b - 255) / 254) * (DB_RANGE / 20))));
 
+/**
+ * What the server actually writes (`seedbox2/analysis/waveform.py`, `HEADER_FORMAT`): its version is a u16, so the byte
+ * where the layout above has `bands` is 0. Bands are peak then RMS, on a scale from the file's floor to 0 dBFS.
+ */
+function decodeServerWave(buf: ArrayBuffer, v: DataView, duration?: number): WaveData {
+  const version = v.getUint16(4, true);
+  if (version !== 1) throw new Error(`unsupported waveform file version ${version}`);
+  const header = v.getUint16(6, true);
+  const pps = v.getUint16(8, true);
+  const bands = v.getUint8(10);
+  const values = v.getUint8(11);
+  const n = v.getUint32(12, true);
+  const floor = v.getUint8(19);
+  const fileDuration = v.getFloat32(20, true);
+  if (bands < 3 || values < 1 || !(pps > 0) || buf.byteLength < header + bands * values * n) throw new Error("corrupt waveform file");
+  const scale = new Float32Array(256).map((_, b) => 10 ** (((b / 255 - 1) * floor) / 20));
+  const plane = (k: number) => {
+    const bytes = new Uint8Array(buf, header + k * values * n, n);
+    const amp = new Float32Array(n);
+    for (let i = 0; i < n; i++) amp[i] = bytes[i] === 0 ? 0 : scale[bytes[i]];
+    return norm(amp, n);
+  };
+  return { pps, n, duration: duration || fileDuration, low: plane(0), mid: plane(1), high: plane(2) };
+}
+
 export function decodeWaveBinary(buf: ArrayBuffer, duration?: number): WaveData {
   if (buf.byteLength < WAVE_HEADER) throw new Error("waveform file too short");
   const v = new DataView(buf);
   const magic = String.fromCharCode(v.getUint8(0), v.getUint8(1), v.getUint8(2), v.getUint8(3));
   if (magic !== WAVE_MAGIC) throw new Error("not a waveform file");
+  if (v.getUint8(5) === 0) return decodeServerWave(buf, v, duration);
   const version = v.getUint8(4);
   if (version !== 1) throw new Error(`unsupported waveform file version ${version}`);
   const bands = v.getUint8(5);
