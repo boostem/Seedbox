@@ -1,4 +1,4 @@
-import { Pin, TriangleAlert, Waypoints } from "lucide-react";
+import { Pin, SlidersHorizontal, TriangleAlert, Waypoints } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import type { SetOrderTrack, SetTransition } from "@/api/types";
 import { Button, IconButton, KeyBadge } from "@/components/ui";
@@ -19,10 +19,12 @@ export interface OrderListProps {
   bridgePanel?: ReactNode;
   /** A small label on a track: the crate it's from. */
   label?: (track: SetOrderTrack) => string | undefined;
+  /** Opens the transition after this position in the editor. */
+  onOpen?: (position: number) => void;
 }
 
 /** The running order, with why each track follows the one before. */
-export function OrderList({ result, pinned, onPin, onBridge, bridgeAt, bridgePanel, label }: OrderListProps) {
+export function OrderList({ result, pinned, onPin, onBridge, bridgeAt, bridgePanel, label, onOpen }: OrderListProps) {
   return (
     <ol className="flex flex-col">
       {result.order.map((t, i) => {
@@ -70,6 +72,9 @@ export function OrderList({ result, pinned, onPin, onBridge, bridgeAt, bridgePan
                   <Button size="sm" variant="ghost" icon={Waypoints} className="shrink-0" onClick={() => onBridge(t.position)}>
                     Find a bridge
                   </Button>
+                )}
+                {onOpen && (
+                  <IconButton size="sm" icon={SlidersHorizontal} label={`Edit the transition into ${result.order[i + 1]?.title}`} tooltip="Edit this transition" className="shrink-0" onClick={() => onOpen(i)} />
                 )}
               </li>
             )}

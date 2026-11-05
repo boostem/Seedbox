@@ -2,7 +2,8 @@
 
 Serves frontend2/dist with Seedbox 2's own server, opens `#/bench` (pages/BenchPage.tsx) in headless Chrome and drives
 it over the DevTools protocol: ⌘/ctrl-wheel zooming, horizontal scrolling, moving the mouse over the waveform (its
-time readout), playback with the zoomed waveform following the playhead, and scrolling a 10,000-row virtualised table.
+time readout), playback with the zoomed waveform following the playhead, zooming the whole-set timeline and dragging a
+track across it, and scrolling a 10,000-row virtualised table.
 During each scenario the page counts requestAnimationFrame callbacks (fps, frame times), long tasks
 (PerformanceObserver, > 50 ms) and React commits (a stub of React DevTools' hook, installed before the page loads:
 frontend2/PERFORMANCE.md's rule is that the waveform scenarios cause next to none). `--cpu-throttle 4` slows the CPU
@@ -251,6 +252,34 @@ def scenarios(cdp: Cdp, seconds: float) -> dict[str, dict]:
         out["play_centred"] = _measure(cdp, lambda: time.sleep(seconds))
         out["play_centred"].update({k: round(v, 3) for k, v in cdp.eval("window.__seedboxBench.traceStop()").items() if k != "frames"})
         cdp.eval("window.__seedboxBench.stop()")
+
+    cdp.eval("document.querySelector('[data-bench=set-timeline]').scrollIntoView({block: 'center'})")
+    time.sleep(0.3)
+    line = _rect(cdp, "[data-bench=set-timeline]")
+    lx, ly = line[0] + line[2] / 2, line[1] + line[3] / 2
+
+    def timeline_zoom() -> None:  # 30 tracks with their own waveforms, from the whole set to a transition and back
+        end, k = time.monotonic() + seconds, 0
+        while time.monotonic() < end:
+            _wheel(cdp, lx, ly, dy=-30 if (k // 60) % 2 == 0 else 30, ctrl=True)
+            k += 1
+            time.sleep(1 / 120)
+
+    out["timeline_zoom"] = _measure(cdp, timeline_zoom)
+    cdp.eval("document.querySelector('[data-bench=set-timeline]').parentElement.querySelector('button[aria-label=\\'Whole set\\']').click()")
+    time.sleep(0.5)
+
+    def timeline_drag() -> None:  # a track dragged across the whole set
+        cdp.call("Input.dispatchMouseEvent", type="mousePressed", x=line[0] + 60, y=line[1] + 90, button="left", clickCount=1, buttons=1)
+        end, k = time.monotonic() + seconds, 0
+        while time.monotonic() < end:
+            frac = (k % 240) / 240 if (k // 240) % 2 == 0 else 1 - (k % 240) / 240
+            cdp.call("Input.dispatchMouseEvent", type="mouseMoved", x=line[0] + 60 + (line[2] - 120) * frac, y=line[1] + 90, button="left", buttons=1)
+            k += 1
+            time.sleep(1 / 120)
+        cdp.call("Input.dispatchMouseEvent", type="mouseReleased", x=line[0] + 60, y=line[1] + 90, button="left", clickCount=1)
+
+    out["timeline_drag"] = _measure(cdp, timeline_drag)
 
     cdp.eval("document.querySelector('[data-bench=table]').scrollIntoView({block: 'center'})")
     time.sleep(0.3)

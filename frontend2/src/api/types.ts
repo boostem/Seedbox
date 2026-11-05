@@ -672,3 +672,43 @@ export interface SetSession {
   /** One per neighbouring pair of tracks; null where the pair has no plan. */
   plans: (MixPlan | null)[];
 }
+
+// ---- The whole-set timeline (seedbox2/sets/timeline.py) ----
+
+export interface TimelineTrack {
+  hash: string;
+  duration_s: number;
+  /** Its sections, or the energy curve's intro, main and outro until it has them. */
+  sections: { kind: string; start_s: number; end_s: number }[];
+  /** [file time, level 0-1]. */
+  curve: [number, number][];
+  /** A bar on the track's grid; null before its beats are analysed. */
+  bar_s: number | null;
+  /** What brings it to the deck level when it plays; null before it's measured. */
+  integrated_lufs?: number | null;
+}
+
+/** `pending`: its plan is being made. `waiting`: a track's beats have to come first. */
+export type TimelineTransitionState = "ready" | "pending" | "waiting" | "failed";
+
+export interface TimelineTransition {
+  from: string;
+  to: string;
+  state: TimelineTransitionState;
+  error?: string;
+  technique?: string;
+  bars?: number;
+  edited?: boolean;
+  user_edited?: boolean;
+  /** How long both decks sound on the master clock, and where that is in each file. */
+  seconds?: number;
+  a_in_s?: number;
+  a_out_s?: number;
+  b_in_s?: number;
+  b_out_s?: number;
+}
+
+export interface SetTimelineData {
+  tracks: TimelineTrack[];
+  transitions: TimelineTransition[];
+}

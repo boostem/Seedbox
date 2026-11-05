@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SetOrderResult } from "@/api/types";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SetOrderResult, SetTimelineData } from "@/api/types";
 
-const sets = vi.hoisted(() => ({ list: vi.fn(), arcs: vi.fn(), order: vi.fn(), solveOrder: vi.fn(), applyOrder: vi.fn(), bridge: vi.fn(), bridgeOnline: vi.fn(), insertBridge: vi.fn() }));
+const sets = vi.hoisted(() => ({ list: vi.fn(), arcs: vi.fn(), order: vi.fn(), solveOrder: vi.fn(), applyOrder: vi.fn(), timeline: vi.fn(), bridge: vi.fn(), bridgeOnline: vi.fn(), insertBridge: vi.fn() }));
 const navigate = vi.hoisted(() => vi.fn());
-vi.mock("@/api/client", () => ({ api: { sets, tunebat: { download: vi.fn() } } }));
+vi.mock("@/api/client", () => ({ api: { sets, tunebat: { download: vi.fn() }, mixes: { livePlan: vi.fn() } }, apiUrl: (p: string) => p, openEventStream: vi.fn() }));
+vi.mock("@/features/mix/TransitionEditor", () => ({ TransitionEditor: ({ from, to }: { from: string; to: string }) => <div>Editor {from} to {to}</div> }));
+vi.mock("@/features/waveform/waveData", () => ({ loadWave: () => new Promise(() => {}) }));
 vi.mock("@/lib/router", () => ({ navigate }));
 const { SetsPage } = await import("./SetsPage");
 
@@ -29,8 +31,32 @@ function result(hashes: string[], over: Partial<SetOrderResult> = {}): SetOrderR
   };
 }
 
+/** Every pair has a plan unless it's listed in `planning`. */
+function timeline(hashes: string[], planning: string[] = []): SetTimelineData {
+  return {
+    tracks: hashes.map((hash) => ({ hash, duration_s: 100, sections: [], curve: [], bar_s: 2 })),
+    transitions: hashes.slice(1).map((to, i) => {
+      const from = hashes[i];
+      return planning.includes(`${from}/${to}`) ? { from, to, state: "pending" as const } : { from, to, state: "ready" as const, technique: "long blend", bars: 8, seconds: 20, a_in_s: 80, a_out_s: 100, b_in_s: 0, b_out_s: 20 };
+    }),
+  };
+}
+
+const box = { left: 0, top: 0, width: 260, height: 200, right: 260, bottom: 200, x: 0, y: 0, toJSON: () => ({}) };
+const LANE_Y = 100; // inside the first lane
+
+beforeAll(() => {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    disconnect() {}
+    unobserve() {}
+  } as unknown as typeof ResizeObserver;
+  HTMLCanvasElement.prototype.getContext = (() => null) as never;
+});
+
 beforeEach(() => {
   vi.resetAllMocks();
+  sets.timeline.mockImplementation((_id: number, hashes: string[]) => Promise.resolve(timeline(hashes)));
   sets.list.mockResolvedValue([{ id: 1, name: "Friday", track_count: 3 }]);
   sets.arcs.mockResolvedValue(ARCS);
   sets.order.mockResolvedValue(result(["a", "b", "c"]));
@@ -117,20 +143,85 @@ describe("SetsPage", () => {
     await waitFor(() => expect(sets.solveOrder).toHaveBeenCalledWith(1, { arc: "warm_up", tempo_start: 120, tempo_end: 128, pins: [{ position: 0, hash: "a" }] }));
   });
 
-  it("sends a drawn curve", async () => {
+  it("sends a curve drawn on the timeline", async () => {
     sets.solveOrder.mockResolvedValue(result(["a", "b", "c"]));
     render(<SetsPage />);
-    const curve = await screen.findByRole("img", { name: /Energy arc/ });
-    curve.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}) });
-    fireEvent.pointerDown(curve, { pointerId: 1, clientX: 0, clientY: 100 });
-    fireEvent.pointerMove(curve, { pointerId: 1, clientX: 100, clientY: 0 });
-    fireEvent.pointerUp(curve, { pointerId: 1 });
+    const line = await screen.findByTestId("set-timeline");
+    await waitFor(() => expect(sets.timeline).toHaveBeenCalled());
+    await screen.findByRole("img", { name: /3 tracks/ });
+    line.getBoundingClientRect = () => box;
+    await userEvent.click(screen.getByRole("button", { name: "Draw the arc" }));
+    fireEvent.pointerDown(line, { pointerId: 1, clientX: 0, clientY: 200 });
+    fireEvent.pointerMove(line, { pointerId: 1, clientX: 260, clientY: 50 });
+    fireEvent.pointerUp(line, { pointerId: 1 });
     expect(screen.getByRole("tab", { name: "Custom" }).getAttribute("aria-selected")).toBe("true");
     await userEvent.click(screen.getByRole("button", { name: "Order the set" }));
     await waitFor(() => expect(sets.solveOrder).toHaveBeenCalled());
     const sent = sets.solveOrder.mock.calls[0][1].arc as [number, number][];
     expect(sent[0]).toEqual([0, 0]);
     expect(sent[sent.length - 1]).toEqual([1, 1]);
+  });
+
+  it("saves a track dragged on the timeline, and shows it moved at once", async () => {
+    let finish: (r: SetOrderResult) => void = () => {};
+    sets.applyOrder.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    render(<SetsPage />);
+    const line = await screen.findByTestId("set-timeline");
+    await waitFor(() => expect(sets.timeline).toHaveBeenCalled());
+    line.getBoundingClientRect = () => box;
+    await screen.findByText("Song a");
+    // 260 px is 260 s of set: track a is 0-100 s on the first lane, c is at the end
+    fireEvent.pointerDown(line, { pointerId: 1, clientX: 30, clientY: LANE_Y });
+    fireEvent.pointerMove(line, { pointerId: 1, clientX: 255, clientY: LANE_Y });
+    fireEvent.pointerUp(line, { pointerId: 1 });
+    expect(sets.applyOrder).toHaveBeenCalledWith(1, ["b", "c", "a"], expect.objectContaining({ pins: [] }));
+    await waitFor(() => expect(sets.timeline).toHaveBeenLastCalledWith(1, ["b", "c", "a"], false, expect.anything()));
+    const rows = () => screen.getAllByText(/^Song /).map((e) => e.textContent);
+    expect(rows()).toEqual(["Song b", "Song c", "Song a"]);
+    finish(result(["b", "c", "a"]));
+    await screen.findByText("energy +1, 8A → 9A, step 0");
+  });
+
+  it("goes back when saving the new order fails", async () => {
+    sets.applyOrder.mockRejectedValue(new Error("no"));
+    render(<SetsPage />);
+    const line = await screen.findByTestId("set-timeline");
+    await waitFor(() => expect(sets.timeline).toHaveBeenCalled());
+    line.getBoundingClientRect = () => box;
+    await screen.findByText("Song a");
+    fireEvent.pointerDown(line, { pointerId: 1, clientX: 30, clientY: LANE_Y });
+    fireEvent.pointerMove(line, { pointerId: 1, clientX: 255, clientY: LANE_Y });
+    fireEvent.pointerUp(line, { pointerId: 1 });
+    await waitFor(() => expect(screen.getAllByText(/^Song /).map((e) => e.textContent)).toEqual(["Song a", "Song b", "Song c"]));
+  });
+
+  it("opens the editor from a transition, and says when it's still planning", async () => {
+    sets.timeline.mockResolvedValue(timeline(["a", "b", "c"], ["b/c"]));
+    render(<SetsPage />);
+    await screen.findByText("Song a");
+    await waitFor(() => expect(sets.timeline).toHaveBeenCalled());
+    await screen.findByText(/Planning 1 transition/);
+    await userEvent.click(screen.getByRole("button", { name: "Edit the transition into Song c" }));
+    expect(screen.queryByText("Editor b to c")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Edit the transition into Song b" }));
+    expect(await screen.findByText("Editor a to b")).toBeTruthy();
+    const asked = sets.timeline.mock.calls.length;
+    await userEvent.click(screen.getByRole("button", { name: "Close the transition" }));
+    expect(screen.queryByText("Editor a to b")).toBeNull();
+    expect(sets.timeline.mock.calls.length).toBe(asked + 1); // what the editor saved may have moved things
+  });
+
+  it("doesn't let you drag while an order is only proposed", async () => {
+    sets.solveOrder.mockResolvedValue(result(["c", "a", "b"]));
+    render(<SetsPage />);
+    await userEvent.click(await screen.findByRole("button", { name: "Order the set" }));
+    await screen.findByText("Proposed order");
+    const line = screen.getByTestId("set-timeline");
+    line.getBoundingClientRect = () => box;
+    fireEvent.pointerDown(line, { pointerId: 1, clientX: 30, clientY: LANE_Y });
+    fireEvent.pointerMove(line, { pointerId: 1, clientX: 255, clientY: LANE_Y });
+    fireEvent.pointerUp(line, { pointerId: 1 });
+    expect(sets.applyOrder).not.toHaveBeenCalled();
   });
 
   it("says what isn't analysed yet", async () => {

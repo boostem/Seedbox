@@ -613,3 +613,149 @@ def test_a_track_rated_1_has_an_energy_of_0_not_none(lib):
     h = seed_library(lib, 1)[0]  # the first is at energy 0
     row = lib.view_rows(hashes=[h])[0]
     assert row["energy"] == 0.0 and row["energy_from"] == "analysis"
+
+
+# --- the whole-set timeline (#75) -------------------------------------------------------------------------------------
+
+
+def _analysed(library: Library, name: str, bpm: float = 124.0, duration: float = 300.0) -> str:
+    from seedbox2.analysis import beats, energy
+
+    hash_ = name * 40
+    library.upsert_track(hash_, duration, title=name, artist="X")
+    library.put_analysis(hash_, beats.ANALYSER, beats.VERSION,
+                         {"segments": [{"start_beat": 0.0, "start_s": 0.5, "bpm": bpm}], "bpm": bpm})  # fmt: skip
+    bars = np.arange(0.5, duration, 240 / bpm).round(3).tolist()
+    n = len(bars) - 1
+    library.put_analysis(hash_, energy.ANALYSER, energy.VERSION, {
+        "bar_s": bars, "curve": [min(1.0, i / 20, (n - i) / 20) for i in range(n)], "features": {"bass": [0.8] * n},
+        "rating": 5, "energy": 0.4,
+    })  # fmt: skip
+    return hash_
+
+
+class _Jobs:
+    def __init__(self) -> None:
+        self.submitted: list[tuple[str, dict]] = []
+
+    def submit(self, kind: str, payload: dict, **_) -> dict:
+        self.submitted.append((kind, payload))
+        return {"id": "x", "state": "queued"}
+
+
+class _Ctx:
+    def __init__(self, library: Library) -> None:
+        self.library = library
+
+
+def test_a_pair_without_a_plan_is_pending_and_goes_to_the_job(lib):
+    from seedbox2.sets.timeline import JOB, timeline
+
+    a, b = _analysed(lib, "a"), _analysed(lib, "b")
+    jobs = _Jobs()
+    t = timeline(lib, [a, b], jobs)
+    assert [x["state"] for x in t["transitions"]] == ["pending"]
+    assert jobs.submitted == [(JOB, {"from": a, "to": b})]
+    assert timeline(lib, [a, b])["transitions"][0]["state"] == "pending"  # without jobs it only reads
+
+
+def test_a_track_without_beats_waits_for_them(lib):
+    from seedbox2.sets.timeline import timeline
+
+    a = _analysed(lib, "a")
+    b = "b" * 40
+    lib.upsert_track(b, 200.0, title="b")
+    jobs = _Jobs()
+    t = timeline(lib, [a, b], jobs)
+    assert t["transitions"][0]["state"] == "waiting"
+    assert jobs.submitted == [("beats", {"hash": b})]
+
+
+def test_the_job_plans_the_pair_from_our_analysis(lib):
+    from seedbox2.mix import convert
+    from seedbox2.sets.timeline import set_plan_job, timeline
+
+    a, b = _analysed(lib, "a"), _analysed(lib, "b", bpm=126.0)
+    out = set_plan_job({"from": a, "to": b}, _Ctx(lib))
+    assert out["planned"] is True
+    row = lib.plan(a, b)
+    assert row["user_edited"] == 0
+    plan = convert.load(row["plan"], from_track=a, to_track=b)
+    assert plan.version == 3
+    assert (plan.a.track_id, plan.b.track_id) == (a, b)
+    assert plan.a.grid[0].bpm == pytest.approx(124.0)  # on our grid, not a guessed one
+    item = timeline(lib, [a, b])["transitions"][0]
+    assert item["state"] == "ready"
+    assert item["technique"] == plan.technique
+    # a blend: near A's end and B's start, as long on both files, within the pitch between the tempos
+    assert item["a_in_s"] > 200 and item["b_in_s"] < 60
+    assert item["seconds"] > 0
+    assert (item["a_out_s"] - item["a_in_s"]) == pytest.approx(item["seconds"], rel=0.03)
+    assert (item["b_out_s"] - item["b_in_s"]) == pytest.approx(item["seconds"], rel=0.03)
+
+
+def test_the_job_leaves_a_saved_plan_alone(lib):
+    from seedbox2.sets.timeline import plan_pair, set_plan_job
+
+    a, b = _analysed(lib, "a"), _analysed(lib, "b")
+    edited = plan_pair(lib, a, b).model_copy(update={"edited": True, "notes": ["mine"]})
+    lib.put_plan(a, b, edited.model_dump(), user_edited=True)
+    assert set_plan_job({"from": a, "to": b}, _Ctx(lib))["planned"] is False
+    assert lib.plan(a, b)["plan"]["notes"] == ["mine"]
+
+
+def test_a_failed_plan_says_so_until_it_is_tried_again(lib):
+    from seedbox2.sets.timeline import JOB, timeline
+
+    a, b = _analysed(lib, "a"), _analysed(lib, "b")
+    job = lib.add_job(JOB, {"from": a, "to": b})
+    lib.update_job(job["id"], state="failed", error="no good")
+    jobs = _Jobs()
+    item = timeline(lib, [a, b], jobs)["transitions"][0]
+    assert (item["state"], item["error"]) == ("failed", "no good")
+    assert jobs.submitted == []
+    assert timeline(lib, [a, b], jobs, retry=True)["transitions"][0]["state"] == "pending"
+    assert jobs.submitted == [(JOB, {"from": a, "to": b})]
+
+
+def test_an_unreadable_plan_is_failed_not_a_500(lib):
+    from seedbox2.sets.timeline import timeline
+
+    a, b = _analysed(lib, "a"), _analysed(lib, "b")
+    lib.put_plan(a, b, {"not": "a plan"}, user_edited=False)
+    assert timeline(lib, [a, b])["transitions"][0]["state"] == "failed"
+
+
+def test_timeline_tracks_have_sections_and_a_thin_curve(lib):
+    from seedbox2.sets.timeline import timeline
+
+    a, b = _analysed(lib, "a", duration=600.0), _analysed(lib, "b")
+    t = timeline(lib, [a, b, a])  # a track can come back
+    assert [x["hash"] for x in t["tracks"]] == [a, b, a]
+    view = t["tracks"][0]
+    assert view["duration_s"] == 600.0
+    assert view["bar_s"] == pytest.approx(240 / 124, abs=1e-3)
+    assert {s["kind"] for s in view["sections"]} >= {"intro", "outro"}
+    assert 0 < len(view["curve"]) <= 64
+    assert [p[0] for p in view["curve"]] == sorted(p[0] for p in view["curve"])
+    assert len(t["transitions"]) == 2
+
+
+def test_timeline_of_a_track_with_no_analysis_still_answers(lib):
+    from seedbox2.sets.timeline import timeline
+
+    a = "a" * 40
+    lib.upsert_track(a, 180.0, title="a")
+    view = timeline(lib, [a])["tracks"][0]
+    assert (view["sections"], view["curve"], view["bar_s"]) == ([], [], None)
+
+
+def test_timeline_route(client):
+    lib = lib_of(client)
+    a, b = _analysed(lib, "a"), _analysed(lib, "b")
+    set_id = client.post("/api/sets", json={"name": "S", "hashes": [a, b]}).json()["id"]
+    r = client.post(f"/api/sets/{set_id}/timeline", json={"hashes": [b, a]})
+    assert r.status_code == 200
+    assert r.json()["transitions"][0]["from"] == b
+    assert client.post(f"/api/sets/{set_id}/timeline", json={"hashes": [a]}).status_code == 409
+    assert client.post("/api/sets/999/timeline", json={"hashes": []}).status_code == 404

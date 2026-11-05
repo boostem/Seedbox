@@ -17,7 +17,7 @@ import { stemAtlas, waveAtlas, type WaveAtlas } from "./mips";
 import { FRAGMENT, MAX_GL_LEVELS, STEM_FRAGMENT, VERTEX } from "./shaders";
 
 const MODE_ID: Record<WaveMode, number> = { bands: 0, rgb: 1, stacked: 2 };
-const MAX_TEXTURES = 48;
+const MAX_TEXTURES = 128; // a whole set is on screen at once: evicting one per draw would re-upload every frame
 const VIEW_UNIFORMS = ["u_tex", "u_width", "u_rows", "u_lens", "u_levels", "u_first", "u_ppc", "u_height", "u_dpr", "u_split", "u_alpha"];
 
 interface GlView {
