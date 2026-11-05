@@ -31,7 +31,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_setexport.py tests/test_seedbox2_bridge.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py tests/test_seedbox2_longset.py tests/test_seedbox2_now_playing.py tests/test_seedbox2_assistant.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_setexport.py tests/test_seedbox2_bridge.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_sections.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py tests/test_seedbox2_longset.py tests/test_seedbox2_now_playing.py tests/test_seedbox2_assistant.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -544,9 +544,13 @@ It needs `mir_eval` (in `requirements-dev.txt`).
   frame F-measure.
 - **Analysers** register in `seedbox2/eval/analysers.py`; `seedbox2` and `seedbox2-small` are the beats analysis
   (#43) with final0 and small0 and the key (#45) of the mix; `seedbox2-stems` takes the key from the harmonic stems
-  (minutes per track); `seedbox1` (`musicreco/structure.py` without the tunebat
+  (minutes per track); `seedbox2-sections` adds the sections from the stems (#46), keeping each track's beats
+  and stems in `$SEEDBOX2_EVAL_WORK`; `seedbox1` (`musicreco/structure.py` without the tunebat
   BPM hint) is the baseline. It has no key detection, and finds the tempo of 59 % of the first 50 GiantSteps tracks
   (it reads most drum & bass at 2/3 of its tempo).
+- **Sections** (#46): `seedbox2-sections` scored 47.9 against Seedbox 1's 34.4 on `boundary_f`, over 37 Harmonix tracks
+  (42.2 against 29.7 on the 18 of them not used for tuning). The annotations were shifted onto our own audio copies, and
+  copies of a different edit were left out; with so few tracks the difference has a wide interval (held out: +2 to +23).
 - **Runs** are saved as JSON (`$SEEDBOX2_EVAL_RESULTS`, default `eval-results` in the cache folder) with every
   track's scores. `--baseline FILE --max-drop 2` exits 1 when a metric is more than 2 points worse. The nightly
   workflow (`.github/workflows/eval-nightly.yml`) does that on the first 50 GiantSteps tracks against

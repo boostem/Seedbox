@@ -6,6 +6,8 @@ small0 and the key (#45) of the mix (the models must be downloaded). `seedbox2-s
 harmonic stems, as the app does once a track has them: it separates every track, so it takes minutes per track. Key
 scores use `best_guess`, the key even when it isn't confident, so holding back doesn't flatter the number. `seedbox2-vocals` is vocal activity from HTDemucs' vocal stem (#47). A new
 analyser registers itself here with `@analyser("name")`.
+`seedbox2-sections` adds the sections from the stems (#46); its beats and stems are kept in `$SEEDBOX2_EVAL_WORK`,
+since they take minutes per track.
 """
 
 from __future__ import annotations
@@ -162,3 +164,39 @@ def seedbox2_vocals(path: Path) -> Estimate:
         saved.write_text(json.dumps(grid.to_json()))
     data = vocals.analyse(folder, grid, stems_model=stems.MODEL)
     return Estimate(duration_s=data["duration_s"], vocals=vocals.spans_s(data))
+
+
+def _eval_work() -> Path:
+    import os  # noqa: PLC0415
+
+    from .datasets import data_root  # noqa: PLC0415
+
+    env = os.environ.get("SEEDBOX2_EVAL_WORK", "").strip()
+    return Path(env).expanduser() if env else data_root().parent / "eval-work"
+
+
+@analyser("seedbox2-sections")
+def seedbox2_sections(path: Path) -> Estimate:
+    """Beat This! final0 and HTDemucs (both must be downloaded), then the sections analysis of #46."""
+    import json  # noqa: PLC0415
+
+    from seedbox2.analysis import beats as sb2  # noqa: PLC0415
+    from seedbox2.analysis import sections, stems, waveform  # noqa: PLC0415
+    from seedbox2.models import load_session  # noqa: PLC0415
+
+    work = _eval_work() / path.stem
+    work.mkdir(parents=True, exist_ok=True)
+    beats_file = work / "beats.json"
+    if not beats_file.is_file():
+        beats_file.write_text(json.dumps(sb2.analyse(path, load_session("beat_this"))), encoding="utf-8")
+    r = json.loads(beats_file.read_text(encoding="utf-8"))
+    files = waveform.stem_files(work / "stems")
+    if files is None:
+        stems.separate(path, work / "stems", fmt="opus")
+        files = waveform.stem_files(work / "stems")
+    a = sections.analyse(files, r)
+    marks = [(s["start_s"], s["kind"]) for s in a["sections"]]
+    if a["sections"]:
+        marks.append((a["sections"][-1]["end_s"], "end"))
+    return Estimate(duration_s=r["duration_s"], bpm=r["bpm"], beats=sb2.beat_times(r).round(4).tolist(),
+                    downbeats=sb2.beat_times(r, sb2.BEATS_PER_BAR).round(4).tolist(), sections=marks)
