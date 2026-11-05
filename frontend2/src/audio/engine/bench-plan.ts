@@ -22,6 +22,7 @@ export function worstPlan(beats: number, offTempo: boolean): MixPlan {
   const deck = (track_id: string, sign: number): Deck => ({
     track_id,
     grid: [{ start_beat: 0, start_s: 0.5, bpm: offTempo ? BPM * 1.02 : BPM }],
+    pinned: [],
     key_shift: 0,
     play_from_beat: 0,
     play_to_beat: beats,

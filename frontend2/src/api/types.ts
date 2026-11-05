@@ -451,3 +451,68 @@ export interface ListenImport {
   duplicates: number;
   ratings: number;
 }
+
+// ---- Ordering a set: /api/sets/arcs, /api/sets/{id}/order (#60) ----
+
+export interface ArcTemplate {
+  name: string;
+  label: string;
+  description: string;
+  /** [time 0-1, level 0-1], the set's quietest track at level 0 and its most intense at 1. */
+  points: [number, number][];
+}
+
+export interface SetPin {
+  position: number;
+  hash: string;
+}
+
+export interface SetOrderSettings {
+  /** A template's name, a drawn curve, or null for the default. */
+  arc: string | [number, number][] | null;
+  tempo_start: number | null;
+  tempo_end: number | null;
+  pins: SetPin[];
+}
+
+export interface SetOrderTrack {
+  position: number;
+  hash: string;
+  title: string;
+  artist: string;
+  bpm: number | null;
+  key: string | null;
+  /** 0-1. */
+  energy: number | null;
+  /** 1-10. */
+  rating: number | null;
+  /** Semitones the track is played away from its key. */
+  shift: number;
+  pinned: boolean;
+  target_energy: number;
+  target_bpm: number | null;
+}
+
+export type SetTransitionFlag = "key_clash" | "key_fix" | "tempo_wide" | "tempo_over_limit" | "genre_change" | "vocal_run";
+
+export interface SetTransition {
+  from: string;
+  to: string;
+  /** "energy +1, 8A → 9A, same vibe" */
+  text: string;
+  flags: SetTransitionFlag[];
+  cost: number;
+}
+
+export interface SetOrderResult {
+  order: SetOrderTrack[];
+  transitions: SetTransition[];
+  cost: number;
+  /** What the set's saved order costs under the same settings. */
+  cost_before: number;
+  arc: ArcTemplate;
+  tempo: { start: number; end: number; auto: boolean } | null;
+  /** How many tracks don't have each thing yet. */
+  unknown: { bpm: number; key: number; energy: number; vibe: number; vocals: number; genre: number };
+  settings: SetOrderSettings;
+}

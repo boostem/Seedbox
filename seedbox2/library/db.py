@@ -146,7 +146,12 @@ _V2 = """
 ALTER TABLE jobs ADD COLUMN result TEXT;
 """
 
-MIGRATIONS: list[Migration] = [_V1, _V2]
+# v3 (#60): the energy arc, tempo journey and pins a set's order was last made with (JSON)
+_V3 = """
+ALTER TABLE sets ADD COLUMN order_settings TEXT;
+"""
+
+MIGRATIONS: list[Migration] = [_V1, _V2, _V3]
 SCHEMA_VERSION = len(MIGRATIONS)
 
 

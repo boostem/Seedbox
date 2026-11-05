@@ -1,4 +1,4 @@
-import { Boxes, Compass, ListMusic } from "lucide-react";
+import { Boxes, Compass, Disc3, ListMusic } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useServerEvents } from "@/api/events";
 import { AppShell } from "@/components/shell/AppShell";
@@ -12,6 +12,7 @@ import { HomePage } from "@/pages/HomePage";
 import { LibraryPage } from "@/pages/LibraryPage";
 import { ListenPage } from "@/pages/ListenPage";
 import { MixesPage } from "@/pages/MixesPage";
+import { SetsPage } from "@/pages/SetsPage";
 import { SystemPage } from "@/pages/SystemPage";
 import { UiPage } from "@/pages/UiPage";
 import { useApp } from "@/store/app";
@@ -30,7 +31,7 @@ function Page({ route }: { route: Route }) {
     case "crates":
       return <AreaPage title="Crates" icon={Boxes} description="Group tracks into crates, and plan sets across them (#40, #62)." />;
     case "sets":
-      return <AreaPage title="Sets" icon={ListMusic} description="Plan sets on Seedbox 2's own analysis, with energy arcs (#60–#64, #75)." />;
+      return <SetsPage />;
     case "discover":
       return <AreaPage title="Discover" icon={Compass} description="Tracks that fit a gap in a set, by key, energy and vibe (#48, #64)." />;
     case "mixes":
