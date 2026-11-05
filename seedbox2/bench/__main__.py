@@ -55,6 +55,10 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("-o", "--out", type=Path, help="write the results JSON here (default: stdout)")
     _frontend_args(f)
 
+    e = sub.add_parser("engine", help="CPU of the live audio engine (2 decks x 4 stems) in headless Chrome")
+    e.add_argument("--seconds", type=float, default=30.0, help="seconds of audio to render (default 30)")
+    e.add_argument("-o", "--out", type=Path, help="write the results JSON here (default: stdout)")
+
     c = sub.add_parser("compare", help="regressions between two results files, as markdown (exit 1 if any)")
     c.add_argument("old", type=Path)
     c.add_argument("new", type=Path)
@@ -75,6 +79,13 @@ def main(argv: list[str] | None = None) -> int:
 
     from seedbox2.bench import frontend
 
+    if args.cmd == "engine":
+        from seedbox2.bench.run import check_budgets, machine
+
+        data = {"schema": 1, "machine": machine(), "engine": frontend.run_engine(seconds=args.seconds, log=_log)}
+        data["budgets"] = check_budgets(data)
+        _write(data, args.out)
+        return 0 if frontend.engine_ok(data["engine"]) else 1
     if args.cmd == "frontend":
         fe = frontend.run(seconds=args.fe_seconds, cpu_throttle=args.cpu_throttle, software_gl=args.software_gl, log=_log)
         from seedbox2.bench.run import check_budgets, machine
@@ -102,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.frontend:
         data["frontend"] = frontend.run(seconds=args.fe_seconds, cpu_throttle=args.cpu_throttle,
                                         software_gl=args.software_gl, log=_log)
+        data["engine"] = frontend.run_engine(log=_log)
         data["budgets"] = check_budgets(data)
     _write(data, args.out)
     _log(results.report_markdown(data))

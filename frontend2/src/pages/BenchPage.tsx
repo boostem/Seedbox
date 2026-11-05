@@ -15,6 +15,10 @@ export interface BenchHooks {
   stop: () => void;
   /** What draws the waveforms: "webgl2 (<GPU>)" or "canvas2d". */
   gpu: () => string;
+  /** The audio engine's benchmark: `python -m seedbox2.bench engine`. */
+  engine: (seconds?: number, offTempo?: boolean) => Promise<unknown>;
+  /** A real engine on this server, for tests/test_seedbox2_engine_browser.py to drive. */
+  liveEngine: () => Promise<unknown>;
 }
 
 declare global {
@@ -38,6 +42,8 @@ export function BenchPage() {
       },
       stop: () => player.stop(),
       gpu: waveRendererInfo,
+      engine: async (seconds, offTempo) => (await import("@/audio/engine/bench")).engineBench(seconds, offTempo),
+      liveEngine: async () => new (await import("@/audio/engine")).LiveEngine(),
     };
     return () => {
       player.stop();
