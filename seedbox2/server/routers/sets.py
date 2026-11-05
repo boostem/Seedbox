@@ -2,6 +2,8 @@
 
 - `GET /sets/{id}/stems` (#44): the "stems ready for this set" indicator, overall and per track.
 - `POST /sets/{id}/stems`: the set is open: its missing stems go to the front of the heavy queue. Same answer.
+- `GET /sets/{id}/session` (#77): what the now-playing view needs to play the set: its tracks with their grid, sections,
+  key and loudness, and each neighbouring pair's plan as version 3 (`null` when there is none or it can't be read).
 
 - `GET /sets/arcs`: the energy arc templates.
 - `GET /sets/{id}/order`: the set as it stands, explained, with the settings (`arc`, `tempo_start`, `tempo_end`, `pins`)
@@ -15,19 +17,23 @@ Events: `stems.set` (`ready`, `ready_tracks`, `total`, `progress`) when a track 
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from seedbox2.analysis import stems
+from seedbox2.analysis import beats, energy, key, stems, vibe
 from seedbox2.library import Library
+from seedbox2.mix import convert
 from seedbox2.server.deps import JobsDep, LibraryDep
 from seedbox2.sets import TEMPLATES, OrderRequest, evaluate_set, order_set
 from seedbox2.sets.arcs import ArcError
 from seedbox2.sets.service import live_pins, request_from_settings
 from seedbox2.sets.solver import SolverError
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/sets", tags=["sets"])
 
 
@@ -159,6 +165,44 @@ def apply_order(set_id: int, body: ApplyOrderBody, lib: LibraryDep) -> dict:
     except (ArcError, SolverError) as e:
         raise HTTPException(422, str(e)) from None
     return {**result, "settings": _settings_out(request)}  # type: ignore[dict-item]
+def _session_track(lib: Library, hash_: str) -> dict | None:
+    track = lib.track(hash_)
+    if track is None:
+        return None
+    grid = lib.analysis(hash_, beats.ANALYSER, beats.VERSION)
+    curve = lib.analysis(hash_, energy.ANALYSER, energy.VERSION)
+    level = lib.analysis(hash_, energy.LOUDNESS_ANALYSER, energy.VERSION)
+    return {
+        "hash": hash_, "title": track.get("title") or next((Path(p).stem for p in track["paths"]), None), "artist": track.get("artist"), "duration": track.get("duration"),
+        "grid": {k: grid["data"].get(k) for k in ("bpm", "first_downbeat_s", "beats_per_bar")} if grid else None,
+        "sections": vibe.spans_of(lib, hash_, curve["data"] if curve else None),
+        "key": key.effective(lib, hash_),
+        "integrated_lufs": (level["data"].get("integrated_lufs") if level else None),
+    }  # fmt: skip
+
+
+def _session_plan(lib: Library, from_hash: str, to_hash: str) -> dict | None:
+    row = lib.plan(from_hash, to_hash)
+    if row is None:
+        return None
+    try:
+        return convert.load(row["plan"], from_track=from_hash, to_track=to_hash).model_dump()
+    except ValueError:  # pydantic's ValidationError is one: a plan this version can't read doesn't stop the set
+        log.warning("the plan %s -> %s can't be read", from_hash, to_hash, exc_info=True)
+        return None
+
+
+@router.get("/{set_id}/session")
+def set_session(set_id: int, lib: LibraryDep) -> dict:
+    s = lib.set(set_id)
+    hashes = lib.set_hashes(set_id)
+    if s is None or hashes is None:
+        raise HTTPException(404, "no such set")
+    tracks = [t for t in (_session_track(lib, h) for h in hashes) if t]
+    return {
+        "id": set_id, "name": s["name"], "tracks": tracks,
+        "plans": [_session_plan(lib, a["hash"], b["hash"]) for a, b in zip(tracks, tracks[1:], strict=False)],
+    }  # fmt: skip
 
 
 def _add(lib: Library, set_id: int, hashes: list[str]) -> int:

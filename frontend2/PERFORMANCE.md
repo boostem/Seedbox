@@ -32,6 +32,10 @@ when the *structure* changes (another track, a panel opens), not 60 times a seco
   it scrolls. `play_centred` in the benchmark holds it to the 60 fps budget, and measures how even the frames and the
   playhead are (`frame_stddev_ms`, `head_jitter_ms`).
 
+- **The now-playing decks** (#77) have one loop for the panels (`usePaintLoop`), besides each waveform's own: meters and
+  knobs repaint when a value reaches another step, and text is written only when it changes. `now_playing` and
+  `now_playing_low_power` hold them to the budgets, and to 30 draws a second at low power's cap.
+
 Measured: the benchmark counts React commits (`react_commits_per_s`). The waveform scenarios (zoom, scroll, hover,
 play) are held to 5 a second at most; they ran at 30–60 before this rule.
 

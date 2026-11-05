@@ -1,5 +1,5 @@
 import { Boxes, Compass } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { useServerEvents } from "@/api/events";
 import { AppShell } from "@/components/shell/AppShell";
 import { Button, EmptyState } from "@/components/ui";
@@ -21,6 +21,9 @@ import { followModels } from "@/store/models";
 import { followJobs } from "@/store/jobs";
 import { followPower } from "@/store/power";
 import { loadOnboarding, useOnboarding } from "@/store/onboarding";
+
+// the live engine and the decks load when someone opens them
+const NowPlayingPage = lazy(() => import("@/pages/NowPlayingPage").then((m) => ({ default: m.NowPlayingPage })));
 
 function Page({ route }: { route: Route }) {
   switch (route.name) {
@@ -44,6 +47,8 @@ function Page({ route }: { route: Route }) {
       return <BenchPage />;
     case "listen":
       return <ListenPage />;
+    case "nowPlaying":
+      return null; // App shows it, without the shell
     case "notFound":
       return (
         <EmptyState
@@ -85,6 +90,14 @@ export function App() {
   useEffect(followPower, []);
   useEffect(() => void loadOnboarding(), []);
   const firstRun = useOnboarding((s) => s.open);
+  const route = useRoute();
+  if (route.name === "nowPlaying") {
+    return (
+      <Suspense fallback={null}>
+        <NowPlayingPage />
+      </Suspense>
+    );
+  }
   if (firstRun) return <Onboarding />;
   return (
     <AppShell>

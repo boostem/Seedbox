@@ -100,6 +100,34 @@ export function useWave(an: TrackAnalysis | null | undefined): WaveData | null {
   return state.w === w ? state.data : (done.get(w) ?? null);
 }
 
+const WAVE_POLL_MS = 2000;
+const WAVE_POLLS = 60;
+
+/** A track's binary waveform: it asks again while the server's job writes the file (a 202 doesn't decode). */
+export function useTrackWave(hash: string | null | undefined): WaveData | null {
+  const [got, setGot] = useState<{ hash: string; wave: WaveData | null } | null>(null);
+  useEffect(() => {
+    if (!hash) return;
+    let live = true;
+    let timer = 0;
+    let polls = 0;
+    const step = () => {
+      loadWave(`/api/tracks/${hash}/waveform`).then(
+        (wave) => live && setGot({ hash, wave }),
+        () => {
+          if (live && ++polls < WAVE_POLLS) timer = window.setTimeout(step, WAVE_POLL_MS);
+        },
+      );
+    };
+    step();
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [hash]);
+  return got && got.hash === hash ? got.wave : null;
+}
+
 // ------------------------------------------------------------------------------------------------ stems
 
 const STEM_KEEP = 16; // a 6-minute track's stems are about 860 KB here

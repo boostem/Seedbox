@@ -2,6 +2,8 @@
 // The analysis and transition shapes below are Seedbox 1's (musicreco), kept for the waveform code until the
 // Seedbox 2 analysis (#43–#49) and mix plan (#51) tickets replace them.
 
+import type { MixPlan } from "./mixplan.generated";
+
 // ---- System: GET /api/health, GET /api/system, POST /api/system/reveal ----
 
 export interface Health {
@@ -527,4 +529,27 @@ export interface SetOrderResult {
   /** How many tracks don't have each thing yet. */
   unknown: { bpm: number; key: number; energy: number; vibe: number; vocals: number; genre: number };
   settings: SetOrderSettings;
+}
+
+// ---- Now playing (GET /api/sets/{id}/session, #77) ----
+
+export interface SessionTrack {
+  hash: string;
+  title: string | null;
+  artist: string | null;
+  duration: number;
+  /** The beats analysis, or null until it has run. */
+  grid: { bpm: number; first_downbeat_s: number; beats_per_bar: number } | null;
+  /** Sections, or rough regions of the energy curve (`main`) until the track has them. */
+  sections: { kind: string; start_s: number; end_s: number }[];
+  key: { key: string | null; camelot: string | null };
+  integrated_lufs: number | null;
+}
+
+export interface SetSession {
+  id: number;
+  name: string;
+  tracks: SessionTrack[];
+  /** One per neighbouring pair of tracks; null where the pair has no plan. */
+  plans: (MixPlan | null)[];
 }

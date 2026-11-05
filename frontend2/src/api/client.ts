@@ -4,7 +4,7 @@
  */
 import { toast } from "@/store/toasts";
 import type { MixPlan } from "./mixplan.generated";
-import type { ArcTemplate, MasterStatus, MasterTarget, SetOrderResult, SetOrderSettings, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
+import type { ArcTemplate, MasterStatus, MasterTarget, SetSession, SetOrderResult, SetOrderSettings, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -203,6 +203,7 @@ export const api = {
     /** The best order for these settings. Nothing is saved. */
     solveOrder: (id: number, settings: SetOrderSettings, opts?: RequestOptions) => post<SetOrderResult>(`/api/sets/${id}/order`, settings, opts),
     applyOrder: (id: number, hashes: string[], settings: SetOrderSettings, opts?: RequestOptions) => put<SetOrderResult>(`/api/sets/${id}/order`, { ...settings, hashes }, opts),
+    session: (id: number, opts?: RequestOptions) => get<SetSession>(`/api/sets/${id}/session`, opts),
   },
   jobs: {
     list: (state?: string, opts?: RequestOptions) => get<JobsResponse>(`/api/jobs${state ? `?state=${state}` : ""}`, opts),

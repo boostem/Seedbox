@@ -179,6 +179,29 @@ def _measure(cdp: Cdp, body) -> dict:
     return {k: (round(v, 2) if isinstance(v, float) else v) for k, v in cdp.eval("window.__benchMeter.stop()").items()}
 
 
+def now_playing(cdp: Cdp, url: str, seconds: float) -> dict[str, dict]:
+    """The full-screen decks (#77) on their demo: both waveforms scrolling, meters and knobs moving, then at low power's cap."""
+    cdp.call("Page.navigate", url=f"{url.rstrip('/')}/#/now-playing?demo=1")
+    _wait(lambda: cdp.eval("!!window.__seedboxNowPlaying && !!document.querySelector('[data-bench=now-playing] canvas')"),
+          30, "the #/now-playing page")  # fmt: skip
+    time.sleep(0.5)
+
+    def run() -> dict:
+        start = cdp.eval("window.__seedboxNowPlaying.draws()")
+        out = _measure(cdp, lambda: time.sleep(seconds))
+        out["draws_per_s"] = round((cdp.eval("window.__seedboxNowPlaying.draws()") - start) / out["seconds"], 2)
+        return out
+
+    cdp.eval("window.__seedboxNowPlaying.run(true)")
+    time.sleep(0.5)
+    out = {"now_playing": run()}
+    cdp.eval("window.__seedboxNowPlaying.frameCap(30)")
+    out["now_playing_low_power"] = run()
+    cdp.eval("window.__seedboxNowPlaying.frameCap(null)")
+    cdp.eval("window.__seedboxNowPlaying.run(false)")
+    return out
+
+
 def scenarios(cdp: Cdp, seconds: float) -> dict[str, dict]:
     rect = _rect(cdp, "[data-bench=waveform] canvas")
     x, y = rect[0] + rect[2] / 2, rect[1] + rect[3] / 2
@@ -267,7 +290,7 @@ def _drive(cdp: Cdp, url: str, seconds: float, cpu_throttle: float, size: tuple[
     time.sleep(0.5)  # let the first frames and layout settle
     gpu = cdp.eval("window.__seedboxBench.gpu?.() ?? null")  # the waveform renderer, and the GPU behind it
     return {"browser": agent, "cpu_throttle": cpu_throttle, "viewport": list(size), "waveform_renderer": gpu,
-            "scenarios": scenarios(cdp, seconds)}
+            "scenarios": {**scenarios(cdp, seconds), **now_playing(cdp, url, seconds)}}
 
 
 def run(dist: Path = DIST, seconds: float = 5.0, cpu_throttle: float = 1.0, size: tuple[int, int] = (1440, 900),

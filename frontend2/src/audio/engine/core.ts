@@ -15,9 +15,16 @@ import { EDIT_FADE } from "./control";
 import { DeckVoice } from "./deck";
 import type { DeckSource } from "./deck";
 import { Glue, LATENCY, Limiter, openLoopMakeupDb } from "./master";
+import { beatAtFile, deckTime } from "./position";
 import { AudioStream } from "./stream";
 
 export type DeckId = "a" | "b";
+
+/** A plan after another: the old plan's deck `from` goes on as the new plan's deck `to`. */
+export interface DeckCarry {
+  from: DeckId;
+  to: DeckId;
+}
 
 /** A deck's sources for a plan: "mix", or the four stems. `key` names a stream added with `addStream`. */
 export interface DeckAudio {
@@ -70,6 +77,7 @@ export class EngineCore {
   private makeup = Math.pow(10, openLoopMakeupDb() / 20);
   private readonly limiter = new Limiter();
 
+  private plan: MixPlan | null = null;
   private transport: Transport = "stopped";
   private q = 0;
   private startFrame = 0; // the context frame that plays start at: not before it
@@ -85,7 +93,7 @@ export class EngineCore {
   private editLeft = 0; // samples left of a live edit's fade
   private oldDecks: DeckVoice[] = []; // the graph a structural edit fades from, at its own position
   private oldQ = 0;
-  private queued: { plan: MixPlan; audio: Record<DeckId, DeckAudio> } | null = null;
+  private queued: { plan: MixPlan; audio: Record<DeckId, DeckAudio>; carry?: DeckCarry } | null = null;
   private scrubbing = false;
   private scrubQ = 0;
   private scrubFresh = false;
@@ -125,20 +133,21 @@ export class EngineCore {
    * Runs the plan from now on, and it can come while playing: drag a keyframe and it's heard on the next buffer, without
    * a click. An edit that only moves lanes' keyframes goes to the running voices; any other builds a new graph and fades
    * to it. Either way it takes EDIT_FADE samples; a plan that comes during that waits, and only the newest is kept. The
-   * position carries over in beats, and so does a loop region.
+   * position carries over in beats, and so does a loop region. With `carry`, the old plan's deck `from` goes on as the new
+   * plan's deck `to`: the position comes from that deck's file time, so the track continues on its sample, under the fade.
    */
-  setPlan(plan: MixPlan, audio: Record<DeckId, DeckAudio>): void {
+  setPlan(plan: MixPlan, audio: Record<DeckId, DeckAudio>, carry?: DeckCarry): void {
     if (this.editLeft > 0) {
-      this.queued = { plan, audio };
+      this.queued = { plan, audio, carry };
       return;
     }
     const structure = structureOf(plan, audio);
     const live = this.transport === "playing" && this.clock !== null && !this.scrubResting;
-    if (live && structure === this.structure) {
+    if (live && !carry && structure === this.structure) {
       this.retarget(plan, audio);
       return;
     }
-    this.install(plan, audio, structure, live);
+    this.install(plan, audio, structure, live, carry);
   }
 
   private sourcesOf(plan: MixPlan, audio: Record<DeckId, DeckAudio>, id: DeckId): DeckSource[] {
@@ -152,11 +161,13 @@ export class EngineCore {
 
   private retarget(plan: MixPlan, audio: Record<DeckId, DeckAudio>): void {
     for (const id of ["a", "b"] as const) this.voices[id]?.retarget(plan[id], this.sourcesOf(plan, audio, id), this.q);
+    this.plan = plan;
     this.editLeft = EDIT_FADE;
   }
 
-  private install(plan: MixPlan, audio: Record<DeckId, DeckAudio>, structure: string, fade: boolean): void {
-    const beat = this.clock ? this.beatAt(this.q) : plan.window.start_beat;
+  private install(plan: MixPlan, audio: Record<DeckId, DeckAudio>, structure: string, fade: boolean, carry?: DeckCarry): void {
+    let beat = this.clock ? this.beatAt(this.q) : plan.window.start_beat;
+    if (carry && this.clock && this.plan) beat = beatAtFile(plan[carry.to], deckTime(this.plan[carry.from], beat));
     const seekBeat = this.pendingSeek !== null ? this.beatAt(this.pendingSeek) : null;
     const scrubBeat = this.scrubbing ? this.beatAt(this.scrubQ) : null;
     const w0 = plan.window.start_beat;
@@ -185,6 +196,7 @@ export class EngineCore {
       this.oldQ = this.q;
       this.editLeft = EDIT_FADE;
     }
+    this.plan = plan;
     this.clock = clock;
     this.decks = decks;
     this.voices = voices;
@@ -214,7 +226,7 @@ export class EngineCore {
     const next = this.queued;
     if (next) {
       this.queued = null;
-      this.setPlan(next.plan, next.audio);
+      this.setPlan(next.plan, next.audio, next.carry);
     }
   }
 

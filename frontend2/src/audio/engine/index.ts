@@ -11,6 +11,7 @@
  *   engine.scrub(beat); engine.endScrub();       // the pointer's on the waveform, then lets go
  *   engine.beat(); engine.time();                // now, for per-frame drawing: read these, don't re-render per frame
  *   engine.subscribe(listener);                  // coarse state changes: status, what the decks play
+ *   engine.schedule(next, { from: "b", to: "a" }); // the next transition while playing: b's track goes on as a, on its sample
  *
  * It runs at 44.1 kHz whatever the device's rate, as the renderer does: the context resamples on the way out. All DSP is
  * in the AudioWorklet (`processor.ts` around `core.ts`), one node for both decks, so they share a clock to the sample.
@@ -20,11 +21,12 @@ import { apiUrl } from "@/api/client";
 import type { MixPlan, StemLanes } from "../../api/mixplan.generated";
 import { Clock } from "./clock";
 import { pyRound, SR } from "./constants";
-import type { DeckAudio, DeckId } from "./core";
+import type { DeckAudio, DeckCarry, DeckId } from "./core";
 import { foldStemLanes } from "./fold";
 import { ChunkGone, ChunkLoader, neededChunks } from "./loader";
 import type { PlannedDeck } from "./loader";
 import type { EngineMessage, EngineReport } from "./messages";
+import { beatAtFile, deckTime } from "./position";
 import workletUrl from "./processor?worker&url";
 
 export { MAX_DECODED_BYTES } from "./loader";
@@ -194,7 +196,8 @@ export class LiveEngine {
     }
     const info = (await r.json()) as TrackInfo;
     const previous = this.tracks[deck];
-    if (previous && previous.hash !== track.hash) {
+    const other = this.tracks[deck === "a" ? "b" : "a"];
+    if (previous && previous.hash !== track.hash && other?.hash !== previous.hash) {
       for (const source of previous.info.sources) this.loader?.forget(streamKey(previous.hash, source));
     }
     this.tracks[deck] = {
@@ -220,17 +223,26 @@ export class LiveEngine {
   /**
    * Runs this plan from now on, with what the decks have now: without stems, its stem lanes fold into EQ. While playing
    * this is a live edit: the position (in beats) and the loop region carry over, and it's heard in 5 ms without a click.
+   * With `carry`, the deck `from` of the plan playing goes on as the deck `to` of this one, without a gap: load the same
+   * track there first, and keep the new plan's window around where it picks up.
    */
-  schedule(plan: MixPlan): void {
+  schedule(plan: MixPlan, carry?: DeckCarry): void {
     for (const id of ["a", "b"] as const) {
       const t = this.tracks[id];
       if (!t || t.hash !== plan[id].track_id) throw new Error(`deck ${id} hasn't loaded track ${plan[id].track_id}`);
     }
+    // the new clock's position, until the next report comes from the audio thread
+    const old = this.played;
+    const at = carry && old && this.clock ? deckTime(old[carry.from], this.clock.beat(this.seconds())) : null;
     this.plan = plan;
-    this.apply();
+    this.apply(carry);
+    if (at !== null && this.clock) {
+      this.reportQ = pyRound(this.clock.time(beatAtFile(plan[carry!.to], at)) * SR);
+      this.reportFrame = this.ctx ? pyRound(this.ctx.currentTime * SR) : this.reportFrame;
+    }
   }
 
-  private apply(): void {
+  private apply(carry?: DeckCarry): void {
     const plan = this.plan;
     if (!plan) return;
     const hasStems = (trackId: string): boolean =>
@@ -269,7 +281,7 @@ export class LiveEngine {
     const clock = this.clock!;
     this.played = played;
     this.planned = planned;
-    this.post({ type: "plan", plan: played, audio });
+    this.post({ type: "plan", plan: played, audio, carry });
     if (this.loopBeats) this.loop = { from: clock.time(this.loopBeats[0]), to: clock.time(this.loopBeats[1]) };
     if (decks.a !== this.state.decks.a || decks.b !== this.state.decks.b) this.setState({ decks });
     this.pump();
@@ -383,6 +395,11 @@ export class LiveEngine {
   /** The master chain's loudness target in LUFS (`GET /api/mixes/master`). `makeupDb`: what a render measured, if there is one. */
   setMaster(targetLufs: number, makeupDb?: number | null): void {
     this.post({ type: "master", targetLufs, makeupDb });
+  }
+
+  /** The plan as it plays: stem lanes folded into EQ on a deck without stems. */
+  get playedPlan(): MixPlan | null {
+    return this.played;
   }
 
   /** Master seconds now, as heard; for playheads in a requestAnimationFrame loop. */

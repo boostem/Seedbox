@@ -87,7 +87,8 @@ def summarise(items: list[dict]) -> dict:
 
 def check_budgets(results: dict) -> list[dict]:
     """One row per budget that has a measured value: {section, field, value, limit, unit, what, ok}."""
-    from seedbox2.bench import CENTRED_BUDGETS, FRONTEND_BUDGETS, REACT_COMMITS_BUDGET, RENDERLESS_SCENARIOS
+    from seedbox2.bench import (CENTRED_BUDGETS, FRONTEND_BUDGETS, LOW_POWER_DRAWS_BUDGET, REACT_COMMITS_BUDGET,
+                                RENDERLESS_SCENARIOS)
     from seedbox2.bench.frontend import ENGINE_CPU_BUDGET
 
     rows = []
@@ -104,6 +105,8 @@ def check_budgets(results: dict) -> list[dict]:
             budgets["react_commits_per_s"] = REACT_COMMITS_BUDGET
         if name == "play_centred":
             budgets.update(CENTRED_BUDGETS)
+        if name == "now_playing_low_power":
+            budgets["draws_per_s"] = LOW_POWER_DRAWS_BUDGET
         for field, (limit, unit, what) in budgets.items():
             if field in sc:
                 ok = sc[field] >= limit if field == "fps" else sc[field] <= limit

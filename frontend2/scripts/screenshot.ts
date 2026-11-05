@@ -138,6 +138,10 @@ const POWER = { mode: "auto", low_power: false, reason: null, on_battery: false,
 const ON_BATTERY = { ...POWER, low_power: true, reason: "battery", on_battery: true, battery_percent: 64, limits: { ...POWER.limits, stems_paused: true, light_workers: 3, fps: 30 } };
 const FIRST_RUN = { "/api/onboarding": { first_run: true }, "/api/library/view": { total: 0, items: [] } };
 
+const sessionTrack = (hash: string, title: string) => ({ hash, title, artist: "Someone", duration: 240, grid: null, sections: [], key: { key: null, camelot: null }, integrated_lufs: null });
+const TRACK_A = sessionTrack("a", "Losing It");
+const TRACK_B = sessionTrack("b", "Favour");
+
 /** What the stub /api answers to a GET in the `live` state (a shot's `data` overrides these). */
 const SET_ARCS = [
   { name: "warm_up", label: "Warm-up", description: "Starts low and builds slowly", points: [[0, 0.05], [0.5, 0.4], [0.85, 0.7], [1, 0.8]] },
@@ -177,7 +181,7 @@ const API: Record<string, unknown> = {
   "/api/library/view": { total: TRACKS.length, items: rows(TRACKS.length) },
   "/api/library/crates": [{ id: 1, name: "Peak time", folder: null, source: "local", track_count: 8 }, { id: 2, name: "Warm-up", folder: null, source: "local", track_count: 4 }],
   "/api/library/smart-crates": { crates: [] },
-  "/api/sets": [{ id: 1, name: "Friday", track_count: 6 }],
+  "/api/sets": [{ id: 1, name: "Friday", crate_id: null, source: "local", track_count: 6, updated_at: "2026-10-01T12:00:00Z" }],
   "/api/sets/arcs": SET_ARCS,
   "/api/sets/1/order": SET_ORDER,
   "/api/models": modelsStatus(model()),
@@ -220,6 +224,10 @@ const SHOTS: Shot[] = [
   { name: "ui", hash: "#/ui" },
   { name: "bench", hash: "#/bench" },
   { name: "listen", hash: "#/listen" },
+  { name: "now-playing", hash: "#/now-playing?demo=1" },
+  { name: "now-playing-choose", hash: "#/now-playing" },
+  { name: "now-playing-no-sets", hash: "#/now-playing", data: { "/api/sets": [] } },
+  { name: "now-playing-no-plans", hash: "#/now-playing?set=1", data: { "/api/sets/1/session": { id: 1, name: "Friday", tracks: [TRACK_A, TRACK_B], plans: [null] } } },
   { name: "listen-results", hash: "#/listen?tab=results" },
   { name: "listen-no-renders", hash: "#/listen", data: { "/api/listen/status": LISTEN_EMPTY, "/api/listen/next": undefined } },
   { name: "listen-no-ratings", hash: "#/listen?tab=results", data: { "/api/listen/status": LISTEN_EMPTY, "/api/listen/summary": { ratings: 0, raters: 0, versions: [], styles: [], matchups: [], slot_a: { wins: 0, trials: 0, win_rate: null, ci_low: 0, ci_high: 1 } } } },

@@ -21,7 +21,6 @@ function deck(track_id: string, over: Partial<Deck> = {}): Deck {
     grid: [{ start_beat: 0, start_s: 0, bpm: BPM }],
     pinned: [],
     key_shift: 0,
-    pinned: [],
     play_from_beat: 0,
     play_to_beat: 64,
     lanes: { ...lanes, volume: [kf(0, 0.5, "hold")] },
@@ -542,5 +541,33 @@ describe("scrubbing", () => {
     c.setPlan({ ...plan(deck("a"), deck("b"), 32), tempo: [kf(0, 60, "hold")] }, AUDIO);
     expect(c.position).toBe(pyRound(16 * SR));
     expect(c.beat).toBeCloseTo(16, 6);
+  });
+});
+
+describe("a plan after another", () => {
+  it("carries a deck's track on, from the same file time", () => {
+    const core = new EngineCore();
+    const stream = (key: string) => {
+      core.addStream(key, CHUNK, CHUNK);
+      const ramp = new Float32Array(CHUNK).map((_, i) => i / CHUNK);
+      core.setChunk(key, 0, ramp, ramp.slice());
+    };
+    stream("x");
+    stream("y");
+    stream("z");
+    const audio = (a: string, b: string) => ({ a: { sources: [{ key: a, stem: null }], trimDb: 0 }, b: { sources: [{ key: b, stem: null }], trimDb: 0 } });
+    const first = plan(deck("x"), deck("y", { grid: [{ start_beat: 0, start_s: 10, bpm: BPM }] }), 64);
+    const second = plan(deck("y", { grid: [{ start_beat: 100, start_s: 0, bpm: BPM }], play_from_beat: 100, play_to_beat: 300 }), deck("z", { play_from_beat: 200, play_to_beat: 300 }), 300);
+    second.window.start_beat = 100;
+    core.setPlan(first, audio("x", "y"));
+    core.play(0);
+    const l = new Float32Array(128);
+    const r = new Float32Array(128);
+    for (let i = 0; i < 2000; i++) core.process(l, r, 128);
+    const at = core.beat + LATENCY / SR / (60 / BPM); // the deck's next sample, in the old plan's beats
+    const fileTime = 10 + (at * 60) / BPM;
+    core.setPlan(second, audio("y", "z"), { from: "b", to: "a" });
+    // on the new plan, beat 100 is y's file time 0
+    expect(core.beat + LATENCY / SR / (60 / BPM)).toBeCloseTo(100 + (fileTime * BPM) / 60, 3);
   });
 });

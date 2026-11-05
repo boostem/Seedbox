@@ -34,7 +34,7 @@ class EngineProcessor extends AudioWorkletProcessor {
         core.dropChunk(m.key, m.index);
         break;
       case "plan":
-        core.setPlan(m.plan, m.audio);
+        core.setPlan(m.plan, m.audio, m.carry);
         break;
       case "play":
         core.play(m.atFrame ?? 0);

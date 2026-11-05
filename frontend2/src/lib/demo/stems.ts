@@ -15,7 +15,7 @@ const PLAY_FROM = (HANDOFF_BAR - 6) * 4 * BEAT_S;
 const PLAY_TO = (HANDOFF_BAR + 6) * 4 * BEAT_S;
 const REST = (HANDOFF_BAR + 0.5) * 4 * BEAT_S;
 
-function demoStems(seed: number): StemWave {
+export function demoStems(seed: number): StemWave {
   const n = BARS * 4 * BEAT_S * PPS;
   const len = Math.round(n);
   let s = seed >>> 0;

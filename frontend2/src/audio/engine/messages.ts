@@ -1,12 +1,12 @@
 /** What the page and the audio thread say to each other. */
 import type { MixPlan } from "../../api/mixplan.generated";
-import type { DeckAudio, DeckId } from "./core";
+import type { DeckAudio, DeckCarry, DeckId } from "./core";
 
 export type EngineMessage =
   | { type: "stream"; key: string; frames: number; chunkFrames: number }
   | { type: "chunk"; key: string; index: number; left: Float32Array; right: Float32Array }
   | { type: "drop"; key: string; index: number }
-  | { type: "plan"; plan: MixPlan; audio: Record<DeckId, DeckAudio> }
+  | { type: "plan"; plan: MixPlan; audio: Record<DeckId, DeckAudio>; carry?: DeckCarry }
   | { type: "play"; atFrame?: number }
   | { type: "pause" }
   | { type: "seek"; beat: number }
