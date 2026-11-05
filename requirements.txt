@@ -11,6 +11,7 @@ pywebview
 platformdirs
 imageio-ffmpeg
 pedalboard
+python-stretch
 psutil
 watchdog
 onnxruntime; sys_platform != "win32" or platform_machine != "AMD64"
