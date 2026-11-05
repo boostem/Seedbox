@@ -13,12 +13,15 @@ live engine so both play at the same level.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
 from scipy import ndimage, signal
 
 from musicreco import mixrender
+
+from . import stream
 
 SR = mixrender.SR
 DECK_LUFS = -12.0  # where track gain puts a track's body
@@ -179,17 +182,27 @@ class Master:
 
 
 def find_makeup(mix: np.ndarray, target_lufs: float, sr: int = SR) -> float:
-    """The make-up that brings this mix (before the chain) to the target, measured. Past the limiter a dB of make-up buys
-    less than a LU, down to nothing, so it brackets the target and closes in. It won't make the limiter work harder than
-    MAX_LIMITER_DB to get there: a mix that dynamic stays under the target, and the tracklist says what it reached."""
+    """The make-up that brings this mix (before the chain) to the target, measured."""
+
+    def trial(makeup: float) -> tuple[float, float]:
+        out, report = Master(target_lufs, makeup, sr)(mix, sr)
+        return mixrender.integrated_lufs(out, sr), report["limiter_db"]
+
+    return search_makeup(trial, target_lufs)
+
+
+def search_makeup(trial: Callable[[float], tuple[float, float]], target_lufs: float) -> float:
+    """Past the limiter a dB of make-up buys less than a LU, down to nothing, so it brackets the target and closes in.
+    `trial` runs the chain at a make-up: (integrated LUFS, the limiter's deepest dB). It won't make the limiter work harder
+    than MAX_LIMITER_DB to get there: a mix that dynamic stays under the target, and the tracklist says what it reached."""
     makeup = open_loop_makeup_db(target_lufs)
     best, best_error = None, math.inf
     low: float | None = None  # the most make-up known to fall short
     high: float | None = None  # the least known to overshoot, or to take too much limiting
     for _ in range(MAKEUP_PASSES):
-        out, report = Master(target_lufs, makeup, sr)(mix, sr)
-        error = target_lufs - mixrender.integrated_lufs(out, sr)
-        too_hard = report["limiter_db"] > MAX_LIMITER_DB
+        lufs, limiter_db = trial(makeup)
+        error = target_lufs - lufs
+        too_hard = limiter_db > MAX_LIMITER_DB
         if not too_hard and abs(error) < best_error:
             best, best_error = makeup, abs(error)
         if abs(error) <= MAKEUP_TOLERANCE_LU and not too_hard:
@@ -209,7 +222,10 @@ def find_makeup(mix: np.ndarray, target_lufs: float, sr: int = SR) -> float:
 
 def loudness_range(x: np.ndarray, sr: int = SR) -> float | None:
     """EBU Tech 3342 LRA in LU: short-term blocks, gated, 10th to 95th percentile. None if it's too short or silent."""
-    lufs = -0.691 + 10 * np.log10(mixrender._block_power(x, sr, LRA_BLOCK_S, LRA_HOP_S) + 1e-12)
+    return _lra_of(-0.691 + 10 * np.log10(mixrender._block_power(x, sr, LRA_BLOCK_S, LRA_HOP_S) + 1e-12))
+
+
+def _lra_of(lufs: np.ndarray) -> float | None:
     above = lufs[lufs > LRA_ABSOLUTE_GATE]
     if above.size == 0:
         return None
@@ -222,6 +238,47 @@ def measure(mix: np.ndarray, sr: int = SR) -> dict:
     """The numbers an export reports: integrated LUFS, LRA and true peak."""
     return {"integrated_lufs": round(mixrender.integrated_lufs(mix, sr), 2), "lra_lu": loudness_range(mix, sr),
             "true_peak_dbtp": round(mixrender.true_peak_db(mix), 2)}  # fmt: skip
+
+
+class Meter:
+    """`measure` on audio fed in chunks, of any size. It keeps a number per 100 ms and a few samples."""
+
+    def __init__(self, sr: int = SR) -> None:
+        self.sr = sr
+        self.loudness = stream.Loudness(sr)
+        self.peak = 0.0
+        self.tail = np.zeros((2, 0), np.float32)
+        self.seen = 0  # how much of `tail` has been peak-read and is only there for the filter
+        self.margin = stream._PEAK_MARGIN
+
+    def feed(self, x: np.ndarray) -> None:
+        self.loudness.feed(x)
+        joined = np.concatenate([self.tail, x], axis=1)
+        end = joined.shape[1] - self.margin  # past this the filter around a sample isn't all here yet
+        if end > self.seen:
+            self.peak = max(self.peak, float(stream.peaks_4x(joined, self.seen, end).max()))
+            self.seen = end
+        keep = max(self.seen - self.margin, 0)
+        self.tail, self.seen = joined[:, keep:], self.seen - keep
+
+    def _true_peak(self) -> float:
+        peak = self.peak
+        if self.tail.shape[1] > self.seen:
+            peak = max(peak, float(stream.peaks_4x(self.tail, self.seen, self.tail.shape[1]).max()))
+        return float(20 * np.log10(peak + 1e-12))
+
+    def _lra(self) -> float | None:
+        hops = self.loudness.hp.hops()
+        size = round(LRA_BLOCK_S / LRA_HOP_S)
+        if hops.size < size:
+            return None
+        total = np.concatenate([[0.0], np.cumsum(hops)])
+        power = (total[size:] - total[:-size]) / (size * self.loudness.hp.hop)
+        return _lra_of(-0.691 + 10 * np.log10(power + 1e-12))
+
+    def result(self) -> dict:
+        return {"integrated_lufs": round(self.loudness.integrated(), 2), "lra_lu": self._lra(),
+                "true_peak_dbtp": round(self._true_peak(), 2)}  # fmt: skip
 
 
 def _clock(seconds: float) -> str:

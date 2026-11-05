@@ -9,6 +9,7 @@ import { AssistantBox } from "@/features/assistant/AssistantBox";
 import { TransitionEditor } from "@/features/mix/TransitionEditor";
 import { ARC_GRID, arcPoints, toGrid, toPoints } from "@/features/sets/arc";
 import { BridgePanel } from "@/features/sets/BridgePanel";
+import { ExportPanel } from "@/features/sets/ExportPanel";
 import { OrderList } from "@/features/sets/OrderList";
 import { layoutTimeline, type PlacedTransition } from "@/features/sets/timeline/layout";
 import { SetPlayback } from "@/features/sets/timeline/playback";
@@ -460,6 +461,7 @@ export function SetsPage() {
                 <EmptyState icon={ListMusic} title="This set is empty" description="Add tracks to it from the library." />
               )}
             </Panel>
+            {setId !== null && !proposal && !newSet && <ExportPanel key={setId} setId={setId} />}
           </div>
           {note && (
             <aside aria-label="The assistant's reasoning" className="w-64 shrink-0 rounded-md border border-line bg-panel p-3">

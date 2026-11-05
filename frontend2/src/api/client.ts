@@ -4,6 +4,7 @@
  */
 import { toast } from "@/store/toasts";
 import type { MixPlan } from "./mixplan.generated";
+import type { JobRow, SetExportStatus } from "./types";
 import type { ArcTemplate, AssistantDraft, AssistantDryRun, AssistantScope, AssistantStatus, CrateLink, LongSetResult, SetSourceRef, LibraryBridges, OnlineBridges, MasterStatus, MasterTarget, SetSession, SetOrderResult, SetOrderSettings, SetTimelineData, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
@@ -41,6 +42,8 @@ function messageFrom(detail: unknown, fallback: string): string {
   if (detail && typeof detail === "object") {
     const d = (detail as { detail?: unknown }).detail;
     if (typeof d === "string") return d;
+    const message = (d as { message?: unknown } | undefined)?.message;
+    if (typeof message === "string") return message;
   }
   return fallback;
 }
@@ -205,6 +208,10 @@ export const api = {
   },
   sets: {
     list: (opts?: RequestOptions) => get<SetSummary[]>("/api/sets", opts),
+    /** The whole set as one mix (#70): what can be chosen, and the set's latest export job. */
+    exportStatus: (id: number, opts?: RequestOptions) => get<SetExportStatus>(`/api/sets/${id}/export`, opts),
+    /** 409 while a transition has no plan. Progress comes as `job.*` events. */
+    export: (id: number, format: string, opts?: RequestOptions) => post<JobRow>(`/api/sets/${id}/export`, { format }, opts),
     create: (name: string, hashes: string[], opts?: RequestOptions) => post<SetSummary>("/api/sets", { name, hashes }, opts),
     addTracks: (id: number, hashes: string[], opts?: RequestOptions) => post<{ added: number; hashes: string[] }>(`/api/sets/${id}/tracks`, { hashes }, opts),
     hashes: (id: number, opts?: RequestOptions) => get<{ hashes: string[] }>(`/api/sets/${id}/hashes`, opts),
@@ -235,6 +242,7 @@ export const api = {
   jobs: {
     list: (state?: string, opts?: RequestOptions) => get<JobsResponse>(`/api/jobs${state ? `?state=${state}` : ""}`, opts),
     submit: (kind: string, payload: Record<string, unknown>, opts?: RequestOptions) => post<unknown>("/api/jobs", { kind, payload }, opts),
+    cancel: (id: string, opts?: RequestOptions) => post<JobRow>(`/api/jobs/${id}/cancel`, {}, opts),
   },
 };
 

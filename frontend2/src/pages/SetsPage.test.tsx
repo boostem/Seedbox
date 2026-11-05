@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SetOrderResult, SetTimelineData } from "@/api/types";
 
-const sets = vi.hoisted(() => ({ list: vi.fn(), arcs: vi.fn(), order: vi.fn(), solveOrder: vi.fn(), applyOrder: vi.fn(), timeline: vi.fn(), bridge: vi.fn(), bridgeOnline: vi.fn(), insertBridge: vi.fn(), create: vi.fn() }));
+const sets = vi.hoisted(() => ({ exportStatus: vi.fn(() => Promise.resolve(null)), list: vi.fn(), arcs: vi.fn(), order: vi.fn(), solveOrder: vi.fn(), applyOrder: vi.fn(), timeline: vi.fn(), bridge: vi.fn(), bridgeOnline: vi.fn(), insertBridge: vi.fn(), create: vi.fn() }));
 const assistant = vi.hoisted(() => ({ status: vi.fn(), run: vi.fn(), cancel: vi.fn(), dryRun: vi.fn() }));
 const library = vi.hoisted(() => ({ crates: vi.fn() }));
 const navigate = vi.hoisted(() => vi.fn());

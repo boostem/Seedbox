@@ -1,7 +1,7 @@
 /**
  * Plays a set on the live engine, a transition at a time: `planChain` stretches each plan over its tracks, and shortly before
  * a window ends the next plan takes over, with the surviving track going on from its sample (`engine.schedule(next, carry)`).
- * The view reads the driver, so `demo` can stand in for it. A set-wide tempo line and the export stay with #70.
+ * The view reads the driver, so `demo` can stand in for it. This is how the app plays a set: the export (#70) is a file.
  */
 import type { MixPlan } from "@/api/mixplan.generated";
 import type { SessionTrack, SetSession, TrackAnalysis } from "@/api/types";
@@ -37,7 +37,7 @@ export interface NowPlayingDriver {
 const TICK_MS = 200;
 
 function trackRequest(t: SessionTrack) {
-  return { hash: t.hash, trimDb: t.integrated_lufs === null ? 0 : DECK_LUFS - t.integrated_lufs };
+  return { hash: t.hash, trimDb: t.track_gain_db ?? (t.integrated_lufs === null ? 0 : DECK_LUFS - t.integrated_lufs) };
 }
 
 export class SetDriver implements NowPlayingDriver {

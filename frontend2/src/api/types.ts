@@ -389,8 +389,27 @@ export interface JobRow {
   payload: { hash?: string } & Record<string, unknown>;
   progress: number;
   error: string | null;
+  result?: unknown;
   created_at: string;
   updated_at: string;
+}
+
+/** What a finished `set_export` job says (#70). */
+export interface SetExportResult {
+  path: string;
+  tracklist: string;
+  cue: string;
+  format: string;
+  duration_s: number;
+  target: string;
+  measured: { integrated_lufs: number; lra_lu: number | null; true_peak_dbtp: number };
+}
+
+export interface SetExportStatus {
+  formats: { id: string; label: string }[];
+  folder: string;
+  targets: Record<string, number>;
+  job: JobRow | null;
 }
 
 export interface JobsResponse {
@@ -667,6 +686,8 @@ export interface SessionTrack {
   sections: { kind: string; start_s: number; end_s: number }[];
   key: { key: string | null; camelot: string | null };
   integrated_lufs: number | null;
+  /** The gain that puts its body at the bus's level, as the export plays it. Null until it has been analysed. */
+  track_gain_db?: number | null;
 }
 
 export interface SetSession {
@@ -690,6 +711,7 @@ export interface TimelineTrack {
   bar_s: number | null;
   /** What brings it to the deck level when it plays; null before it's measured. */
   integrated_lufs?: number | null;
+  track_gain_db?: number | null;
 }
 
 /** `pending`: its plan is being made. `waiting`: a track's beats have to come first. */

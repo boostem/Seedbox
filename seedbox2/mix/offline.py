@@ -137,7 +137,7 @@ def export(plan: MixPlan, path_a: Path, path_b: Path, out_path: Path, *, names: 
            sr: int = mixrender.SR) -> dict:  # fmt: skip
     """A plan to an audio file and a tracklist next to it (`<out>.txt`). The render is measured and the make-up corrected
     until it meets the target; the result has `measured`, what the tracklist says, and the `makeup_db` that
-    makes the live engine play it at this level. Whole sets come with #70."""
+    makes the live engine play it at this level. A whole set is `setexport`'s (#70)."""
     audio_a, audio_b = deck_audio(plan, path_a, path_b, stems_a, stems_b, sr)
     found: list[float] = []
 

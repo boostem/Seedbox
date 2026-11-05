@@ -44,8 +44,52 @@ export function playableRun(session: Pick<SetSession, "plans">): { first: number
   return { first, last };
 }
 
+/** Where a line ends on the way out of a plan and starts on the way into one: its blend, or its window if a person edited it. */
+const lineOut = (stored: MixPlan) => (stored.edited ? stored.window.end_beat - HANDOFF_BEATS : blendSpan(stored).end);
+const lineIn = (stored: MixPlan) => (stored.edited ? stored.window.start_beat : blendSpan(stored).start);
+
+function curveAt(lane: MixPlan["tempo"], beat: number): MixPlan["tempo"][number]["curve"] {
+  let curve: MixPlan["tempo"][number]["curve"] = "linear";
+  for (const k of lane) if (k.beat <= beat) curve = k.curve;
+  return curve;
+}
+
+/** Between one blend's end and the next one's start the tempo goes in a straight line over the track's file time, instead of
+ * back to the track's own tempo: `setchain.tempo_line` in Python, which the export plays and a shared fixture holds this to.
+ * Both plans read the same tempo at the same place in the track, so nothing moves when one takes over. */
+function tempoLine(chain: (MixPlan | null)[], plans: (MixPlan | null)[]): (MixPlan | null)[] {
+  const tempo = chain.map((p) => (p ? [...p.tempo] : null));
+  for (let i = 0; i + 1 < chain.length; i++) {
+    const p = chain[i];
+    const q = chain[i + 1];
+    if (!p || !q) continue;
+    const out = lineOut(plans[i]!);
+    const into = lineIn(plans[i + 1]!);
+    const x0 = deckTime(p.b, out);
+    const x1 = deckTime(q.a, into);
+    if (x1 <= x0) continue; // its two transitions overlap: no body to draw it on
+    const v0 = laneValue(p.tempo, out);
+    const v1 = laneValue(q.tempo, into);
+    const line = (x: number) => v0 + (v1 - v0) * Math.min(Math.max((x - x0) / (x1 - x0), 0), 1);
+    const end = Math.max(p.window.end_beat, out);
+    tempo[i] = [
+      ...tempo[i]!.filter((k) => k.beat <= out),
+      { beat: out, value: v0, curve: "linear" },
+      { beat: end, value: line(deckTime(p.b, end)), curve: "linear" },
+    ];
+    const start = Math.min(q.window.start_beat, into);
+    tempo[i + 1] = [
+      { beat: start, value: line(deckTime(q.a, start)), curve: "linear" },
+      { beat: into, value: v1, curve: curveAt(q.tempo, into) },
+      ...tempo[i + 1]!.filter((k) => k.beat >= into),
+    ];
+  }
+  return chain.map((p, i) => (p ? { ...p, tempo: tempo[i]! } : null));
+}
+
 /** The set's plans, stretched: the first over its A from the top and the last over its B to the end, and each one starting
- * early enough to pick up the track the plan before hands it. Null where there's no plan or it can't be reached. */
+ * early enough to pick up the track the plan before hands it, all on one tempo line. Null where there's no plan or it can't
+ * be reached. */
 export function planChain(session: Pick<SetSession, "plans" | "tracks">): (MixPlan | null)[] {
   const chain: (MixPlan | null)[] = session.plans.map(() => null);
   const run = playableRun(session);
@@ -55,7 +99,7 @@ export function planChain(session: Pick<SetSession, "plans" | "tracks">): (MixPl
     const fromS = before ? Math.max(0, deckTime(before.b, before.window.end_beat - HANDOFF_BEATS) - ENTRY_MARGIN_S) : 0;
     chain[i] = extendPlan(session.plans[i]!, fromS, i === run.last ? session.tracks[i + 1].duration : null);
   }
-  return chain;
+  return tempoLine(chain, session.plans);
 }
 
 /** The part of the master timeline where both decks are heard. For a cut, the lead-in of `bars` before it. */

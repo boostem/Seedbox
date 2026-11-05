@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { LANE_DEFAULTS, LANES, type Deck, type Keyframe, type Lanes, type MixPlan } from "@/api/mixplan.generated";
-import type { SessionTrack } from "@/api/types";
+import type { SessionTrack, SetSession } from "@/api/types";
 import { beatAtFile, deckTime } from "@/audio/engine/position";
+import fixture from "./setchain.fixture.json";
 import type { WaveData } from "@/features/waveform/prepare";
 import type { StemWave } from "@/features/waveform/stems";
 import { bandLevels, blendSpan, deckAnalysis, deckRate, deckRegions, deckRole, extendPlan, fmtCountdown, HANDOFF_BEATS, heldTime, planChain, playableRun, readStrip, stemLevels, timeLeft, upNext } from "./session";
@@ -205,5 +206,28 @@ describe("the analysis a deck draws", () => {
     const an = deckAnalysis(track("x"), deck("x", 3, 0.75, 0, 64));
     expect(an.bpm).toBe(120);
     expect(an.first_downbeat_s).toBeCloseTo(((0.75 - 1.5) % 2 + 2) % 2);
+  });
+});
+
+describe("the set-wide tempo line", () => {
+  it("is the one the export plays (tests/test_seedbox2_setexport.py holds the other side)", () => {
+    const { plans, duration, tempo, windows } = fixture as unknown as {
+      plans: MixPlan[];
+      duration: number;
+      tempo: MixPlan["tempo"][];
+      windows: MixPlan["window"][];
+    };
+    const tracks = [...plans.map(() => ({ duration: 0 })), { duration }] as SetSession["tracks"];
+    const chain = planChain({ plans, tracks });
+    chain.forEach((plan, i) => {
+      expect(plan!.window.start_beat).toBeCloseTo(windows[i].start_beat, 6);
+      expect(plan!.window.end_beat).toBeCloseTo(windows[i].end_beat, 6);
+      expect(plan!.tempo.length).toBe(tempo[i].length);
+      plan!.tempo.forEach((k, j) => {
+        expect(k.beat).toBeCloseTo(tempo[i][j].beat, 6);
+        expect(k.value).toBeCloseTo(tempo[i][j].value, 6);
+        expect(k.curve).toBe(tempo[i][j].curve);
+      });
+    });
   });
 });

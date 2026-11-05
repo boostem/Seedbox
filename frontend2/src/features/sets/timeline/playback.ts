@@ -76,7 +76,7 @@ export function segmentOf(layout: TimelineLayout, index: number, plan: MixPlan):
 /** What the engine loads for a track: its gain to the level decks play at, as the renderer's and now-playing's. */
 function trackRequest(t: PlacedTrack): TrackRequest {
   const lufs = t.view?.integrated_lufs;
-  return { hash: t.order.hash, trimDb: lufs === null || lufs === undefined ? 0 : DECK_LUFS - lufs };
+  return { hash: t.order.hash, trimDb: t.view?.track_gain_db ?? (lufs === null || lufs === undefined ? 0 : DECK_LUFS - lufs) };
 }
 
 /** The set's seconds at a beat of this segment. */

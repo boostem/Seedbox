@@ -16,10 +16,11 @@ from typing import Any
 
 import numpy as np
 
-from seedbox2.analysis import beats, energy, vibe, vocals
+from seedbox2.analysis import beats, energy, loudness, vibe, vocals
 from seedbox2.analysis.grid import Grid
 from seedbox2.jobs import register
 from seedbox2.mix import convert
+from seedbox2.mix import master
 from seedbox2.mix.plan import MixPlan, deck_time
 from seedbox2.sets.features import load_features
 
@@ -56,6 +57,7 @@ def track_view(lib: Any, hash_: str) -> dict:
         "hash": hash_, "duration_s": float(track.get("duration") or 0.0), "sections": vibe.spans_of(lib, hash_, data),
         "curve": _curve(data), "bar_s": round(240.0 / float(grid["bpm"]), 4) if grid and grid.get("bpm") else None,
         "integrated_lufs": level.get("integrated_lufs"),
+        "track_gain_db": loudness.track_gain_db(level, vibe.spans_of(lib, hash_, data), master.DECK_LUFS) if level else None,
     }  # fmt: skip
 
 

@@ -1,0 +1,967 @@
+{
+"plans": [
+{
+"version": 3,
+"technique": "long blend",
+"bars": 16,
+"key_lock": true,
+"window": {
+"start_beat": -32.0,
+"end_beat": 96.0
+},
+"tempo": [
+{
+"beat": -32.0,
+"value": 124.0,
+"curve": "hold"
+},
+{
+"beat": 0.0,
+"value": 124.0,
+"curve": "hold"
+},
+{
+"beat": 64.0,
+"value": 124.0,
+"curve": "ease"
+},
+{
+"beat": 192.0,
+"value": 126.0,
+"curve": "hold"
+}
+],
+"a": {
+"track_id": "t0",
+"grid": [
+{
+"start_beat": 0.0,
+"start_s": 61.9355,
+"bpm": 124.0
+}
+],
+"key_shift": 0,
+"play_from_beat": -128.0,
+"play_to_beat": 64.0,
+"lanes": {
+"volume": [
+{
+"beat": -32.0,
+"value": 1.0,
+"curve": "hold"
+},
+{
+"beat": 48.0,
+"value": 1.0,
+"curve": "ease"
+},
+{
+"beat": 64.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"eq_low": [
+{
+"beat": -32.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 0.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 32.0,
+"value": 0.0,
+"curve": "linear"
+},
+{
+"beat": 33.0,
+"value": -30.0,
+"curve": "hold"
+}
+],
+"eq_mid": [
+{
+"beat": -32.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 40.0,
+"value": 0.0,
+"curve": "ease"
+},
+{
+"beat": 56.0,
+"value": -10.0,
+"curve": "hold"
+}
+],
+"eq_high": [
+{
+"beat": -32.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 32.0,
+"value": 0.0,
+"curve": "ease"
+},
+{
+"beat": 48.0,
+"value": -12.0,
+"curve": "hold"
+}
+],
+"filter": [
+{
+"beat": -32.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 32.0,
+"value": 0.0,
+"curve": "ease"
+},
+{
+"beat": 64.0,
+"value": 0.35,
+"curve": "hold"
+}
+],
+"filter_res": [
+{
+"beat": -32.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 32.0,
+"value": 0.0,
+"curve": "ease"
+},
+{
+"beat": 64.0,
+"value": 0.35,
+"curve": "hold"
+}
+],
+"echo_send": [
+{
+"beat": -32.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 60.0,
+"value": 0.0,
+"curve": "linear"
+},
+{
+"beat": 64.0,
+"value": 0.6,
+"curve": "hold"
+},
+{
+"beat": 65.0,
+"value": 0.6,
+"curve": "linear"
+},
+{
+"beat": 66.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"echo_feedback": [
+{
+"beat": -32.0,
+"value": 0.6,
+"curve": "hold"
+}
+],
+"reverb_send": [
+{
+"beat": -32.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 56.0,
+"value": 0.0,
+"curve": "linear"
+},
+{
+"beat": 64.0,
+"value": 0.55,
+"curve": "hold"
+},
+{
+"beat": 65.0,
+"value": 0.55,
+"curve": "linear"
+},
+{
+"beat": 66.0,
+"value": 0.0,
+"curve": "hold"
+}
+]
+},
+"stem_lanes": null,
+"sends": {
+"echo_beats": 0.75,
+"echo_tap": "pre_eq",
+"reverb_size": 0.75,
+"reverb_tap": "pre_eq"
+},
+"loops": [
+{
+"start_beat": 32.0,
+"end_beat": 64.0,
+"source_beat": 0.0,
+"length_beats": 32.0
+}
+],
+"fx": [],
+"pinned": []
+},
+"b": {
+"track_id": "t1",
+"grid": [
+{
+"start_beat": 0.0,
+"start_s": -15.2381,
+"bpm": 126.0
+}
+],
+"key_shift": 0,
+"play_from_beat": 0.0,
+"play_to_beat": 193.049,
+"lanes": {
+"volume": [
+{
+"beat": -32.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 0.0,
+"value": 0.0,
+"curve": "ease"
+},
+{
+"beat": 16.0,
+"value": 1.0,
+"curve": "hold"
+}
+],
+"eq_low": [
+{
+"beat": -32.0,
+"value": -30.0,
+"curve": "hold"
+},
+{
+"beat": 0.0,
+"value": -30.0,
+"curve": "hold"
+},
+{
+"beat": 32.0,
+"value": -30.0,
+"curve": "linear"
+},
+{
+"beat": 33.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"eq_mid": [
+{
+"beat": -32.0,
+"value": -15.0,
+"curve": "hold"
+},
+{
+"beat": 0.0,
+"value": -15.0,
+"curve": "ease"
+},
+{
+"beat": 32.0,
+"value": -4.0,
+"curve": "ease"
+},
+{
+"beat": 36.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"eq_high": [
+{
+"beat": -32.0,
+"value": -12.0,
+"curve": "hold"
+},
+{
+"beat": 0.0,
+"value": -12.0,
+"curve": "ease"
+},
+{
+"beat": 32.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"filter": [
+{
+"beat": -32.0,
+"value": 0.4,
+"curve": "hold"
+},
+{
+"beat": 0.0,
+"value": 0.4,
+"curve": "ease"
+},
+{
+"beat": 24.0,
+"value": 0.0,
+"curve": "ease"
+},
+{
+"beat": 31.75,
+"value": 0.45,
+"curve": "hold"
+},
+{
+"beat": 32.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"filter_res": [
+{
+"beat": -32.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 24.0,
+"value": 0.0,
+"curve": "ease"
+},
+{
+"beat": 31.75,
+"value": 0.6,
+"curve": "hold"
+},
+{
+"beat": 32.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"echo_send": [
+{
+"beat": -32.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"echo_feedback": [
+{
+"beat": -32.0,
+"value": 0.55,
+"curve": "hold"
+}
+],
+"reverb_send": [
+{
+"beat": -32.0,
+"value": 0.0,
+"curve": "hold"
+}
+]
+},
+"stem_lanes": null,
+"sends": {
+"echo_beats": 0.75,
+"echo_tap": "pre_eq",
+"reverb_size": 0.75,
+"reverb_tap": "pre_eq"
+},
+"loops": [
+{
+"start_beat": 0.0,
+"end_beat": 32.0,
+"source_beat": 32.0,
+"length_beats": 32.0
+}
+],
+"fx": [],
+"pinned": []
+},
+"markers": [
+{
+"beat": 0.0,
+"label": "B in"
+},
+{
+"beat": 32.0,
+"label": "bass swap"
+},
+{
+"beat": 32.0,
+"label": "A loop"
+},
+{
+"beat": 32.0,
+"label": "B loop out"
+},
+{
+"beat": 64.0,
+"label": "A out"
+},
+{
+"beat": 64.0,
+"label": "tempo ramp"
+}
+],
+"notes": [
+"A's 8-bar outro is drums-only; B's 8-bar intro too \u2192 16-bar long blend: B in at A 1:02 (bar 33, on the phrase) from B 0:00, swap the bass on the 1 of bar 9 (A 1:17), A out by the end of its 8-bar loop.",
+"In phrases: bars 1\u20138 bring B in with its lows killed behind a gentle filter (fader up over 4 bars, highs opening, mids held 4 dB down until the swap); from bar 9 both ride together while the last 8 bars take A out \u2014 highs, then mids, then the fader \u2014 under a slowly rising high-pass; A's reverb swells over its last 2 bars and its echo over the last, both still fed a beat past the cut so they ring over B. B's high-pass builds, resonant, over the 2 bars before its lows drop in on bar 9 and lets go on that 1.",
+"B's intro is stretched: B loops its bars 1\u20138 (8 bars) from B 0:00 as it comes in and releases the loop on the 1 of bar 9 (a phrase), so its intro then runs as A leaves.",
+"A's outro is stretched: A's music runs out 8 bars before the blend ends, so from bar 9 A loops its bars 33\u201340 (8 bars, 1:02) until it leaves on the phrase.",
+"B is pitched -1.6% to A's 124.0 BPM through the blend (key lock on), then the tempo drifts to B's own 126.0 BPM over 32 bars once A is out."
+],
+"edited": false
+},
+{
+"version": 3,
+"technique": "long blend",
+"bars": 16,
+"key_lock": true,
+"window": {
+"start_beat": -80.0,
+"end_beat": 96.0
+},
+"tempo": [
+{
+"beat": -128.0,
+"value": 126.0,
+"curve": "ease"
+},
+{
+"beat": 0.0,
+"value": 123.984,
+"curve": "hold"
+},
+{
+"beat": 64.0,
+"value": 123.984,
+"curve": "ease"
+},
+{
+"beat": 192.0,
+"value": 122.0,
+"curve": "hold"
+}
+],
+"a": {
+"track_id": "t1",
+"grid": [
+{
+"start_beat": 0.0,
+"start_s": 60.9524,
+"bpm": 126.0
+}
+],
+"key_shift": 0,
+"play_from_beat": -128.0,
+"play_to_beat": 64.0,
+"lanes": {
+"volume": [
+{
+"beat": -80.0,
+"value": 1.0,
+"curve": "hold"
+},
+{
+"beat": 48.0,
+"value": 1.0,
+"curve": "ease"
+},
+{
+"beat": 64.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"eq_low": [
+{
+"beat": -80.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 0.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 32.0,
+"value": 0.0,
+"curve": "linear"
+},
+{
+"beat": 33.0,
+"value": -30.0,
+"curve": "hold"
+}
+],
+"eq_mid": [
+{
+"beat": -80.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 40.0,
+"value": 0.0,
+"curve": "ease"
+},
+{
+"beat": 56.0,
+"value": -10.0,
+"curve": "hold"
+}
+],
+"eq_high": [
+{
+"beat": -80.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 32.0,
+"value": 0.0,
+"curve": "ease"
+},
+{
+"beat": 48.0,
+"value": -12.0,
+"curve": "hold"
+}
+],
+"filter": [
+{
+"beat": -80.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 32.0,
+"value": 0.0,
+"curve": "ease"
+},
+{
+"beat": 64.0,
+"value": 0.35,
+"curve": "hold"
+}
+],
+"filter_res": [
+{
+"beat": -80.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 32.0,
+"value": 0.0,
+"curve": "ease"
+},
+{
+"beat": 64.0,
+"value": 0.35,
+"curve": "hold"
+}
+],
+"echo_send": [
+{
+"beat": -80.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 60.0,
+"value": 0.0,
+"curve": "linear"
+},
+{
+"beat": 64.0,
+"value": 0.6,
+"curve": "hold"
+},
+{
+"beat": 65.0,
+"value": 0.6,
+"curve": "linear"
+},
+{
+"beat": 66.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"echo_feedback": [
+{
+"beat": -80.0,
+"value": 0.6,
+"curve": "hold"
+}
+],
+"reverb_send": [
+{
+"beat": -80.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 56.0,
+"value": 0.0,
+"curve": "linear"
+},
+{
+"beat": 64.0,
+"value": 0.55,
+"curve": "hold"
+},
+{
+"beat": 65.0,
+"value": 0.55,
+"curve": "linear"
+},
+{
+"beat": 66.0,
+"value": 0.0,
+"curve": "hold"
+}
+]
+},
+"stem_lanes": null,
+"sends": {
+"echo_beats": 0.75,
+"echo_tap": "pre_eq",
+"reverb_size": 0.75,
+"reverb_tap": "pre_eq"
+},
+"loops": [
+{
+"start_beat": 32.0,
+"end_beat": 64.0,
+"source_beat": 0.0,
+"length_beats": 32.0
+}
+],
+"fx": [],
+"pinned": []
+},
+"b": {
+"track_id": "t2",
+"grid": [
+{
+"start_beat": 0.0,
+"start_s": -15.7377,
+"bpm": 122.0
+}
+],
+"key_shift": 0,
+"play_from_beat": 0.0,
+"play_to_beat": 193.0176,
+"lanes": {
+"volume": [
+{
+"beat": -80.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 0.0,
+"value": 0.0,
+"curve": "ease"
+},
+{
+"beat": 16.0,
+"value": 1.0,
+"curve": "hold"
+}
+],
+"eq_low": [
+{
+"beat": -80.0,
+"value": -30.0,
+"curve": "hold"
+},
+{
+"beat": 0.0,
+"value": -30.0,
+"curve": "hold"
+},
+{
+"beat": 32.0,
+"value": -30.0,
+"curve": "linear"
+},
+{
+"beat": 33.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"eq_mid": [
+{
+"beat": -80.0,
+"value": -15.0,
+"curve": "hold"
+},
+{
+"beat": 0.0,
+"value": -15.0,
+"curve": "ease"
+},
+{
+"beat": 32.0,
+"value": -4.0,
+"curve": "ease"
+},
+{
+"beat": 36.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"eq_high": [
+{
+"beat": -80.0,
+"value": -12.0,
+"curve": "hold"
+},
+{
+"beat": 0.0,
+"value": -12.0,
+"curve": "ease"
+},
+{
+"beat": 32.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"filter": [
+{
+"beat": -80.0,
+"value": 0.4,
+"curve": "hold"
+},
+{
+"beat": 0.0,
+"value": 0.4,
+"curve": "ease"
+},
+{
+"beat": 24.0,
+"value": 0.0,
+"curve": "ease"
+},
+{
+"beat": 31.75,
+"value": 0.45,
+"curve": "hold"
+},
+{
+"beat": 32.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"filter_res": [
+{
+"beat": -80.0,
+"value": 0.0,
+"curve": "hold"
+},
+{
+"beat": 24.0,
+"value": 0.0,
+"curve": "ease"
+},
+{
+"beat": 31.75,
+"value": 0.6,
+"curve": "hold"
+},
+{
+"beat": 32.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"echo_send": [
+{
+"beat": -80.0,
+"value": 0.0,
+"curve": "hold"
+}
+],
+"echo_feedback": [
+{
+"beat": -80.0,
+"value": 0.55,
+"curve": "hold"
+}
+],
+"reverb_send": [
+{
+"beat": -80.0,
+"value": 0.0,
+"curve": "hold"
+}
+]
+},
+"stem_lanes": null,
+"sends": {
+"echo_beats": 0.75,
+"echo_tap": "pre_eq",
+"reverb_size": 0.75,
+"reverb_tap": "pre_eq"
+},
+"loops": [
+{
+"start_beat": 0.0,
+"end_beat": 32.0,
+"source_beat": 32.0,
+"length_beats": 32.0
+}
+],
+"fx": [],
+"pinned": []
+},
+"markers": [
+{
+"beat": -128.0,
+"label": "tempo ramp"
+},
+{
+"beat": 0.0,
+"label": "B in"
+},
+{
+"beat": 32.0,
+"label": "bass swap"
+},
+{
+"beat": 32.0,
+"label": "A loop"
+},
+{
+"beat": 32.0,
+"label": "B loop out"
+},
+{
+"beat": 64.0,
+"label": "A out"
+},
+{
+"beat": 64.0,
+"label": "tempo ramp"
+}
+],
+"notes": [
+"A's 8-bar outro is drums-only; B's 8-bar intro too \u2192 16-bar long blend: B in at A 1:01 (bar 33, on the phrase) from B 0:00, swap the bass on the 1 of bar 9 (A 1:16), A out by the end of its 8-bar loop.",
+"In phrases: bars 1\u20138 bring B in with its lows killed behind a gentle filter (fader up over 4 bars, highs opening, mids held 4 dB down until the swap); from bar 9 both ride together while the last 8 bars take A out \u2014 highs, then mids, then the fader \u2014 under a slowly rising high-pass; A's reverb swells over its last 2 bars and its echo over the last, both still fed a beat past the cut so they ring over B. B's high-pass builds, resonant, over the 2 bars before its lows drop in on bar 9 and lets go on that 1.",
+"B's intro is stretched: B loops its bars 1\u20138 (8 bars) from B 0:00 as it comes in and releases the loop on the 1 of bar 9 (a phrase), so its intro then runs as A leaves.",
+"A's outro is stretched: A's music runs out 8 bars before the blend ends, so from bar 9 A loops its bars 33\u201340 (8 bars, 1:01) until it leaves on the phrase.",
+"Tempo gap -3.2%: A drifts from 126.0 to 124.0 BPM over the 32 bars before B comes in, both play at 124.0 through the blend (key lock on), then the tempo drifts on to B's own 122.0 BPM over 32 bars."
+],
+"edited": false
+}
+],
+"duration": 79.189,
+"tempo": [
+[
+{
+"beat": -32.0,
+"value": 124.0,
+"curve": "hold"
+},
+{
+"beat": 0.0,
+"value": 124.0,
+"curve": "hold"
+},
+{
+"beat": 64.0,
+"value": 124.0,
+"curve": "ease"
+},
+{
+"beat": 64.0,
+"value": 124.0,
+"curve": "linear"
+},
+{
+"beat": 96.0,
+"value": 123.99466666944444,
+"curve": "linear"
+}
+],
+[
+{
+"beat": -93.00004999999999,
+"value": 123.99950000026041,
+"curve": "linear"
+},
+{
+"beat": 0.0,
+"value": 123.984,
+"curve": "hold"
+},
+{
+"beat": 0.0,
+"value": 123.984,
+"curve": "hold"
+},
+{
+"beat": 64.0,
+"value": 123.984,
+"curve": "ease"
+},
+{
+"beat": 192.0,
+"value": 122.0,
+"curve": "hold"
+}
+]
+],
+"windows": [
+{
+"start_beat": -128.00003333333333,
+"end_beat": 96.0
+},
+{
+"start_beat": -93.00004999999999,
+"end_beat": 193.01762333333332
+}
+]
+}
