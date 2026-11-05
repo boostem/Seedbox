@@ -11,6 +11,9 @@ import { DjFilter, Echo, isoGain, Isolator, Reverb } from "./dsp";
 import { deckBpm, interpExtended, sourceMap } from "./position";
 import type { SourceMap } from "./position";
 import type { AudioStream } from "./stream";
+import { StretchedSource } from "./stretched";
+import { giveBackStretcher, takeStretcher } from "./stretcher";
+import type { StretchProfile } from "./stretcher";
 
 export interface DeckSource {
   stream: AudioStream;
@@ -90,8 +93,13 @@ const SPREAD = 1024; // how far apart the samples an effect reads in one go may 
 export class DeckVoice {
   readonly qa: number;
   readonly qb: number;
-  /** Plays off its own tempo: varispeed for now, so the pitch moves with it even under key lock (#66 brings the stretcher). */
+  /** Plays off its own tempo at some point. */
   readonly stretched: boolean;
+  /** Through the stretcher: key lock off its own tempo, or a key shift. Without one or the other it's a copy or varispeed. */
+  private stretch: StretchedSource | null = null;
+  /** A scrub's bursts are 40 ms long: too short to hear a pitch, or to give a stretcher time to start. */
+  private scrubRead = false;
+  private fxReading = false;
   private readonly size: number;
   private readonly t0: number;
   private readonly t1: number;
@@ -159,10 +167,12 @@ export class DeckVoice {
     w1: number,
     total: number,
     trimDb: number,
+    keyLock: boolean,
+    profile: StretchProfile,
   ): DeckVoice | null {
     const p0 = Math.max(plan.play_from_beat, w0);
     const p1 = Math.min(plan.play_to_beat, w1);
-    return p1 <= p0 ? null : new DeckVoice(plan, sources, clock, w0, w1, total, trimDb, p0, p1);
+    return p1 <= p0 ? null : new DeckVoice(plan, sources, clock, w0, w1, total, trimDb, p0, p1, keyLock, profile);
   }
 
   private constructor(
@@ -175,6 +185,8 @@ export class DeckVoice {
     trimDb: number,
     p0: number,
     p1: number,
+    keyLock: boolean,
+    profile: StretchProfile,
   ) {
     this.map = sourceMap(plan, p0 - 2, p1 + 1);
     this.trim = Math.pow(10, trimDb / 20);
@@ -216,6 +228,17 @@ export class DeckVoice {
     const { events, stopAt } = this.compileFx();
     this.events = events;
     this.stopAt = stopAt;
+    if (plan.key_shift !== 0 || (keyLock && stretched)) {
+      // what an effect reads back: a spinback goes as far back again as it lasts, the others less
+      const past = events.reduce((most, ev) => Math.max(most, 2 * (ev.te - ev.ts)), 0);
+      this.stretch = new StretchedSource(
+        takeStretcher(profile),
+        { sourceAt: (k) => this.sourceAt(this.qa + k), read: (...args) => this.readMixed(...args) },
+        Math.pow(2, plan.key_shift / 12),
+        !keyLock,
+        past > 0 ? Math.ceil(past) + 2 * BLOCK : 0,
+      );
+    }
 
     const lanes = plan.lanes;
     this.low = ctl(lanes.eq_low);
@@ -301,7 +324,18 @@ export class DeckVoice {
     this.warming = false;
   }
 
-  /** The (fractional) source sample at a master sample: what the varispeed read follows. */
+  /** Gives its stretcher back: this voice has played its last. */
+  dispose(): void {
+    if (this.stretch) giveBackStretcher(this.stretch.stretcher);
+    this.stretch = null;
+  }
+
+  /** Whether changing the stretcher's profile would change anything. */
+  get usesStretcher(): boolean {
+    return this.stretch !== null;
+  }
+
+  /** The (fractional) source sample at a master sample: what the varispeed read and the stretcher follow. */
   private sourceAt(q: number): number {
     return interpExtended(this.map.knotBeats, this.map.knotSamples, this.clock.beat(q / SR));
   }
@@ -366,6 +400,32 @@ export class DeckVoice {
   }
 
   /**
+   * What goes into the stretcher: the sources mixed on the source's own time, each stem under its gain where the sample
+   * will be heard, at samples [k0, k1] of the range. It's a stretcher per deck rather than per stem for the budget, as
+   * four would cost four times this; the renderer has the time to run one per stem.
+   */
+  private readMixed(from: number, n: number, k0: number, k1: number, left: Float64Array, right: Float64Array): void {
+    const { wideStemL, wideStemR } = this;
+    left.fill(0, 0, n);
+    right.fill(0, 0, n);
+    for (const { stream, gain } of this.sources) {
+      const g0 = gain ? gain.at(Math.max(k0, 0)) : 1;
+      const g1 = gain ? gain.at(Math.max(k1, 0)) : 1;
+      if (g0 === 0 && g1 === 0) continue;
+      const slope = (g1 - g0) / n;
+      for (let done = 0; done < n; done += WIDE) {
+        const count = Math.min(WIDE, n - done);
+        this.readSpliced(stream, from + done, count, wideStemL, wideStemR, 0);
+        for (let t = 0; t < count; t++) {
+          const g = g0 + slope * (done + t);
+          left[done + t] += wideStemL[t] * g;
+          right[done + t] += wideStemR[t] * g;
+        }
+      }
+    }
+  }
+
+  /**
    * Varispeed: the sources mixed on the source's own time, then one resample. A stem's gain moves little in a block, so
    * it goes on before the resampler instead of running 16 taps per stem.
    */
@@ -422,7 +482,10 @@ export class DeckVoice {
     }
     const at = offset + (a - k);
     const { tmpL, tmpR, gainA } = this;
-    if (this.stretched) {
+    if (this.stretch && !this.scrubRead) {
+      if (this.fxReading) this.stretch.past(a, m, left, right, at);
+      else this.stretch.read(a, m, left, right, at);
+    } else if (this.stretched) {
       this.readStretched(a, m, left, right, at);
     } else {
       for (const { stream, gain } of this.sources) {
@@ -488,7 +551,9 @@ export class DeckVoice {
         hi = nhi;
       }
       const width = hi - lo + 2;
+      this.fxReading = true;
       this.computeX(lo, width, fxL, fxR, 0);
+      this.fxReading = false;
       for (let s = i; s < e; s++) {
         const whole = Math.floor(fxPos[s]);
         const fr = fxPos[s] - whole;
@@ -639,7 +704,9 @@ export class DeckVoice {
   }
 
   /** The playhead jumped: the running sums and filter settle again. `clear` also silences the effect tails. */
-  relocate(clear: boolean): void {
+  relocate(clear: boolean, scrubbing = false): void {
+    this.stretch?.relocate();
+    this.scrubRead = scrubbing;
     for (const lane of this.allLanes) lane.relocate();
     this.filter?.relocate();
     this.isolator?.reset();

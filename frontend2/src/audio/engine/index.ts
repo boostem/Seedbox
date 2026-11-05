@@ -15,11 +15,12 @@
  *
  * It runs at 44.1 kHz whatever the device's rate, as the renderer does: the context resamples on the way out. All DSP is
  * in the AudioWorklet (`processor.ts` around `core.ts`), one node for both decks, so they share a clock to the sample.
- * Off its own tempo a deck plays varispeed, with the pitch moving, until #66 brings key lock; `key_shift` is #66's too.
+ * Off its own tempo a deck goes through the stretcher under key lock, and plays varispeed without it; `key_shift` is the stretcher's too.
  */
 import { apiUrl } from "@/api/client";
 import type { MixPlan, StemLanes } from "../../api/mixplan.generated";
 import { Clock } from "./clock";
+import { isLowPower, onLowPower } from "./power";
 import { pyRound, SR } from "./constants";
 import type { DeckAudio, DeckCarry, DeckId } from "./core";
 import { foldStemLanes } from "./fold";
@@ -117,6 +118,7 @@ export class LiveEngine {
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly listeners = new Set<(s: EngineState) => void>();
   private loader: ChunkLoader | null = null;
+  private offLowPower: (() => void) | null = null;
   state: EngineState = { status: "idle", decks: { a: null, b: null }, error: null };
 
   subscribe(listener: (s: EngineState) => void): () => void {
@@ -149,6 +151,8 @@ export class LiveEngine {
         node.port.onmessage = (e: MessageEvent<EngineReport>) => this.report(e.data);
         this.ctx = ctx;
         this.node = node;
+        this.post({ type: "lowPower", on: isLowPower() });
+        this.offLowPower = onLowPower((on) => this.post({ type: "lowPower", on }));
         this.loader = new ChunkLoader({
           fetchChunk: (key, index) => {
             const cut = key.lastIndexOf("/");
@@ -425,6 +429,7 @@ export class LiveEngine {
 
   /** Closes the context: the decoded audio goes with it. */
   async close(): Promise<void> {
+    this.offLowPower?.();
     this.stopPump();
     await this.ctx?.close();
     this.ctx = null;

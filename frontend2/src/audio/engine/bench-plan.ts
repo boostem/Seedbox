@@ -18,7 +18,7 @@ function stems(beats: number): StemLanes {
 }
 
 /** The most a deck does at once: every lane moving, both sends on, a loop, on four stems. */
-export function worstPlan(beats: number, offTempo: boolean): MixPlan {
+export function worstPlan(beats: number, offTempo: boolean, keyLock = !offTempo): MixPlan {
   const deck = (track_id: string, sign: number): Deck => ({
     track_id,
     grid: [{ start_beat: 0, start_s: 0.5, bpm: offTempo ? BPM * 1.02 : BPM }],
@@ -46,7 +46,7 @@ export function worstPlan(beats: number, offTempo: boolean): MixPlan {
     version: PLAN_VERSION,
     technique: "bench",
     bars: 8,
-    key_lock: !offTempo,
+    key_lock: keyLock,
     window: { start_beat: 0, end_beat: beats },
     tempo: [kf(0, BPM, "hold")],
     a: deck("a", 1),
