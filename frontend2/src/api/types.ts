@@ -289,6 +289,30 @@ export interface MixCheck {
 export type AnalysisState = "new" | "queued" | "analysing" | "failed" | "done";
 
 /** One row of GET /api/library/view: what the library table shows, sorts and filters on. */
+export interface KeyNames {
+  key: string; // "A minor"
+  camelot: string;
+  open_key: string;
+}
+
+export interface KeyAnalysis {
+  key: string | null;
+  camelot: string | null;
+  open_key: string | null;
+  confidence: number;
+  best_guess: KeyNames | null;
+  source: "stems" | "mix";
+  beat_synchronous: boolean;
+  tuning_cents: number;
+  changes: (KeyNames & { start_s: number; end_s: number; confidence: number })[];
+}
+
+export interface KeyStatus {
+  analysis: KeyAnalysis | null;
+  effective: { key: string | null; camelot: string | null; open_key: string | null; from: "user" | "analysis" | "unknown" };
+  hints: { key: string; from: string }[];
+}
+
 export interface LibraryRow {
   hash: string;
   duration: number;
@@ -301,7 +325,11 @@ export interface LibraryRow {
   /** "analysis" (ours) or "tags" (a hint from the file, Rekordbox, iTunes or Seedbox 1) */
   bpm_from: "analysis" | "tags" | null;
   key: string | null; // Camelot code
-  key_from: "analysis" | "tags" | null;
+  /** "user" (their own key), "analysis", "unknown" (analysed, not confident: shown as "?") or "tags" (a hint, before analysis) */
+  key_from: "user" | "analysis" | "unknown" | "tags" | null;
+  /** A tag's key that disagrees with ours, shown next to it */
+  key_hint: string | null;
+  key_hint_from: "rekordbox" | "tunebat" | "file" | "itunes" | null;
   energy: number | null; // 0-1
   energy_from: "analysis" | "tags" | null;
   genre: string;

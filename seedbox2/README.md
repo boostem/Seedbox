@@ -146,6 +146,30 @@ event with the new status. `seedbox2/models/export/` (dev-only, the one place to
 files from the upstream checkpoints and checks any file against torch:
 `python -m seedbox2.models.export beat_this --check FILE` (the registry's file differs from torch by at most 2e-6
 
+**Key detection** (#45, `seedbox2/analysis/key.py`): the `key` job (light pool, per track) makes chroma with a
+constant-Q transform (one bin per tuned semitone, C2 to C7, about 0.1 s per track, with numpy and scipy only) of the
+bass and other stems or, without stems, the mix, averages it per beat and correlates it with the 24 rotations of
+Faraldo's `edma` profile (`bgate` is there too), plus a small prior for minor keys. The tuning is estimated first
+(a track 40 cents sharp keeps most of its score: 0.62, against 0.53 without it). The same match on 8-bar blocks,
+smoothed with Viterbi, gives `changes`, stretches of at least 16 bars in another key (5.5 % of GiantSteps tracks);
+when #46 lands its sections can replace the blocks. The job runs on what is there, and runs again when the beats or
+stems arrive. `confidence` is the chance of the right key or a fifth, fitted on half of GiantSteps; below 0.4 the key
+is unknown: the table shows "?", `key.planning_key(lib, hash)` gives the planner None, and `best_guess` keeps what it
+would have been. Tag and tunebat keys are never used as ours: until the analysis they fill in as grey hints, after it
+the first one that disagrees (`key_hint`) sits next to our key. Clicking a key opens the editor: confidence, source,
+key changes, hints, a wheel to set your own key (the `key_override` analysis, which survives re-analysis) and the
+Camelot/Open Key switch (remembered in the browser). `GET /api/analysis/{hash}/key`, `PUT` and `DELETE
+/api/analysis/{hash}/key/override`.
+
+Measured on all 604 GiantSteps Key tracks (MIREX weighted score, on the mix, with Beat This! beats): **0.664**, under
+the ticket's 0.70 target. Half was used for tuning: 0.669 there, 0.658 on the half held out; 59.6 % exact, 8.6 %
+fifth, 5.0 % relative, 4.8 % parallel, 22.0 % other. As a reference, Essentia 2.1's `KeyExtractor` on the same files
+gets 0.650 with `edma` and 0.680 with `bgate`, so this is what template matching reaches here, not a bug. Counting
+only the 87.6 % of tracks with a confident key, the score is 0.716 (held-out half: 0.698), and 0.296 on the ones shown
+as "?". The stems did not help: on the 53 tracks separated, bass + other scored 0.542 and the mix 0.609 on the same
+tracks (difference -0.068 ± 0.071, 95 %), which is too few tracks to call it worse, but it isn't the gain the plan
+expected. Our own corpus is empty so far, so it hasn't been scored.
+
 **The library view** (#73, `frontend2/src/features/library/`, `seedbox2/library/view.py`): `#/library` is a
 virtualised table of every track (artwork, title, artist, BPM, Camelot-coloured key, energy 1-10, length, genre, an
 overview waveform and the analysis/stems status). `GET /api/library/view` sends every track as one compact row
@@ -208,7 +232,8 @@ It needs `mir_eval` (in `requirements-dev.txt`).
   errors allowed) and the octave-error rate, MIREX weighted key score, section boundary hit rate at ±1 bar, vocal
   frame F-measure.
 - **Analysers** register in `seedbox2/eval/analysers.py`; `seedbox2` and `seedbox2-small` are the beats analysis
-  (#43) with final0 and small0; `seedbox1` (`musicreco/structure.py` without the tunebat
+  (#43) with final0 and small0 and the key (#45) of the mix; `seedbox2-stems` takes the key from the harmonic stems
+  (minutes per track); `seedbox1` (`musicreco/structure.py` without the tunebat
   BPM hint) is the baseline. It has no key detection, and finds the tempo of 59 % of the first 50 GiantSteps tracks
   (it reads most drum & bass at 2/3 of its tempo).
 - **Runs** are saved as JSON (`$SEEDBOX2_EVAL_RESULTS`, default `eval-results` in the cache folder) with every

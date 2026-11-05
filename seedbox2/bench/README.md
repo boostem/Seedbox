@@ -13,7 +13,7 @@ The numbers that count come from the two reference laptops, on battery; please r
 | `report FILE` | A results file as markdown: the machine, each budget with ✅/❌, and a table per stage. |
 
 Until the Seedbox 2 versions land, the stages run Seedbox 1's code (`seedbox2/bench/stages.py` says which, and the
-results record it per stage): analysis is `musicreco.structure` (until #43, #45, #49), planning and rendering are
+results record it per stage): analysis is `musicreco.structure` (until #43, #49) plus our key (#45), planning and rendering are
 `musicreco.mixplan` and `mixrender` (until #51 and the v2 engine). Stems are `seedbox2.analysis.stems.separate`
 (#44), and skipped until the `htdemucs` model is downloaded (start Seedbox 2 once, or Settings → Models). When one of
 those tickets lands, point its wrapper in `stages.py` at the new code.

@@ -149,7 +149,7 @@ class Library:
         for row in r.execute(
                 "SELECT hash, analyser, json_extract(data, '$.bpm') AS bpm, json_extract(data, '$.camelot') AS camelot, "
                 "json_extract(data, '$.key') AS key, json_extract(data, '$.energy') AS energy FROM analyses "
-                f"WHERE analyser IN ('beats', 'tempo', 'key', 'energy') AND json_valid(data){in_} "
+                f"WHERE analyser IN ('beats', 'tempo', 'key', 'key_override', 'energy') AND json_valid(data){in_} "
                 "ORDER BY created_at, rowid", args):  # fmt: skip
             analyses.setdefault(row["hash"], {})[row["analyser"]] = {k: row[k] for k in ("bpm", "camelot", "key", "energy")}
         artifacts: dict[str, list[str]] = {}
@@ -241,6 +241,15 @@ class Library:
             row = self.db.read().execute("SELECT * FROM analyses WHERE hash = ? AND analyser = ? "
                                          "ORDER BY created_at DESC, rowid DESC LIMIT 1", (hash_, analyser)).fetchone()  # fmt: skip
         return _row(row)
+
+    def delete_analysis(self, hash_: str, analyser: str) -> None:
+        with self.db.write() as c:
+            c.execute("DELETE FROM analyses WHERE hash = ? AND analyser = ?", (hash_, analyser))
+
+    def hashes_without_analysis(self, analyser: str, version: str) -> list[str]:
+        return [r["hash"] for r in self.db.read().execute(
+            "SELECT hash FROM tracks WHERE hash NOT IN (SELECT hash FROM analyses WHERE analyser = ? AND version = ?)",
+            (analyser, str(version)))]  # fmt: skip
 
     def analyses(self, hash_: str) -> list[dict]:
         return _rows(self.db.read().execute("SELECT analyser, version, created_at FROM analyses WHERE hash = ? "

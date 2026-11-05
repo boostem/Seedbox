@@ -1,7 +1,7 @@
 """The benchmarked stages. Each runs in its own process (measure.py) and hands its output to the next stage in files.
 
 Until Seedbox 2's own code lands they run Seedbox 1's (`IMPL` says which): analysis is musicreco.structure until
-#43 (beats), #45 (key) and #49 (waveforms), planning and rendering are musicreco.mixplan / mixrender until #51 and
+#43 (beats) and #49 (waveforms), plus our key (#45), planning and rendering are musicreco.mixplan / mixrender until #51 and
 the v2 mix engine. Stems run Seedbox 2's own code (#44) and are skipped until the model is downloaded. Point the
 wrappers below at the new code as each ticket lands.
 """
@@ -17,7 +17,7 @@ from musicreco.models import Track
 from musicreco.paths import ffmpeg_path
 
 IMPL = {
-    "analysis": "musicreco.structure.analyze (Seedbox 1, until #43/#45/#49)",
+    "analysis": "musicreco.structure.analyze (Seedbox 1, until #43/#49) + seedbox2.analysis.key (#45)",
     "stems": "seedbox2.analysis.stems.separate, htdemucs (#44)",
     "plan": "musicreco.mixplan.generate, 32 bars (Seedbox 1, until #51)",
     "render": "musicreco.mixrender.render_audio (Seedbox 1, until the v2 engine)",
@@ -40,9 +40,12 @@ def missing(stage: str) -> str | None:
 
 
 def analysis(path: str, out_json: str) -> dict:
+    from seedbox2.analysis import key
+
     an = structure.analyze(Path(path), track_id=Path(path).stem)
     Path(out_json).write_text(json.dumps(an))
-    return {"bpm": an.get("bpm"), "bars": an.get("bar_count")}
+    k = key.analyse_signal(key.decode_mono(path))
+    return {"bpm": an.get("bpm"), "bars": an.get("bar_count"), "key": k["camelot"]}
 
 
 def stems(path: str, out_dir: str) -> dict:

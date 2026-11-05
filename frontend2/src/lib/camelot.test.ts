@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CAMELOT_CODES, CAMELOT_COLORS, camelotAdjacent, camelotMove, keyColor, parseCamelot } from "./camelot";
+import { CAMELOT_CODES, CAMELOT_COLORS, camelotAdjacent, camelotMove, formatKey, keyColor, parseCamelot, toOpenKey } from "./camelot";
 
 describe("parseCamelot", () => {
   it("normalises valid codes", () => {
@@ -52,5 +52,22 @@ describe("camelotAdjacent", () => {
     expect(camelotAdjacent("8A", "8B")).toBe(true);
     expect(camelotAdjacent("8A", "9B")).toBe(false);
     expect(camelotAdjacent("8A", "10A")).toBe(false);
+  });
+});
+
+describe("key notation", () => {
+  it("maps Camelot to Open Key", () => {
+    expect(toOpenKey("8A")).toBe("1m");
+    expect(toOpenKey("8B")).toBe("1d");
+    expect(toOpenKey("12a")).toBe("5m");
+    expect(toOpenKey("1B")).toBe("6d");
+    expect(toOpenKey("13A")).toBeNull();
+    expect(toOpenKey(null)).toBeNull();
+  });
+
+  it("writes a key the way the user wants", () => {
+    expect(formatKey("08a", "camelot")).toBe("8A");
+    expect(formatKey("8A", "open")).toBe("1m");
+    expect(formatKey(null, "open")).toBe("");
   });
 });

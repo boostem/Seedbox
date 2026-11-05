@@ -23,6 +23,20 @@ export function parseCamelot(code: string | null | undefined): CamelotCode | nul
   return { n, letter, code: `${n}${letter}` };
 }
 
+export type KeyNotation = "camelot" | "open";
+
+/** Traktor's Open Key for a Camelot code: 8A is 1m, 8B is 1d. */
+export function toOpenKey(code: string | null | undefined): string | null {
+  const c = parseCamelot(code);
+  return c ? `${((c.n + 4) % 12) + 1}${c.letter === "A" ? "m" : "d"}` : null;
+}
+
+/** A Camelot code as the user wants keys written. Anything that isn't a key comes back unchanged. */
+export function formatKey(code: string | null | undefined, notation: KeyNotation): string {
+  if (notation === "open") return toOpenKey(code) ?? (code ?? "");
+  return parseCamelot(code)?.code ?? (code ?? "");
+}
+
 /** Hue (HSL degrees) per wheel position. */
 const CAMELOT_HUES: Record<number, number> = {
   1: 168, 2: 140, 3: 102, 4: 64, 5: 42, 6: 22, 7: 356, 8: 328, 9: 292, 10: 262, 11: 228, 12: 198,

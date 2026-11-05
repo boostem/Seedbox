@@ -1,9 +1,10 @@
 import type { LucideIcon } from "lucide-react";
 import type { HTMLAttributes, ReactNode } from "react";
 import type { Move } from "@/api/types";
-import { keyColor } from "@/lib/camelot";
+import { formatKey, keyColor } from "@/lib/camelot";
 import { cn } from "@/lib/cn";
 import { MOVE_HELP, MOVE_LABEL, moveColor } from "@/lib/moves";
+import { useUi } from "@/store/ui";
 import { Tooltip } from "./Tooltip";
 
 export type BadgeTone = "neutral" | "accent" | "ok" | "warn" | "danger" | "info" | "boost";
@@ -60,7 +61,8 @@ export interface KeyBadgeProps {
 /** Camelot key chip coloured from the single Camelot colour map (lib/camelot.ts). */
 export function KeyBadge({ camelot, keyName, size = "sm", variant = "soft", move, dim, className }: KeyBadgeProps) {
   const c = keyColor(camelot);
-  const label = (camelot ?? "").trim().toUpperCase() || "?";
+  const notation = useUi((s) => s.keyNotation);
+  const label = formatKey(camelot, notation).trim() || "?";
   const color = move ? moveColor(move) : c.base;
   const style =
     variant === "solid"

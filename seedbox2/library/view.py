@@ -5,6 +5,10 @@ artwork, and the track's analysis status. Our own analyses win (`beats`/`tempo` 
 `energy` → `energy`); until a track has them, the hints its tags carry fill in (the file's tags, Rekordbox, iTunes,
 Seedbox 1/tunebat), marked `bpm_from`/`key_from`/`energy_from` = "tags" so the UI can show them as hints.
 
+The key (#45): the user's override wins (`key_from` "user"), then our analysis ("analysis"). An analysis that isn't
+confident is `key` None with `key_from` "unknown", shown as "?". Once either of those speaks, the tags stop filling
+in: the first hint that disagrees is `key_hint`, from `key_hint_from`, to show next to ours.
+
 Status (`state`): `analysing` while one of its jobs runs, `queued` while one waits, `failed` if the latest run of a
 job failed, `done` once it has a waveform and nothing is pending, else `new`. "Not analysed yet" is every state but
 `done`.
@@ -92,12 +96,21 @@ def _hint_bpm(tags: dict) -> float | None:
     return None
 
 
+def key_hints(tags: dict) -> list[dict]:
+    """The keys the tags claim, most trusted first, one per key: `[{"key": "8A", "from": "rekordbox"}]`."""
+    out: dict[str, str] = {}
+    for name, d in (("rekordbox", tags.get("rekordbox")), ("tunebat", tags), ("tunebat", tags.get("tunebat")),
+                    ("file", tags.get("file")), ("itunes", tags.get("itunes"))):  # fmt: skip
+        if isinstance(d, dict):
+            for k in ("camelot", "key", "c", "k"):
+                if code := to_camelot(d.get(k)):
+                    out.setdefault(code, name)
+    return [{"key": code, "from": name} for code, name in out.items()]
+
+
 def _hint_key(tags: dict) -> str | None:
-    for d in _hint_sources(tags):
-        for k in ("camelot", "key", "c", "k"):
-            if code := to_camelot(d.get(k)):
-                return code
-    return None
+    hints = key_hints(tags)
+    return hints[0]["key"] if hints else None
 
 
 def _energy01(v: Any) -> float | None:
@@ -153,13 +166,25 @@ def describe(track: dict, *, analyses: dict[str, dict] | None = None, artifacts:
     bpm = next((b for a in ("beats", "tempo") if (b := _num(analyses.get(a, {}).get("bpm")))), None)
     row["bpm"], row["bpm_from"] = (round(bpm, 2), "analysis") if bpm else (_hint_bpm(tags), "tags")
     a_key = analyses.get("key", {})
+    override = to_camelot(analyses.get("key_override", {}).get("camelot"))
     key = to_camelot(a_key.get("camelot")) or to_camelot(a_key.get("key"))
-    row["key"], row["key_from"] = (key, "analysis") if key else (_hint_key(tags), "tags")
+    if override:
+        row["key"], row["key_from"] = override, "user"
+    elif key:
+        row["key"], row["key_from"] = key, "analysis"
+    elif "key" in analyses:
+        row["key"], row["key_from"] = None, "unknown"
+    else:
+        row["key"], row["key_from"] = _hint_key(tags), "tags"
+    hint = next((h for h in key_hints(tags) if h["key"] != row["key"]), None) if row["key_from"] != "tags" else None
+    row["key_hint"], row["key_hint_from"] = (hint["key"], hint["from"]) if hint else (None, None)
     energy = _energy01(analyses.get("energy", {}).get("energy"))
     row["energy"], row["energy_from"] = (energy, "analysis") if energy is not None else (_hint_energy(tags), "tags")
-    for k in ("bpm", "key", "energy"):
+    for k in ("bpm", "energy"):
         if row[k] is None:
             row[f"{k}_from"] = None
+    if row["key"] is None and row["key_from"] == "tags":
+        row["key_from"] = None
     row["genre"] = _hint_genre(tags)
     row["text"] = _text(tags)
     row["artwork"] = bool(tags.get("artwork") or (tags.get("tunebat") or {}).get("cover_url"))
@@ -183,7 +208,7 @@ def describe(track: dict, *, analyses: dict[str, dict] | None = None, artifacts:
         "waveform": waveform,
         "stems": True if stems else (stems_job["state"] if stems_job and stems_job["state"] in _STEMS_PENDING else False),
         "stems_progress": stems_job.get("progress") if stems_job and stems_job["state"] == "running" else None,
-        "analyses": sorted(analyses),
+        "analyses": sorted(a for a in analyses if a != "key_override"),
         "jobs": {k: j["state"] for k, j in sorted(jobs.items())},
     }
     return row
