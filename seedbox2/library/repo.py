@@ -402,6 +402,22 @@ class Library:
                 "ORDER BY i.position", (set_id,)))  # fmt: skip
         return s
 
+    def set_order_settings(self, set_id: int) -> dict | None:
+        """What the set's order was last made with (`seedbox2.sets`), None if nothing yet or no such set."""
+        row = self.db.read().execute("SELECT order_settings FROM sets WHERE id = ?", (set_id,)).fetchone()
+        return json.loads(row["order_settings"]) if row and row["order_settings"] else None
+
+    def put_set_order(self, set_id: int, hashes: Iterable[str], settings: dict) -> None:
+        """A new running order for the set's tracks, with what it was made with. KeyError if there is no such set."""
+        with self.db.write() as c:
+            found = c.execute(f"UPDATE sets SET order_settings = ?, updated_at = {_NOW} WHERE id = ?",
+                              (json.dumps(settings), set_id)).rowcount  # fmt: skip
+            if not found:
+                raise KeyError(set_id)
+            c.execute("DELETE FROM set_items WHERE set_id = ?", (set_id,))
+            c.executemany("INSERT INTO set_items (set_id, position, hash) VALUES (?, ?, ?)",
+                          [(set_id, n, h) for n, h in enumerate(hashes)])  # fmt: skip
+
     def delete_set(self, set_id: int) -> bool:
         with self.db.write() as c:
             return c.execute("DELETE FROM sets WHERE id = ?", (set_id,)).rowcount > 0

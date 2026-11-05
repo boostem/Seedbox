@@ -21,6 +21,7 @@ function deck(): Deck {
     sends: { echo_beats: 0.75, echo_tap: "pre_eq", reverb_size: 0.75, reverb_tap: "pre_eq" },
     loops: [],
     fx: [],
+    pinned: [],
   };
 }
 

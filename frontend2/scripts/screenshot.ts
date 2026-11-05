@@ -139,6 +139,30 @@ const ON_BATTERY = { ...POWER, low_power: true, reason: "battery", on_battery: t
 const FIRST_RUN = { "/api/onboarding": { first_run: true }, "/api/library/view": { total: 0, items: [] } };
 
 /** What the stub /api answers to a GET in the `live` state (a shot's `data` overrides these). */
+const SET_ARCS = [
+  { name: "warm_up", label: "Warm-up", description: "Starts low and builds slowly", points: [[0, 0.05], [0.5, 0.4], [0.85, 0.7], [1, 0.8]] },
+  { name: "peak_time", label: "Peak time", description: "Peaks about two thirds in", points: [[0, 0.55], [0.25, 0.8], [0.7, 1], [0.9, 0.95], [1, 0.75]] },
+  { name: "sunset", label: "Sunset", description: "Comes down to a quiet close", points: [[0, 0.8], [0.35, 0.6], [0.75, 0.3], [1, 0.1]] },
+  { name: "rollercoaster", label: "Rollercoaster", description: "Waves of tension and release", points: [[0, 0.4], [0.2, 0.9], [0.4, 0.35], [0.6, 0.95], [0.8, 0.4], [1, 0.9]] },
+  { name: "flat", label: "Flat", description: "Holds one level throughout", points: [[0, 0.5], [1, 0.5]] },
+];
+const SET_ORDER = {
+  order: ([["Morning Light", "Halcyon Drive", 122, "8A", 4, 0], ["Glass Rooms", "Oda Mae", 123, "9A", 5, 0], ["Night Bus", "Kerrin", 124, "10A", 6, 0], ["Undertow", "Halcyon Drive", 125, "10A", 8, 0], ["Cold Harbour", "Saskia Lind", 126, "3A", 9, -1], ["Long Way Home", "Oda Mae", 127, "4B", 7, 0]] as const)
+    .map(([title, artist, bpm, key, rating, shift], position) => ({ position, from_position: position, hash: `h${position}`, title, artist, bpm, key, energy: (rating - 1) / 9, rating, shift, pinned: position === 0, target_energy: 0.5, target_bpm: bpm })),
+  transitions: [
+    { from: "h0", to: "h1", text: "energy +1, 8A → 9A, same vibe", flags: [], cost: 0.8 },
+    { from: "h1", to: "h2", text: "energy +1, 9A → 10A, same vibe", flags: [], cost: 0.7 },
+    { from: "h2", to: "h3", text: "energy +2, 10A → 10A, related vibe", flags: [], cost: 1.1 },
+    { from: "h3", to: "h4", text: "energy +1, 10A → 10A (3A -1 st), same vibe", flags: ["key_fix"], cost: 2.1 },
+    { from: "h4", to: "h5", text: "energy -2, 10A (3A -1 st) → 4B, tempo +5.8 %, vibe shift", flags: ["key_clash", "tempo_wide"], cost: 5.3 },
+  ],
+  cost: 10.1,
+  cost_before: 10.1,
+  arc: SET_ARCS[1],
+  tempo: { start: 122, end: 127, auto: true },
+  unknown: { bpm: 0, key: 0, energy: 0, vibe: 2, vocals: 6, genre: 6 },
+  settings: { arc: "peak_time", tempo_start: null, tempo_end: null, pins: [{ position: 0, hash: "h0" }] },
+};
 const API: Record<string, unknown> = {
   "/api/health": { ok: true },
   "/api/system": SYSTEM,
@@ -154,6 +178,8 @@ const API: Record<string, unknown> = {
   "/api/library/crates": [{ id: 1, name: "Peak time", folder: null, source: "local", track_count: 8 }, { id: 2, name: "Warm-up", folder: null, source: "local", track_count: 4 }],
   "/api/library/smart-crates": { crates: [] },
   "/api/sets": [{ id: 1, name: "Friday", track_count: 6 }],
+  "/api/sets/arcs": SET_ARCS,
+  "/api/sets/1/order": SET_ORDER,
   "/api/models": modelsStatus(model()),
   "/api/onboarding": { first_run: false },
   "/api/power": POWER,
@@ -181,6 +207,9 @@ const SHOTS: Shot[] = [
   { name: "library-import-failed", hash: "#/library", data: { "/api/library/import": { state: "failed", kind: "xml", label: "rekordbox.xml", error: "not a Rekordbox or iTunes XML file" } } },
   { name: "crates", hash: "#/crates" },
   { name: "sets", hash: "#/sets" },
+  { name: "sets-empty", hash: "#/sets", data: { "/api/sets": [] } },
+  { name: "sets-loading", hash: "#/sets", api: "loading" },
+  { name: "sets-load-failed", hash: "#/sets", fail: ["/api/sets/1/order"] },
   { name: "discover", hash: "#/discover" },
   { name: "mixes", hash: "#/mixes" },
   { name: "settings", hash: "#/settings" },

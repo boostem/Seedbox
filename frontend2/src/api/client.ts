@@ -4,7 +4,7 @@
  */
 import { toast } from "@/store/toasts";
 import type { MixPlan } from "./mixplan.generated";
-import type { PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
+import type { ArcTemplate, SetOrderResult, SetOrderSettings, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -190,6 +190,12 @@ export const api = {
     create: (name: string, hashes: string[], opts?: RequestOptions) => post<SetSummary>("/api/sets", { name, hashes }, opts),
     addTracks: (id: number, hashes: string[], opts?: RequestOptions) => post<{ added: number; hashes: string[] }>(`/api/sets/${id}/tracks`, { hashes }, opts),
     hashes: (id: number, opts?: RequestOptions) => get<{ hashes: string[] }>(`/api/sets/${id}/hashes`, opts),
+    arcs: (opts?: RequestOptions) => get<ArcTemplate[]>("/api/sets/arcs", opts),
+    /** The set as it stands, explained, with what it was last ordered with. */
+    order: (id: number, opts?: RequestOptions) => get<SetOrderResult>(`/api/sets/${id}/order`, opts),
+    /** The best order for these settings. Nothing is saved. */
+    solveOrder: (id: number, settings: SetOrderSettings, opts?: RequestOptions) => post<SetOrderResult>(`/api/sets/${id}/order`, settings, opts),
+    applyOrder: (id: number, hashes: string[], settings: SetOrderSettings, opts?: RequestOptions) => put<SetOrderResult>(`/api/sets/${id}/order`, { ...settings, hashes }, opts),
   },
   jobs: {
     list: (state?: string, opts?: RequestOptions) => get<JobsResponse>(`/api/jobs${state ? `?state=${state}` : ""}`, opts),

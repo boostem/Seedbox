@@ -178,7 +178,8 @@ def describe(track: dict, *, analyses: dict[str, dict] | None = None, artifacts:
         row["key"], row["key_from"] = _hint_key(tags), "tags"
     hint = next((h for h in key_hints(tags) if h["key"] != row["key"]), None) if row["key_from"] != "tags" else None
     row["key_hint"], row["key_hint_from"] = (hint["key"], hint["from"]) if hint else (None, None)
-    energy = _energy01(analyses.get("energy", {}).get("energy"))
+    measured = analyses.get("energy", {}).get("energy")
+    energy = 0.0 if measured == 0 else _energy01(measured)  # 0 is a real answer here: a track rated 1 of 10
     row["energy"], row["energy_from"] = (energy, "analysis") if energy is not None else (_hint_energy(tags), "tags")
     for k in ("bpm", "energy"):
         if row[k] is None:

@@ -31,7 +31,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -282,6 +282,40 @@ On the 22 golden pairs with audio on the owner's machine (`golden compare RUN:se
 7 hold ±1 LU (Seedbox 1: none). What doesn't: holes a technique makes on purpose (loop rolls, where +6 dB on the EQ
 isn't enough with the lows killed), and pairs whose levels differ a lot. A cut isn't ridden. These numbers are without
 stems, which the corpus doesn't have cached; metrics don't hear, so this still needs the blind test (`#/listen`).
+
+## Ordering a set
+
+**Set ordering** (#60, `seedbox2/sets/`, `#/sets`): puts a set's tracks in order from our own analysis. Tag and tunebat
+keys, tempos and energies count as unknown here (the genre tag is the exception: no analysis gives one), so imported
+tracks order as well as any once they're analysed.
+
+- **Cost** (`cost.py`, one unit is about one uncomfortable move): Camelot moves, where a clash costs 3 and a track can be
+  played a semitone up or down for 1.5 (the shift stays on for the whole track, so a Viterbi pass picks them per order;
+  it's a mix plan's `key_shift`); tempo distance, also at half or double time, which barely counts under 5 % and is a
+  breach over 8 %; the energy's distance from the arc at each position and each step's from the arc's step; the distance
+  from the tempo journey; CLAP distance (end of one track to start of the next, and main to main), relative to this set's
+  spread, since CLAP cosines aren't an absolute scale; each run of three vocal-heavy tracks, from #47's `vocals`
+  analysis; a change of genre tag, unless the tags share a word. **The weights are a prior: there are no human-ordered
+  sets to fit them on yet, and the library on the development machine is empty, so they haven't met real tracks.** The
+  tempo and journey weights were picked on random synthetic sets at 120-128 BPM asking for 120 to 128: 1.3 % from the line
+  and 3.4 % at most per pair, against 2.0 % and 4.1 % at a third of the journey weight, with the arc's fit about the same. What
+  isn't known costs a small fixed amount per pair, or nothing per position, and the page says what's missing.
+- **Arcs** (`arcs.py`): `warm_up`, `peak_time` (the default), `sunset`, `rollercoaster`, `flat`, or a curve drawn on the
+  page, `[[time, level], ...]`. A level is on the set's own range: 0 is its quietest track and 1 its most intense.
+- **Tempo journey:** a geometric drift from `tempo_start` to `tempo_end`. Without them, it runs across the middle of the
+  set's tempos (20th to 80th percentile) in the direction the arc goes, and holds the median if the arc comes back.
+- **Solver** (`solver.py`): beam search (width 300) from the first track, then local search (reversals, swaps, blocks of
+  up to three tracks) with kicks. Up to 8 free tracks are all tried, so that's exact. Pins hold a track at any position,
+  and a track that comes back in the set can be pinned at each place. The order as it stands is one of the starts, so the
+  result is never worse and a tie keeps it. Steps are counted, not timed, and the random moves have a fixed seed, so a set
+  always gets the same order. On a development machine: 30 tracks 0.4 s, 50 tracks 0.6 s, 100 tracks 3.2 s, 200 tracks 10 s
+  (random synthetic sets; not measured on the reference laptops). It runs in the server's thread pool, not a worker
+  process, and its effect on other requests during a long solve hasn't been measured.
+- **Explanations** (`explain.py`): each transition has words ("energy +1, 8A → 9A, same vibe"), flags (`key_clash`,
+  `key_fix`, `tempo_wide`, `tempo_over_limit`, `genre_change`, `vocal_run`) and the cost of each term.
+- **API:** `GET /api/sets/arcs`; `GET /api/sets/{id}/order` (the set as it stands, explained, and its saved settings);
+  `POST` the same path for the best order (saves nothing); `PUT` it with `hashes` to save an order and its settings (the
+  `sets.order_settings` column, schema v3). The whole-set timeline, with the arc on it, is #75's.
 
 ## Evaluating the analysis
 
