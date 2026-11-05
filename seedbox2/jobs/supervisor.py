@@ -10,6 +10,9 @@
   worker) and its worker is killed and replaced if it hasn't stopped after `cancel_grace_s`.
 - A worker that dies (a crash in native code, out of memory) fails its job and is replaced; the server carries on.
 - RAM guard: no heavy job starts while the machine has less than `HEAVY_MIN_AVAILABLE` bytes available.
+- Limits (`set_limits`, from seedbox2.power, #85): low-power mode shrinks the light pool (idle workers leave at once,
+  busy ones when they finish), makes jobs below a pool's minimum priority wait and tells jobs to use the small models.
+  A job already running finishes.
 - Events (on the EventBus): `job.queued`, `job.started`, `job.progress` (coalesced per job), `job.bumped`, and
   the terminal `job.done`, `job.failed`, `job.cancelled` (never dropped).
 
@@ -99,6 +102,12 @@ class _Pool:
     size: int
     heap: list = field(default_factory=list)  # (-priority, seq, job_id); stale entries are skipped
     workers: list[_Worker] = field(default_factory=list)
+    full_size: int = 0  # `size` when nothing limits it; workers get their share of the cores by this, so fewer
+    #                     workers mean fewer threads, not the same threads in fewer processes
+    min_priority: int | None = None  # queued jobs below this wait (set_limits)
+
+    def __post_init__(self) -> None:
+        self.full_size = self.full_size or self.size
 
 
 class Supervisor:
@@ -123,6 +132,7 @@ class Supervisor:
         self._thread: threading.Thread | None = None
         self._stopping = False
         self.waiting_for_ram = False
+        self.low_power = False
         self._listeners: list[Callable[[dict], None]] = []
 
     # --- lifecycle -------------------------------------------------------------------------------------------------
@@ -189,9 +199,10 @@ class Supervisor:
                     self.bump([existing])
                 elif existing in self._queued and prio > self._queued[existing].priority:
                     self._reprioritise([self._queued[existing]], prio)
+                    self._wake()  # it may have been waiting (set_limits)
                 return self.library.job(existing)
             if front:
-                prio = max(prio, self._top_priority() + 1)
+                prio = max(prio, self._front_priority())
             row = self.library.add_job(kind, payload, priority=prio)
             job = _Job(row["id"], kind, job_type.pool, prio, next(self._seq), payload, key)
             self._enqueue(job)
@@ -229,10 +240,11 @@ class Supervisor:
             jobs = [j for j in self._queued.values() if j.id in ids or _about(j.payload, hashes)]
             if not jobs:
                 return []
-            top = self._top_priority() + 1
+            top = self._front_priority()
             self._reprioritise(jobs, top)
             moved = [j.id for j in sorted(jobs, key=lambda j: j.seq)]
         self._publish("job.bumped", {"ids": moved, "priority": top})
+        self._wake()  # they may have been waiting (set_limits)
         return moved
 
     def job(self, job_id: str) -> dict | None:
@@ -252,14 +264,30 @@ class Supervisor:
                 self._changed.wait(left)
         return self.library.job(job_id)
 
+    def full_size(self, pool: str) -> int:
+        return self._pools[pool].full_size
+
+    def set_limits(self, *, low_power: bool = False, light_workers: int | None = None,
+                   min_priority: dict[str, int] | None = None) -> None:  # fmt: skip
+        """What low-power mode asks for; called again without arguments, everything is back to normal."""
+        with self._lock:
+            self.low_power = low_power
+            light = self._pools["light"]
+            light.size = max(1, min(light_workers or light.full_size, light.full_size))
+            for name, pool in self._pools.items():
+                pool.min_priority = (min_priority or {}).get(name)
+        self._wake()
+
     def status(self) -> dict:
         with self._lock:
-            pools = {name: {"workers": len(p.workers), "size": p.size,
+            pools = {name: {"workers": len(p.workers), "size": p.size, "full_size": p.full_size,
                             "busy": sum(w.job is not None for w in p.workers),
-                            "queued": sum(j.pool == name for j in self._queued.values())}
+                            "queued": sum(j.pool == name for j in self._queued.values()),
+                            "paused": sum(j.pool == name and self._held(p, j.priority) for j in self._queued.values())}
                      for name, p in self._pools.items()}  # fmt: skip
             return {"pools": pools, "running": len(self._running), "queued": len(self._queued),
-                    "waiting_for_ram": self.waiting_for_ram, "min_available_ram": self.ram_guard.min_available}
+                    "waiting_for_ram": self.waiting_for_ram, "min_available_ram": self.ram_guard.min_available,
+                    "low_power": self.low_power}  # fmt: skip
 
     # --- queue -----------------------------------------------------------------------------------------------------
 
@@ -281,6 +309,10 @@ class Supervisor:
     def _top_priority(self) -> int:
         return max((j.priority for j in self._queued.values()), default=0)
 
+    def _front_priority(self) -> int:
+        """Ahead of the whole queue, and what the user opened: at least as much as the open set, so limits don't hold it."""
+        return max(self._top_priority() + 1, PRIORITY["set"])
+
     def _reprioritise(self, jobs: list[_Job], priority: int) -> None:
         self.library.set_jobs_priority([j.id for j in jobs], priority)
         for j in jobs:
@@ -295,6 +327,10 @@ class Supervisor:
                 del self._queued[job_id]
                 return job
         return None
+
+    @staticmethod
+    def _held(pool: _Pool, priority: int) -> bool:
+        return pool.min_priority is not None and priority < pool.min_priority
 
     def _peek(self, pool: _Pool) -> bool:
         while pool.heap:
@@ -358,9 +394,14 @@ class Supervisor:
 
     def _dispatch(self) -> None:
         for pool in self._pools.values():
+            self._retire_surplus(pool)
             while True:
                 with self._lock:
                     if self._stopping or not self._peek(pool):
+                        break
+                    if self._held(pool, -pool.heap[0][0]):  # the queue's best job waits, so all of them do
+                        if pool.name == "heavy":
+                            self.waiting_for_ram = False  # it isn't the RAM they are waiting for
                         break
                     idle = next((w for w in pool.workers if w.job is None), None)
                     if idle is None and len(pool.workers) >= pool.size:
@@ -387,13 +428,26 @@ class Supervisor:
                         idle.cancel.set()
                         idle.kill_at = time.monotonic() + self.cancel_grace_s
                 try:
-                    idle.conn.send(("run", job.id, self.registry.get(job.kind).target, job.payload))
+                    idle.conn.send(("run", job.id, self.registry.get(job.kind).target, job.payload,
+                                    {"low_power": self.low_power}))
                 except (OSError, ValueError) as e:
                     self._worker_died(idle, f"could not reach the worker: {e}")
                     continue
                 self._publish("job.started", row)
             if pool.name == "heavy" and not self._peek_locked(pool):
                 self.waiting_for_ram = False
+
+    def _retire_surplus(self, pool: _Pool) -> None:
+        """Idle workers beyond the pool's size leave (with their sessions' RAM). Busy ones get here when they finish."""
+        with self._lock:
+            surplus = max(0, len(pool.workers) - pool.size)
+            leaving = [w for w in pool.workers if w.job is None][:surplus]
+            for w in leaving:
+                w.dead = True
+                pool.workers.remove(w)
+        for w in leaving:
+            log.info("%s worker (pid %s) leaves: the pool is down to %d", pool.name, w.process.pid, pool.size)
+            threading.Thread(target=_let_go, args=(w,), name="seedbox2-worker-exit", daemon=True).start()
 
     def _peek_locked(self, pool: _Pool) -> bool:
         with self._lock:
@@ -403,7 +457,7 @@ class Supervisor:
         parent, child = self._mp.Pipe()
         cancel = self._mp.Event()
         library_path = getattr(getattr(self.library, "db", None), "path", None)
-        args = (child, cancel, pool.name, str(library_path or ""), pool.size)
+        args = (child, cancel, pool.name, str(library_path or ""), pool.full_size)
         process = self._mp.Process(target=worker_main, args=args,
                                    name=f"seedbox2-{pool.name}-worker", daemon=True)  # fmt: skip
         process.start()
@@ -505,6 +559,22 @@ class Supervisor:
     def _publish(self, type_: str, data: Any, *, key: str | None = None, terminal: bool = False) -> None:
         if self.events is not None:
             self.events.publish(type_, data, key=key, terminal=terminal)
+
+
+def _let_go(w: _Worker) -> None:
+    """Ask an idle worker to exit, and make sure it did."""
+    try:
+        w.conn.send(None)
+    except (OSError, ValueError):
+        pass
+    w.process.join(5)
+    if w.process.is_alive():
+        w.process.kill()
+        w.process.join(1)
+    try:
+        w.conn.close()
+    except OSError:
+        pass
 
 
 def _about(payload: dict, hashes: set[str]) -> bool:

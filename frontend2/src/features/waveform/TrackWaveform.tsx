@@ -18,6 +18,7 @@ import { useFrame, useWaveformKeys, useViewCtl, useViewFact, useWidthRef } from 
 import { alpha, sectionColor, wavePalette } from "./palette";
 import { useWaveLook } from "./settings";
 import { useWave } from "./waveData";
+import { mayDraw } from "@/lib/frameCap";
 
 export interface TrackWaveformProps {
   analysis: TrackAnalysis;
@@ -252,9 +253,11 @@ export function TrackWaveform({ analysis, trackId, onSeek, height = 132, overvie
   useEffect(() => {
     let raf = 0;
     const loop = () => {
-      // follow the playhead while playing, unless the user just scrolled
-      if (performance.now() - lastManual.current > 2500) ctl.reveal(player.time());
-      tickFn.current();
+      if (mayDraw()) {
+        // follow the playhead while playing, unless the user just scrolled
+        if (performance.now() - lastManual.current > 2500) ctl.reveal(player.time());
+        tickFn.current();
+      }
       raf = requestAnimationFrame(loop);
     };
     const sync = () => {

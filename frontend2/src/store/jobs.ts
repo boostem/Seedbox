@@ -36,9 +36,11 @@ export interface JobsState {
   /** job type → pool, and each pool's workers */
   pools: Record<string, string>;
   workers: Record<string, number>;
+  /** pools whose queued jobs wait for low-power mode to end (#85): they don't count towards the ETA */
+  pausedPools: string[];
 }
 
-export const useJobs = create<JobsState>()(() => ({ running: {}, queued: {}, seconds: {}, pools: {}, workers: { light: 2, heavy: 1 } }));
+export const useJobs = create<JobsState>()(() => ({ running: {}, queued: {}, seconds: {}, pools: {}, workers: { light: 2, heavy: 1 }, pausedPools: [] }));
 
 export function poolOf(kind: string, pools: Record<string, string>): string {
   return pools[kind] ?? (HEAVY.has(kind) ? "heavy" : "light");
@@ -49,7 +51,7 @@ export function secondsFor(kind: string, learnt: Record<string, number>): number
 }
 
 /** Seconds until the queue is empty, or null when there is nothing to do. */
-export function queueEta(s: Pick<JobsState, "running" | "queued" | "seconds" | "pools" | "workers">, now: number): number | null {
+export function queueEta(s: Pick<JobsState, "running" | "queued" | "seconds" | "pools" | "workers"> & Partial<Pick<JobsState, "pausedPools">>, now: number): number | null {
   const work: Record<string, number> = {};
   let any = false;
   for (const j of Object.values(s.running)) {
@@ -62,8 +64,9 @@ export function queueEta(s: Pick<JobsState, "running" | "queued" | "seconds" | "
     work[pool] = (work[pool] ?? 0) + left;
   }
   for (const kind of Object.values(s.queued)) {
-    any = true;
     const pool = poolOf(kind, s.pools);
+    if (s.pausedPools?.includes(pool)) continue;
+    any = true;
     work[pool] = (work[pool] ?? 0) + secondsFor(kind, s.seconds);
   }
   if (!any) return null;

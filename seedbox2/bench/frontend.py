@@ -273,7 +273,7 @@ def run(dist: Path = DIST, seconds: float = 5.0, cpu_throttle: float = 1.0, size
 
     from seedbox2.server import start_server
 
-    server = start_server(dist, port=0)
+    server = start_server(dist, port=0, power_mode="off")  # the 60 fps budget is for the normal mode, on battery too
     try:
         with tempfile.TemporaryDirectory(prefix="seedbox2-bench-chrome-") as profile:
             proc, errors, ws = _launch(chrome, Path(profile), size, software_gl)

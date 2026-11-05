@@ -34,7 +34,8 @@ NOT_BUILT_HTML = """<!doctype html><title>Seedbox 2</title>
 
 def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s: float = HEARTBEAT_S,
                library_path: Path | None = None, start_jobs: bool = False, watch_folders: bool = False,
-               download_models: bool = False, models_dir: Path | None = None) -> FastAPI:
+               download_models: bool = False, models_dir: Path | None = None,
+               power_mode: str | None = None) -> FastAPI:
     """The Seedbox 2 API under /api, and the built frontend at / when `static_dir` (a Vite dist/) is given.
 
     Routers reach shared state through `request.app.state`: `events` (the EventBus), `static_dir` and the library
@@ -44,7 +45,8 @@ def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s
     and `local_music` (`seedbox2.server.deps.local_music`: imports, and the watch folders, scanned and watched from
     the start when `watch_folders`) and `models` (`seedbox2.server.deps.models`: the ModelManager, on `models_dir`,
     default models/ in the cache folder; with `download_models` it downloads the missing models when the server
-    starts, unless the auto_download setting is off).
+    starts, unless the auto_download setting is off) and `power` (`seedbox2.server.deps.power`: the PowerMonitor;
+    `power_mode` overrides its setting, for the benchmark, which measures the normal mode on battery).
     """
     app = FastAPI(title="Seedbox 2", version=__version__, docs_url="/api/docs" if dev else None, redoc_url=None,
                   openapi_url="/api/openapi.json" if dev else None, lifespan=_lifespan)  # fmt: skip
@@ -60,6 +62,8 @@ def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s
     app.state.tunebat = None
     app.state.models_dir = Path(models_dir) if models_dir is not None else None
     app.state.download_models = download_models
+    app.state.power = None
+    app.state.power_mode = power_mode
     app.state.listen_trials = Trials()
     if dev:
         app.add_middleware(CORSMiddleware, allow_origins=DEV_ORIGINS, allow_methods=["*"], allow_headers=["*"])
@@ -93,6 +97,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         threading.Thread(target=start_models, name="seedbox2-models-start", daemon=True).start()
     yield
+    if app.state.power is not None:
+        app.state.power.close()
+        app.state.power = None
     if app.state.models is not None:
         app.state.models.close()
         app.state.models = None

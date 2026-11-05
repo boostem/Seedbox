@@ -386,6 +386,7 @@ def stems_job(payload: dict, ctx: Any) -> dict:
         touch(found)
         return {"hash": hash_, "path": str(found), "cached": True}
     settings = read_settings(ctx.settings)
+    settings["low_power"] = settings["low_power"] or getattr(ctx, "low_power", False)  # seedbox2.power, right now
     fmt, limit = settings["format"], int(settings["limit_gb"] * GB)
     keep = {hash_, *(lib.set_hashes(payload["set"]) or [] if payload.get("set") is not None else [])}
     if payload.get("set") is None and usage()["bytes"] + estimate_bytes(track["duration"], fmt) > limit:

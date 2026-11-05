@@ -1,6 +1,6 @@
 """The worker process: receives one job at a time over a pipe, runs it, reports progress and the outcome.
 
-Messages, supervisor -> worker: `("run", job_id, target, payload)`, or None to exit.
+Messages, supervisor -> worker: `("run", job_id, target, payload, {"low_power": bool})`, or None to exit.
 Worker -> supervisor: `("progress", job_id, fraction, message)`, `("done", job_id, result_json)`,
 `("failed", job_id, error)`, `("cancelled", job_id)`.
 """
@@ -18,10 +18,12 @@ from pathlib import Path
 from typing import Any
 
 from seedbox2.jobs.registry import resolve
+from seedbox2.power import lower_process_priority
 
 log = logging.getLogger(__name__)
 
 PROGRESS_INTERVAL_S = 0.05  # at most this often over the pipe (the event bus coalesces further)
+SESSION_PREFIX = "seedbox2.models."  # how ctx.session() files its sessions in the worker's cache
 
 
 class Cancelled(Exception):  # noqa: N818 - raised inside a job to stop it
@@ -32,8 +34,9 @@ class JobContext:
     """What a job function gets besides its payload."""
 
     def __init__(self, job_id: str, conn: Connection, cancel: Any, cache: dict, library_path: Path | None,
-                 pool: str = "light", pool_size: int = 1) -> None:  # fmt: skip
+                 pool: str = "light", pool_size: int = 1, low_power: bool = False) -> None:  # fmt: skip
         self.job_id = job_id
+        self.low_power = low_power  # low-power mode is on now (seedbox2.power): use the small models
         self.pool = pool
         self.pool_size = pool_size
         self._conn = conn
@@ -75,7 +78,7 @@ class JobContext:
             return load_session(name, pool=self.pool, pool_size=self.pool_size,
                                 accelerator=read_settings(self._settings())["accelerator"])  # fmt: skip
 
-        return self.cached(f"seedbox2.models.{name}", make)
+        return self.cached(f"{SESSION_PREFIX}{name}", make)
 
     def session_or_none(self, name: str) -> Any:
         """The model's session, or None when it isn't downloaded: the job then uses the Seedbox 1 heuristics."""
@@ -114,11 +117,13 @@ class JobContext:
 
 def worker_main(conn: Connection, cancel: Any, pool: str, library_path: str | None = None, pool_size: int = 1) -> None:
     """A worker process's loop (the spawn target)."""
+    lower_process_priority()  # first, so onnxruntime's threads and ffmpeg inherit it
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ctrl+C in a terminal: the supervisor decides when workers stop
     logging.basicConfig(level=logging.INFO, format=f"%(asctime)s {pool} worker %(levelname)s %(name)s: %(message)s")
     functions: dict[str, Callable[..., Any]] = {}
     cache: dict[str, Any] = {}
     path = Path(library_path) if library_path else None
+    low_power = False
     while True:
         try:
             msg = conn.recv()
@@ -126,8 +131,12 @@ def worker_main(conn: Connection, cancel: Any, pool: str, library_path: str | No
             return
         if msg is None:
             return
-        _, job_id, target, payload = msg
-        ctx = JobContext(job_id, conn, cancel, cache, path, pool, pool_size)
+        _, job_id, target, payload, flags = msg
+        if flags["low_power"] != low_power:  # the other mode's models: don't keep both in RAM
+            low_power = flags["low_power"]
+            for key in [k for k in cache if k.startswith(SESSION_PREFIX)]:
+                del cache[key]
+        ctx = JobContext(job_id, conn, cancel, cache, path, pool, pool_size, low_power)
         try:
             fn = functions.get(target)
             if fn is None:

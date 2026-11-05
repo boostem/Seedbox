@@ -31,7 +31,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_onboarding.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_onboarding.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -73,6 +73,19 @@ again (or failed, for types registered `resumable=False`). A job that ignores a 
 costs only that worker; the supervisor starts another. `/api/jobs` lists, submits and cancels; `/api/events` carries
 `job.queued`, `job.started`, `job.progress` (coalesced: a slow client only gets the latest per job) and the terminal
 `job.done`, `job.failed` and `job.cancelled`, which are never dropped.
+
+**Low-power mode** (#85, `seedbox2/power.py`): Settings → Low-power mode turns it on automatically (on battery or when
+the machine runs hot, the default), always, or never; `GET /api/power` and the `power` event say whether it is on and why,
+and the top bar shows what is paused. Battery or mains comes from `/sys/class/power_supply` on Linux and psutil on macOS
+and Windows; heat from `NSProcessInfo.thermalState` on macOS and the kernel's trip points in `/sys/class/thermal` on
+Linux (Windows has no such API, so only the battery counts there). While it is on: stems at background priority wait, while
+a set you open still gets its stems (from the INT8 model); half the light workers (idle ones leave at once, busy
+ones when they finish); beats use small0; waveforms draw at 30 fps. At `critical` heat the library's analysis waits too
+and one light worker is left. A job already running finishes. Jobs analysed in this mode keep the small model's result.
+Whatever the mode, worker processes run at low OS priority (`nice` +10, `BELOW_NORMAL_PRIORITY_CLASS` on Windows), so the
+UI and audio come first and a job still gets the whole machine when nothing else wants it. The two "Always use…" switches
+under Models and Stems choose the small models whether low-power mode is on or not. The benchmark's frontend run turns the
+mode off, since its 60 fps budget is for the normal mode on battery.
 
 **The waveform renderer** (#74, `frontend2/src/features/waveform/gl/`): one WebGL2 context for the library overviews,
 the track view and the transition editor; `WaveOverview` is the strip for preview clips and for the decks when they

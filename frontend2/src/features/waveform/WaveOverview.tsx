@@ -15,6 +15,7 @@ import { alpha, sectionColor, wavePalette } from "./palette";
 import type { WaveData } from "./prepare";
 import { useWaveLook } from "./settings";
 import { useWave } from "./waveData";
+import { mayDraw } from "@/lib/frameCap";
 
 export interface WaveOverviewProps {
   /** the track's analysis (its waveform is prepared in the worker), or `wave` directly (e.g. from `loadWave`) */
@@ -97,7 +98,7 @@ export function WaveOverview({ analysis, wave: waveProp, trackId, height = 28, s
     if (!trackId) return;
     let raf = 0;
     const loop = () => {
-      placeFn.current();
+      if (mayDraw()) placeFn.current();
       raf = requestAnimationFrame(loop);
     };
     const sync = () => {

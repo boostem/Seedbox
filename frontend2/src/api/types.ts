@@ -94,6 +94,26 @@ export interface ModelsStatus {
   settings: ModelSettings;
 }
 
+// ---- Low-power mode: GET /api/power, the `power` event (#85) ----
+
+export type PowerMode = "auto" | "on" | "off";
+
+export interface PowerStatus {
+  mode: PowerMode;
+  low_power: boolean;
+  reason: "battery" | "thermal" | "manual" | null;
+  on_battery: boolean | null; // null: this machine has no battery
+  battery_percent: number | null;
+  thermal: "nominal" | "fair" | "serious" | "critical" | "unknown";
+  limits: {
+    stems_paused: boolean; // background stems wait; what the user opened still runs
+    analysis_paused: boolean; // the library's analysis waits too (critical heat)
+    light_workers: number;
+    light_workers_full: number;
+    fps: number | null; // the cap on waveform drawing
+  };
+}
+
 // ---- Stems: GET /api/analysis/stems, /api/sets/{id}/stems (#44) ----
 
 export interface StemsStatus {

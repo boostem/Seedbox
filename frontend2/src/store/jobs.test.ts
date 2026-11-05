@@ -7,8 +7,9 @@ interface S {
   seconds: Record<string, number>;
   pools: Record<string, string>;
   workers: Record<string, number>;
+  pausedPools: string[];
 }
-const base = (): S => ({ running: {}, queued: {}, seconds: {}, pools: { waveform: "light", stems: "heavy" }, workers: { light: 2, heavy: 1 } });
+const base = (): S => ({ running: {}, queued: {}, seconds: {}, pools: { waveform: "light", stems: "heavy" }, workers: { light: 2, heavy: 1 }, pausedPools: [] });
 
 describe("the analysis queue", () => {
   it("follows jobs from queued to done and learns how long they take", () => {
@@ -49,6 +50,7 @@ describe("the analysis queue", () => {
     // a running stems job half done after 30 s has about 30 s left
     const running = { r: { id: "r", kind: "stems", hash: "h", progress: 0.5, startedAt: 0, seenStart: true } };
     expect(queueEta({ ...s, queued: { e: "stems" }, running }, 30000)).toBeCloseTo(90);
+    expect(queueEta({ ...s, queued: { e: "stems" }, pausedPools: ["heavy"] }, 0)).toBeNull(); // low-power mode: no end in sight
     // learnt times win over the defaults
     expect(queueEta({ ...s, queued: { e: "stems" }, seconds: { stems: 100 } }, 0)).toBe(100);
   });

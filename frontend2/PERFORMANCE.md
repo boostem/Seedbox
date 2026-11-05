@@ -21,6 +21,10 @@ when the *structure* changes (another track, a panel opens), not 60 times a seco
 - A waveform strip (`WaveOverview`) is painted once: its playhead and dimmer unplayed part are an overlay, moved when
   the playhead reaches another device pixel.
 
+- **Low-power mode** (#85) caps waveform drawing at 30 fps: a loop that draws per animation frame asks `mayDraw()`
+  (`lib/frameCap.ts`) first, and `useFrame` already does. Every view gets the same answer within a frame, so they draw
+  together. A new loop has to ask too.
+
 Measured: the benchmark counts React commits (`react_commits_per_s`). The waveform scenarios (zoom, scroll, hover,
 play) are held to 5 a second at most; they ran at 30–60 before this rule.
 

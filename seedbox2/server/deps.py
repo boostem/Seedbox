@@ -46,6 +46,9 @@ def start_jobs(app: Any) -> Supervisor:
                 lib, events = state.library, state.events
                 jobs = Supervisor(lib, events)
                 jobs.add_listener(lambda row: stems.on_job_finished(jobs, lib, events, row))
+                monitor = power(app)
+                monitor.attach(jobs)  # before it starts: jobs left from the last run obey the limits too
+                monitor.start()
                 state.jobs = jobs.start()
                 threading.Thread(target=_queue_missing_stems, args=(app,), name="seedbox2-stems-queue",
                                  daemon=True).start()  # fmt: skip
@@ -133,6 +136,29 @@ def models(app: Any) -> Any:
 
 
 ModelsDep = Annotated[Any, Depends(get_models)]
+
+
+def get_power(request: Request) -> Any:
+    return power(request.app)
+
+
+def power(app: Any) -> Any:
+    """The app's PowerMonitor (#85), made on first use, with its `power` setting next to the library file. It
+    polls once the jobs have started, and it limits them."""
+    from seedbox2.library.service import SETTINGS_FILE, Settings
+    from seedbox2.power import PowerMonitor
+
+    state = app.state
+    if state.power is None:
+        with _open_lock:
+            if state.power is None:
+                folder = Path(state.library_path).parent if state.library_path else default_path().parent
+                state.power = PowerMonitor(Settings(folder / SETTINGS_FILE), publish=state.events.publish,
+                                           forced_mode=state.power_mode)  # fmt: skip
+    return state.power
+
+
+PowerDep = Annotated[Any, Depends(get_power)]
 
 
 def onboarding_pending(app: Any) -> bool:
