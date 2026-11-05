@@ -1,4 +1,4 @@
-import { Boxes, Compass, Disc3, ListMusic } from "lucide-react";
+import { Boxes, Compass } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useServerEvents } from "@/api/events";
 import { AppShell } from "@/components/shell/AppShell";
