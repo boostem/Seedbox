@@ -478,7 +478,7 @@ def test_a_two_hour_set_orders_in_about_a_second():
     tracks = random_tracks(30, 21)
     start = time.perf_counter()
     order_tracks(tracks)
-    assert time.perf_counter() - start < 3.0, "generous for a loaded CI machine: it takes about 0.3 s"
+    assert time.perf_counter() - start < 3.0, "generous for a loaded CI machine: it takes about 0.4 s"
 
 
 def test_a_better_order_is_found_on_a_big_structured_set():

@@ -308,9 +308,9 @@ tracks order as well as any once they're analysed.
   up to three tracks) with kicks. Up to 8 free tracks are all tried, so that's exact. Pins hold a track at any position,
   and a track that comes back in the set can be pinned at each place. The order as it stands is one of the starts, so the
   result is never worse and a tie keeps it. Steps are counted, not timed, and the random moves have a fixed seed, so a set
-  always gets the same order. On one thread of a development machine: 30 tracks 0.4 s, 50 tracks 0.5 s, 100 tracks 1.9 s,
-  200 tracks 6 s (random synthetic sets, `tests/test_seedbox2_sets.py`; not measured on the reference laptops). It
-  runs in the server's thread pool and doesn't block other requests.
+  always gets the same order. On a development machine: 30 tracks 0.4 s, 50 tracks 0.6 s, 100 tracks 3.2 s, 200 tracks 10 s
+  (random synthetic sets; not measured on the reference laptops). It runs in the server's thread pool, not a worker
+  process, and its effect on other requests during a long solve hasn't been measured.
 - **Explanations** (`explain.py`): each transition has words ("energy +1, 8A → 9A, same vibe"), flags (`key_clash`,
   `key_fix`, `tempo_wide`, `tempo_over_limit`, `genre_change`, `vocal_run`) and the cost of each term.
 - **API:** `GET /api/sets/arcs`; `GET /api/sets/{id}/order` (the set as it stands, explained, and its saved settings);
