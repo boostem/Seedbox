@@ -111,7 +111,9 @@ function rows(analysed: number, rest: RowState[] = []) {
     return {
       hash: t.hash, duration: t.duration, title: t.title, artist: t.artist, album: t.album, source: t.source, added_at: t.added_at,
       bpm: done ? t.tags.file.bpm : null, bpm_from: done ? "analysis" : null,
-      key: done ? `${(i % 12) + 1}A` : null, key_from: done ? "analysis" : null,
+      // #45: a key we aren't sure of shows as "?", and a tag that disagrees sits next to ours
+      key: done && i % 5 !== 3 ? `${(i % 12) + 1}A` : null, key_from: !done ? null : i % 5 === 3 ? "unknown" : "analysis",
+      key_hint: done && i % 4 === 1 ? "3B" : null, key_hint_from: done && i % 4 === 1 ? "tunebat" : null,
       energy: done ? 0.4 + (i % 6) / 10 : null, energy_from: done ? "analysis" : null,
       genre: done ? "House" : "", text: "", artwork: false, format: t.tags.file.format,
       status: { state, waveform: done, stems: false, stems_progress: null, analyses: [], jobs: state === "failed" ? { waveform: "failed" } : {} },
