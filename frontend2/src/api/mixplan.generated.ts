@@ -24,6 +24,8 @@ export interface Deck {
   sends: Sends;
   loops: Loop[];
   fx: (StopFx | StutterFx)[];
+  /** Set by a person: never regenerated. */
+  pinned: string[];
 }
 
 /** From `start_beat` (master beats) up to the next segment's: the deck runs at `bpm` from `start_s` in the file. */

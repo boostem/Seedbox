@@ -15,8 +15,9 @@ pairs.toml (paths relative to the file; audio stays local; the golden corpus, #8
     technique = "bass swap"        # optional: force a Seedbox 1 technique / blend length
     bars = 16
 
-Engines: `seedbox1` plans with musicreco.mixplan and renders with musicreco.mixrender. `seedbox2` is Seedbox 2's
-own mix engine, which lands with #51–#53; until then its column reads "n/a".
+Engines: `seedbox1` plans with musicreco.mixplan and renders with musicreco.mixrender. `seedbox2` starts from the same
+plan with the automation fitted to the audio (#56, seedbox2/mix/automation.py) and plays the tracks' stems when they
+have them; its own planning and stretching land with #52 and #53.
 """
 
 from __future__ import annotations
@@ -47,6 +48,8 @@ class Pair:
     key_b: str = ""
     technique: str | None = None
     bars: int | None = None
+    hash_a: str = ""  # the library's hashes: how a render finds the tracks' cached stems
+    hash_b: str = ""
 
 
 class EngineUnavailable(Exception):
@@ -66,20 +69,30 @@ def _analysis(path: Path) -> dict:
     return _analyses[path]
 
 
-def render_seedbox1(pair: Pair) -> Render:
-    from musicreco import mixplan, mixrender
+def _seedbox1_plan(pair: Pair) -> tuple[dict, dict[str, str]]:
+    from musicreco import mixplan
     from musicreco.mixpair import _track
 
     an_a, an_b = _analysis(pair.a), _analysis(pair.b)
     a, b = _track(pair.a, an_a, pair.key_a or None), _track(pair.b, an_b, pair.key_b or None)
     plan = mixplan.generate(a, an_a, b, an_b, str(pair.a.parent), technique=pair.technique, bars=pair.bars)
-    r = mixrender.render_audio(plan, pair.a, pair.b, SR)
-    decks = {k: sum((s for n, s in r["stems"].items() if n.split()[0] == k), np.zeros_like(r["mix"])) for k in "AB"}
-    return Render(mix=r["mix"], decks=decks, sr=r["sr"], plan=plan, keys={"A": a.camelot, "B": b.camelot})
+    return plan, {"A": a.camelot, "B": b.camelot}
+
+
+def render_seedbox1(pair: Pair) -> Render:
+    from musicreco import mixrender
+
+    plan, keys = _seedbox1_plan(pair)
+    return Render.from_mixrender(mixrender.render_audio(plan, pair.a, pair.b, SR), plan, keys)
 
 
 def render_seedbox2(pair: Pair) -> Render:
-    raise EngineUnavailable("Seedbox 2's mix engine lands with #51–#53")
+    from ..mix import offline
+
+    raw, keys = _seedbox1_plan(pair)
+    r, plan = offline.render_adapted(raw, pair.a, pair.b, offline.cached_stems(pair.hash_a),
+                                     offline.cached_stems(pair.hash_b), SR)  # fmt: skip
+    return Render.from_mixrender(r, plan, keys)
 
 
 ENGINES: dict[str, Callable[[Pair], Render]] = {"seedbox1": render_seedbox1, "seedbox2": render_seedbox2}

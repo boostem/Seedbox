@@ -31,7 +31,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_onboarding.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -207,6 +207,33 @@ convert when read: lanes, markers, notes and `edited` carry over, and loops off 
 a note. `frontend2/src/api/mixplan.generated.ts` is generated from the models: after changing `plan.py`, run
 `.venv/bin/python -m seedbox2.mix.typescript` (a test fails if you forget).
 
+**Automation shaped by the audio** (#56, `seedbox2/mix/automation.py`): `adapt(plan, audio_a, audio_b)` replaces a
+generated plan's constants with values measured from the two tracks, on the plan's own timeline:
+
+- **Masking:** per bar and band, the same index `mixmetrics` reports. The deck not leading has its mids and highs cut only
+  as far as it takes to reach `TARGET_MASKING`, and not at all where the tracks don't collide. With stems, a band that is
+  mostly one stem has that stem's lane turned down instead, and the report has the index of every pair of stems. The
+  lows stay as the technique planned them (a generator's vocal duck too), except that a kill opens where the other deck
+  has no lows to clash with, and a hole between A's lows leaving and B's arriving is closed.
+- **Gain riding:** the predicted short-term loudness of the sum follows the line between the tracks' levels: down on the
+  faders, up on the EQ bands that aren't killed, and back to the plan a bar outside the blend. An offline render then
+  corrects it from the loudness measured on the audio (`ride_measured`, up to three passes, dropping one that doesn't help),
+  which is what the leveller and the effect returns need; that makes a render about 2.5 times as long.
+- **Filter:** every cutoff moves by the track's spectral centroid against `REF_CENTROID_HZ`, within ½ to 2 times.
+- **Effects:** the outgoing deck's echo time, feedback, send levels and reverb size come from the tempo and the onsets per
+  beat of its last phrase.
+
+The result is ordinary keyframes, and the report goes to the notes. It's a default: `edited` plans come back untouched,
+and a deck's `pinned` names the lanes and send settings a person set, which are left alone while the rest fits around
+them; `with_pins(new, old)` carries them onto a regenerated plan. `seedbox2/mix/offline.py` renders plan v3 through
+Seedbox 1's renderer, playing stem lanes from the cached stems.
+
+On the 22 golden pairs with audio on the owner's machine (`golden compare RUN:seedbox1 RUN:seedbox2`), mean dip -2.56 to
+-1.31 LU, bump 1.39 to 1.18 LU, masking low-mid 0.25 to 0.20, high-mid 0.22 to 0.17, high 0.17 to 0.15. Of the 16 blends,
+7 hold ±1 LU (Seedbox 1: none). What doesn't: holes a technique makes on purpose (loop rolls, where +6 dB on the EQ
+isn't enough with the lows killed), and pairs whose levels differ a lot. A cut isn't ridden. These numbers are without
+stems, which the corpus doesn't have cached; metrics don't hear, so this still needs the blind test (`#/listen`).
+
 ## Evaluating the analysis
 
 `seedbox2/eval/` (#50) scores analysers against labelled real audio, so every analysis ticket has a number to beat.
@@ -278,8 +305,8 @@ shown on `#/ui`). Compare engines over a set of pairs:
 .venv/bin/python -m seedbox2.eval mixes pairs.toml --json metrics.json   # your own pairs (format: seedbox2/eval/mixes.py)
 ```
 
-Until Seedbox 2's mix engine lands (#51–#53) its column reads n/a; that engine should call `mixmetrics.measure` on
-every render. Without stems (#44, #47) bass overlap uses a low-pass of each deck and vocal overlap a tonal voice-band
+The `seedbox2` column is Seedbox 1's plan with its automation fitted to the audio (see Mix plans); it plans and stretches
+on its own once #52 and #53 land. An engine should call `mixmetrics.measure` on every render. Without stems (#44, #47) bass overlap uses a low-pass of each deck and vocal overlap a tonal voice-band
 proxy.
 
 **The blind listening test** (#86, `seedbox2/eval/listening.py`, `seedbox2/server/routers/listen.py`,
@@ -291,7 +318,7 @@ so neither the page nor its requests name what is playing; the answer goes in th
 
 Renders are files, so a human DJ's version is just dropped in:
 `<support folder>/listening/<pair>/<version>[--<style>].<wav|mp3|m4a|aac|flac|ogg|opus>`, for example
-`human--DJ Someone.mp3`. To render them with our engines (Seedbox 2's joins when #51–#53 land):
+`human--DJ Someone.mp3`. To render them with our engines:
 
 ```sh
 .venv/bin/python -m seedbox2.eval listen                                      # built-in synthetic pairs

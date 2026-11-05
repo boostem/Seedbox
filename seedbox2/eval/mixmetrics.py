@@ -64,6 +64,12 @@ class Render:
     stems: dict[str, dict[str, np.ndarray]] = field(default_factory=dict)  # {"A": {"vocals": ..., "bass": ...}}
     keys: dict[str, str] = field(default_factory=dict)  # Camelot keys of the tracks: {"A": "8A", "B": "9A"}
 
+    @classmethod
+    def from_mixrender(cls, r: dict, plan: dict | None, keys: dict[str, str] | None = None) -> Render:
+        """From `musicreco.mixrender.render_audio`'s result: each deck with its effect returns."""
+        decks = {k: sum((s for n, s in r["stems"].items() if n.split()[0] == k), np.zeros_like(r["mix"])) for k in "AB"}
+        return cls(mix=r["mix"], decks=decks, sr=r["sr"], plan=plan, keys=keys or {})
+
 
 # --- helpers ---------------------------------------------------------------------------------------------------------
 
@@ -215,14 +221,13 @@ def vocal_overlap(r: Render) -> dict:
 # --- loudness --------------------------------------------------------------------------------------------------------
 
 
-def loudness(r: Render, ov: dict) -> dict:
-    """Short-term LUFS dip/bump through the overlap vs the line between the tracks' levels; true peak; clipping."""
+def loudness_deviation(r: Render, ov: dict) -> tuple[np.ndarray, np.ndarray, float, float] | None:
+    """Short-term LUFS against the line between the tracks' levels through the overlap: (block centres in s, deviation
+    in LU, A's level, B's level). None without an overlap or a level to go by."""
     st = -0.691 + 10 * np.log10(_block_power(r.mix, r.sr, SHORT_TERM_S, ST_HOP_S) + 1e-12)
     t = np.arange(st.size) * ST_HOP_S + SHORT_TERM_S / 2  # block centres
-    out = {"true_peak_dbtp": _round(true_peak_db(r.mix)), "clipped_samples": int((np.abs(r.mix) >= CLIP_LEVEL).sum()),
-           "dip_lu": None, "bump_lu": None, "a_lufs": None, "b_lufs": None}
     if not ov["seconds"] or st.size < 3:
-        return out
+        return None
     o0, o1 = ov["start_s"], ov["end_s"]
     la, lb = ov["levels"]
 
@@ -245,12 +250,21 @@ def loudness(r: Render, ov: dict) -> dict:
     if ref_a is None and ref_b is None:
         ref_a = ref_b = float(np.median(st[st > -70])) if (st > -70).any() else None
         if ref_a is None:
-            return out
+            return None
     ref_a, ref_b = (ref_a if ref_a is not None else ref_b), (ref_b if ref_b is not None else ref_a)
     frac = np.clip((t[inside] - o0) / max(o1 - o0, 1e-9), 0, 1)
-    dev = st[inside] - (ref_a + (ref_b - ref_a) * frac)
-    out.update(dip_lu=_round(min(0.0, float(dev.min()))), bump_lu=_round(max(0.0, float(dev.max()))),
-               a_lufs=_round(ref_a, 1), b_lufs=_round(ref_b, 1))
+    return t[inside], st[inside] - (ref_a + (ref_b - ref_a) * frac), ref_a, ref_b
+
+
+def loudness(r: Render, ov: dict) -> dict:
+    """Short-term LUFS dip/bump through the overlap vs the line between the tracks' levels; true peak; clipping."""
+    out = {"true_peak_dbtp": _round(true_peak_db(r.mix)), "clipped_samples": int((np.abs(r.mix) >= CLIP_LEVEL).sum()),
+           "dip_lu": None, "bump_lu": None, "a_lufs": None, "b_lufs": None}
+    found = loudness_deviation(r, ov)
+    if found is not None:
+        _, dev, ref_a, ref_b = found
+        out.update(dip_lu=_round(min(0.0, float(dev.min()))), bump_lu=_round(max(0.0, float(dev.max()))),
+                   a_lufs=_round(ref_a, 1), b_lufs=_round(ref_b, 1))
     return out
 
 

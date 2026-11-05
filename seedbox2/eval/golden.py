@@ -327,7 +327,7 @@ def render_job(job: Job) -> dict:
     p = job.pair
     try:
         r = mixes.ENGINES[job.engine](mixes.Pair(p.id, job.path_a, job.path_b, job.a.key, job.b.key, p.technique,
-                                                 p.bars))  # fmt: skip
+                                                 p.bars, job.a.hash, job.b.hash))  # fmt: skip
     except mixes.EngineUnavailable as e:
         return {"unavailable": str(e)}
     except Exception as e:  # noqa: BLE001 (one bad pair must not stop the night's run)

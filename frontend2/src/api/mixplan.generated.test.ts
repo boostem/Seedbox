@@ -22,6 +22,7 @@ function plan(): MixPlan {
       { type: "brake", start_beat: 60, end_beat: 62 },
       { type: "stutter", start_beat: 62, end_beat: 64, div: 0.25 },
     ],
+    pinned: [],
   });
   return {
     version: 3,

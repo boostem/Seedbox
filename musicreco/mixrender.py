@@ -737,9 +737,11 @@ def _deck_fx(x: np.ndarray, events: list[dict], clock: _Clock, qa: int, sr: int)
 
 
 def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _Clock, w0: float, w1: float,
-                m_total: int, sr: int, key_lock: bool) -> dict | None:
+                m_total: int, sr: int, key_lock: bool,
+                stems: list[tuple[np.ndarray, list[dict]]] | None = None) -> dict | None:
     """One deck through stretch, EQ, filter; returns its post-filter signal, the pre-EQ signal (when a send taps
-    it), fader gain and send gains."""
+    it), fader gain and send gains. With `stems` (audio, gain lane) the deck is their sum instead of `audio`, each
+    stretched alike and under its own gain (Seedbox 2's stem lanes)."""
     p0, p1 = max(deck["play_from_beat"], w0), min(deck["play_to_beat"], w1)
     if p1 <= p0:
         return None
@@ -772,6 +774,13 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
     x, note = _to_master(src, speed.astype(np.float64), jq, sr, key_lock, int(round(t0)) - qa)
     if note:
         warn.append(note)
+    if stems:
+        stem_beats = clock.beat((qa + np.arange(0, q.size + CTL, CTL)) / sr)
+        x = np.zeros_like(x)
+        for stem, gain in stems:
+            y, _ = _to_master(_source_mapped(stem, deck, s0, s1, sr)[0], speed.astype(np.float64), jq, sr, key_lock,
+                              int(round(t0)) - qa)
+            x += y * _ctl(gain, stem_beats, STEP_RAMP_S, sr, q.size)
     # gate: the deck sounds on [p0, p1]
     g = np.ones(q.size, np.float32)
     if fade_in:
@@ -803,8 +812,10 @@ def _deck_stage(name: str, deck: dict, audio: np.ndarray, trim: float, clock: _C
 
 
 def render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
-                  progress: Callable[[float], None] | None = None) -> dict:
-    """Everything render() does except encoding; also returns the master mix and per-deck stems (for tests)."""
+                  progress: Callable[[float], None] | None = None,
+                  deck_stems: dict[str, list[tuple[np.ndarray, list[dict]]]] | None = None) -> dict:
+    """Everything render() does except encoding; also returns the master mix and per-deck stems (for tests).
+    `deck_stems`: {"A": [(stem audio, gain lane), ...]} plays that deck from its stems (Seedbox 2's stem lanes)."""
     def report(f: float) -> None:
         if progress is not None:
             try:
@@ -830,7 +841,8 @@ def render_audio(plan: dict, a_path: Path, b_path: Path, sr: int = SR,
                     for p, d, au, rng in zip((a_path, b_path), decks, audios, _overlap_beats(decks, w0, w1))]
         trims = [10 ** (t / 20) for t, _ in trims_db]
         report(0.1)
-        futs = [pool.submit(_deck_stage, nm, d, au, tr, clock, w0, w1, m_total, sr, norm["key_lock"])
+        futs = [pool.submit(_deck_stage, nm, d, au, tr, clock, w0, w1, m_total, sr, norm["key_lock"],
+                            (deck_stems or {}).get(nm))
                 for nm, d, au, tr in zip(("A", "B"), decks, audios, trims)]
         stages = [f.result() for f in futs]
     del audios
