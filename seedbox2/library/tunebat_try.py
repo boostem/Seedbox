@@ -1,6 +1,7 @@
 """First run's "no music to hand? try one track" (#80): search tunebat, then fetch one result from YouTube into the
 music folder's Imported folder and import it. musicreco's tunebat and YouTube code is reused, not forked; the full
-search → crate → download flow is not part of this.
+search → crate → download flow is not part of this. A gap in a set (#64) gets its online suggestions here too:
+`recommendations()` of each neighbour, which `download()` can then fetch.
 
 `download()` runs in the background; each step is a `tunebat.download` event (`{id, state, error}`, the state being
 `queued`, `finding`, `downloading`, `done` or `failed`) with an error saying what to do about it.
@@ -9,6 +10,7 @@ search → crate → download flow is not part of this.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -26,6 +28,20 @@ class UnknownTrack(Exception):
 
 class TunebatUnavailable(Exception):
     """Tunebat can't be reached or sent something unexpected."""
+
+
+def _plain(text: str | None) -> str:
+    """A title or artist to compare: lower case, no brackets and no punctuation."""
+    return re.sub(r"[^\w]+", " ", re.sub(r"[(\[].*?[)\]]", " ", (text or "").casefold())).strip()
+
+
+def same_track(name_a: str, artist_a: str, name_b: str, artist_b: str) -> bool:
+    """The same title, and an artist word in common if both have an artist. "(Extended Mix)" and the like don't count."""
+    title_a, title_b = _plain(name_a), _plain(name_b)
+    if not title_a or title_a != title_b:
+        return False
+    words_a, words_b = set(_plain(artist_a).split()), set(_plain(artist_b).split())
+    return not words_a or not words_b or bool(words_a & words_b)
 
 
 def _row(track: Any) -> dict:
@@ -62,27 +78,51 @@ class TunebatTry:
         self._last_call = 0.0
         self._tracks: dict[str, Any] = {}
         self._states: dict[str, str] = {}
+        self._recommended: dict[str, list[Any]] = {}  # a seed's id: it asks once per run, a track's list hardly changes
+
+    def _call(self, method: str, *args: Any) -> Any:
+        """One client call. The caller holds the lock, which keeps them one at a time, MIN_INTERVAL_S apart."""
+        from musicreco.tunebat import TunebatClient, TunebatError
+
+        wait = self._last_call + MIN_INTERVAL_S - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        try:
+            if self._client is None:
+                self._client = TunebatClient()
+            return getattr(self._client, method)(*args)
+        except TunebatError as e:
+            log.warning("tunebat %s failed: %s", method, e)
+            raise TunebatUnavailable(str(e)) from e
+        finally:
+            self._last_call = time.monotonic()
 
     def search(self, term: str) -> dict:
         """The first page's best results for a free-text search. TunebatUnavailable when that can't be done."""
-        from musicreco.tunebat import TunebatClient, TunebatError
-
-        with self._lock:  # one call at a time, MIN_INTERVAL_S apart
-            wait = self._last_call + MIN_INTERVAL_S - time.monotonic()
-            if wait > 0:
-                time.sleep(wait)
-            try:
-                if self._client is None:
-                    self._client = TunebatClient()
-                page = self._client.search(term)
-            except TunebatError as e:
-                log.warning("tunebat search failed: %s", e)
-                raise TunebatUnavailable(str(e)) from e
-            finally:
-                self._last_call = time.monotonic()
+        with self._lock:
+            page = self._call("search", term)
             items = page.items[:MAX_RESULTS]
             self._tracks.update((t.id, t) for t in items)
         return {"total": page.total_count, "items": [_row(t) for t in items]}
+
+    def recommendations(self, title: str, artist: str, track_id: str | None = None) -> tuple[str | None, list[Any]]:
+        """(The track's tunebat id, the tracks tunebat recommends from it), which `download()` then knows. Without an id it
+        searches for the title and artist; (None, []) if nothing there is this track."""
+        with self._lock:
+            if track_id is None:
+                if not title.strip():
+                    return None, []
+                page = self._call("search", f"{artist} {title}".strip())
+                found = next((t for t in page.items if same_track(t.name, t.artist_str, title, artist)), None)
+                if found is None:
+                    return None, []
+                track_id = found.id
+            items = self._recommended.get(track_id)
+            if items is None:
+                items = self._call("get_track", track_id).recommended
+                self._recommended[track_id] = items
+                self._tracks.update((t.id, t) for t in items)
+        return track_id, items
 
     def download(self, track_id: str) -> dict:
         """Start fetching a track from the last searches. Asking again while it runs or once it is done does nothing."""

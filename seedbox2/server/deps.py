@@ -192,6 +192,18 @@ def onboarding_pending(app: Any) -> bool:
     return state.library.track_count() == 0
 
 
+def vibe_index(request: Request) -> Any:
+    """The vibe search's in-memory index of every track's embeddings, made on first use."""
+    from seedbox2.analysis.vibe import Index
+
+    state = request.app.state
+    if getattr(state, "vibe_index", None) is None:
+        with _open_lock:
+            if getattr(state, "vibe_index", None) is None:
+                state.vibe_index = Index()
+    return state.vibe_index
+
+
 def get_tunebat(request: Request) -> Any:
     """The first run's tunebat search and one-track download, made on first use."""
     from seedbox2.library.tunebat_try import TunebatTry

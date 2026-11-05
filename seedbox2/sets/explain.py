@@ -18,11 +18,18 @@ from seedbox2.sets.cost import (
 
 SAME_VIBE, VIBE_SHIFT = 0.35, 0.7  # of the set's own spread (`cost._vibe_matrix`)
 SHOW_TEMPO_PCT = 2.5  # a smaller change isn't worth a word
+ZERO_SCORE_COST = 6.0  # what the two tracks may cost each other before a transition scores 0
+GAP_SCORE = 55  # under this it's a gap (`bridge.py`): any clash left in the order; not a +2 move with a vibe shift and a genre change
 
 
 def rating(energy: float | None) -> int | None:
     """The 1-10 rating an 0-1 energy came from."""
     return None if energy is None else round(energy * 9 + 1)
+
+
+def score_of(mix_cost: float) -> int:
+    """A transition's 0-100, from what its two tracks cost each other."""
+    return round(100 * max(0.0, 1.0 - mix_cost / ZERO_SCORE_COST))
 
 
 def _key_words(p: Problem, a: int, b: int, shifts: np.ndarray) -> tuple[str, str | None]:
@@ -106,11 +113,18 @@ def transition(p: Problem, order: Sequence[int], shifts: np.ndarray, at: int) ->
     terms = {"key": key_cost, "tempo": float(p.terms_tempo[a, b]), "energy": energy_step + float(p.level_cost[b, at + 1]),
              "journey": float(p.journey_cost[b, at + 1]), "vibe": float(p.terms_vibe[a, b]),
              "genre": float(p.terms_genre[a, b]), "vocals": float(p.run_costs(pos)[0, at]) if at + 2 < len(order) else 0.0}  # fmt: skip
+    # Only what the two tracks do to each other: not how they fit the arc or the journey, nor a run of three. A shift
+    # stays on for the whole track, so each of its two transitions carries half.
+    fixes = p.w.key_fix / 2 * (int(shifts[a] != 0) + int(shifts[b] != 0))
+    mix_cost = (float(p.key_matrix(shifts)[a, b]) + fixes + energy_step + float(p.terms_tempo[a, b] + p.terms_vibe[a, b]
+                + p.terms_genre[a, b]))  # fmt: skip
+    score = score_of(mix_cost)
     return {
         "from": ta.hash, "to": tb.hash, "text": ", ".join(words), "flags": flags, "key_move": move,
         "tempo_pct": round(float(p.tempo_pct[a, b]), 2) if p.tempo_known[a, b] else None,
         "energy_change": rb - ra if ra is not None and rb is not None else None,
         "cost": round(sum(terms.values()), 3), "terms": {k: round(v, 3) for k, v in terms.items()},
+        "mix_cost": round(mix_cost, 3), "score": score, "gap": score < GAP_SCORE,
     }  # fmt: skip
 
 

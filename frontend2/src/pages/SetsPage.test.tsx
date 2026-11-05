@@ -4,9 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SetOrderResult } from "@/api/types";
 
-const sets = vi.hoisted(() => ({ list: vi.fn(), arcs: vi.fn(), order: vi.fn(), solveOrder: vi.fn(), applyOrder: vi.fn() }));
+const sets = vi.hoisted(() => ({ list: vi.fn(), arcs: vi.fn(), order: vi.fn(), solveOrder: vi.fn(), applyOrder: vi.fn(), bridge: vi.fn(), bridgeOnline: vi.fn(), insertBridge: vi.fn() }));
 const navigate = vi.hoisted(() => vi.fn());
-vi.mock("@/api/client", () => ({ api: { sets } }));
+vi.mock("@/api/client", () => ({ api: { sets, tunebat: { download: vi.fn() } } }));
 vi.mock("@/lib/router", () => ({ navigate }));
 const { SetsPage } = await import("./SetsPage");
 
@@ -18,7 +18,7 @@ const ARCS = [
 function result(hashes: string[], over: Partial<SetOrderResult> = {}): SetOrderResult {
   return {
     order: hashes.map((hash, position) => ({ position, hash, title: `Song ${hash}`, artist: "X", bpm: 124, key: "8A", energy: position / 9, rating: position + 1, shift: 0, pinned: false, target_energy: 0.5, target_bpm: 124 })),
-    transitions: hashes.slice(1).map((to, i) => ({ from: hashes[i], to, text: `energy +1, 8A → 9A, step ${i}`, flags: [], cost: 1 })),
+    transitions: hashes.slice(1).map((to, i) => ({ from: hashes[i], to, text: `energy +1, 8A → 9A, step ${i}`, flags: [], cost: 1, score: 80, gap: false })),
     cost: 5,
     cost_before: 9,
     arc: ARCS[1] as SetOrderResult["arc"],
@@ -43,6 +43,39 @@ describe("SetsPage", () => {
     render(<SetsPage />);
     await userEvent.click(await screen.findByRole("button", { name: "Go to the library" }));
     expect(navigate).toHaveBeenCalledWith({ name: "library" });
+  });
+
+  it("offers a bridge on a gap of the saved order, and shows the set with it in", async () => {
+    const gapped = result(["a", "b"]);
+    gapped.transitions[0] = { ...gapped.transitions[0], score: 40, gap: true };
+    sets.order.mockResolvedValue(gapped);
+    sets.bridge.mockResolvedValue({
+      gap: { from: "a", to: "b", text: "", score: 40, cost: 3.6 },
+      want: { bpm: 124, keys: ["9A"], energy: null, text: "a 124 BPM 9A track" },
+      results: [{ hash: "c", title: "Song c", artist: "", bpm: 124, key: "9A", energy: null, rating: null, shift: 0, intro_s: null, cost: 1, score_in: 90, score_out: 90, text: "" }],
+      candidates: 1,
+      unanalysed: 0,
+    });
+    sets.insertBridge.mockResolvedValue(result(["a", "c", "b"]));
+    render(<SetsPage />);
+    expect(await screen.findByText("40")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Find a bridge" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Add here" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Add here" })).toBeNull());
+    expect(screen.getAllByText("Song c").length).toBe(1);
+    expect(screen.queryByRole("button", { name: "Find a bridge" })).toBeNull();
+  });
+
+  it("doesn't offer a bridge on an order that isn't saved", async () => {
+    const gapped = result(["a", "b"]);
+    gapped.transitions[0] = { ...gapped.transitions[0], score: 40, gap: true };
+    sets.order.mockResolvedValue(gapped);
+    sets.solveOrder.mockResolvedValue(gapped);
+    render(<SetsPage />);
+    await screen.findByRole("button", { name: "Find a bridge" });
+    await userEvent.click(screen.getByRole("button", { name: "Order the set" }));
+    await screen.findByRole("button", { name: "Use this order" });
+    expect(screen.queryByRole("button", { name: "Find a bridge" })).toBeNull();
   });
 
   it("shows the running order with why each track follows", async () => {

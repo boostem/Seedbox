@@ -4,6 +4,7 @@ import { api } from "@/api/client";
 import type { ArcTemplate, SetOrderResult, SetOrderSettings, SetSummary } from "@/api/types";
 import { Button, EmptyState, Field, Input, Page, PageBody, PageHeader, Panel, PanelHeader, Select, Skeleton } from "@/components/ui";
 import { ArcEditor } from "@/features/sets/ArcEditor";
+import { BridgePanel } from "@/features/sets/BridgePanel";
 import { OrderList } from "@/features/sets/OrderList";
 import { navigate } from "@/lib/router";
 import { toast } from "@/store/toasts";
@@ -32,6 +33,7 @@ export function SetsPage() {
   const [pins, setPins] = useState<SetOrderSettings["pins"]>([]);
   const [busy, setBusy] = useState<"order" | "apply" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [bridgeAt, setBridgeAt] = useState<number | null>(null);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -53,6 +55,7 @@ export function SetsPage() {
     const ctrl = new AbortController();
     setSaved(null);
     setProposal(null);
+    setBridgeAt(null);
     setError(null);
     api.sets.order(setId, { quiet: true, signal: ctrl.signal }).then(
       (r) => {
@@ -89,6 +92,7 @@ export function SetsPage() {
     setBusy("order");
     try {
       setProposal(await api.sets.solveOrder(setId, settings()));
+      setBridgeAt(null);
     } catch {
       // the client has shown it
     } finally {
@@ -108,6 +112,13 @@ export function SetsPage() {
     } finally {
       setBusy(null);
     }
+  };
+
+  const bridged = (r: SetOrderResult) => {
+    setSaved(r);
+    setPins(r.settings.pins);
+    setBridgeAt(null);
+    toast.success("Added the bridge");
   };
 
   const discard = () => {
@@ -204,7 +215,14 @@ export function SetsPage() {
               />
               {proposal && note && <p className="border-b border-line/60 px-4 py-1.5 text-xs text-fg-subtle">{note}</p>}
               {shown.order.length ? (
-                <OrderList result={shown} pinned={pinned} onPin={togglePin} />
+                <OrderList
+                  result={shown}
+                  pinned={pinned}
+                  onPin={togglePin}
+                  onBridge={proposal ? undefined : (p) => setBridgeAt((at) => (at === p ? null : p))}
+                  bridgeAt={proposal ? null : bridgeAt}
+                  bridgePanel={setId !== null && bridgeAt !== null && <BridgePanel key={`${setId}-${bridgeAt}`} setId={setId} position={bridgeAt} onInserted={bridged} />}
+                />
               ) : (
                 <EmptyState icon={ListMusic} title="This set is empty" description="Add tracks to it from the library." />
               )}

@@ -516,6 +516,77 @@ export interface SetTransition {
   text: string;
   flags: SetTransitionFlag[];
   cost: number;
+  /** 0-100, from what the two tracks cost each other. */
+  score: number;
+  /** Under the threshold: worth finding a bridge. */
+  gap: boolean;
+}
+
+/** What would fit between two neighbours (#64). */
+export interface BridgeWant {
+  bpm: number | null;
+  keys: string[];
+  energy: [number, number] | null;
+  /** "a 124 BPM 8A/9A track with a long intro and a similar vibe" */
+  text: string;
+}
+
+export interface BridgeGap {
+  from: string;
+  to: string;
+  text: string;
+  score: number;
+  cost: number;
+}
+
+export interface LibraryBridge {
+  hash: string;
+  title: string;
+  artist: string;
+  bpm: number;
+  key: string;
+  energy: number | null;
+  rating: number | null;
+  shift: number;
+  intro_s: number | null;
+  cost: number;
+  /** The scores of the two transitions it would make. */
+  score_in: number;
+  score_out: number;
+  text: string;
+}
+
+export interface LibraryBridges {
+  gap: BridgeGap;
+  want: BridgeWant;
+  results: LibraryBridge[];
+  /** Analysed tracks outside the set. */
+  candidates: number;
+  /** Tracks outside the set that wait for their tempo or key. */
+  unanalysed: number;
+}
+
+export interface OnlineBridge {
+  id: string;
+  name: string;
+  artists: string[];
+  bpm: number;
+  camelot: string;
+  shift: number;
+  cover_url: string | null;
+  /** Whose recommendation it is. */
+  from: ("from" | "to")[];
+  cost: number;
+  score_in: number;
+  score_out: number;
+  text: string;
+}
+
+export interface OnlineBridges {
+  gap: BridgeGap;
+  /** A neighbour tunebat doesn't know has no id. */
+  seeds: { hash: string; id: string | null }[];
+  results: OnlineBridge[];
 }
 
 export interface SetOrderResult {
