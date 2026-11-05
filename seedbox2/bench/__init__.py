@@ -27,5 +27,11 @@ FRONTEND_BUDGETS: dict[str, tuple[float, str, str]] = {
 }
 # frontend2/PERFORMANCE.md: zooming, scrolling, hovering and playing the waveform draw from refs, not React renders.
 # A few commits a second are left for coarse UI that changes with the view ("zoomed in?" enables the fit button).
-RENDERLESS_SCENARIOS = ("zoom", "scroll", "hover", "play")
+RENDERLESS_SCENARIOS = ("zoom", "scroll", "hover", "play", "play_centred")
 REACT_COMMITS_BUDGET: tuple[float, str, str] = (5.0, "/s", "no React render per frame (waveform scenarios)")
+# The centred waveform (#76): no jitter. An even 60 Hz has a frame time spread of about 0.1 ms; at 16 bars on a 1,400 px
+# view, 1 ms of unevenness in the playhead is 0.05 px.
+CENTRED_BUDGETS: dict[str, tuple[float, str, str]] = {
+    "frame_stddev_ms": (2.0, "ms", "frame time variance while the waveform scrolls"),
+    "head_jitter_ms": (1.0, "ms", "frame-to-frame unevenness of the playhead"),
+}

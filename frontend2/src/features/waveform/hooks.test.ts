@@ -28,3 +28,19 @@ describe("view controller", () => {
     expect(createViewCtl(-10, 50, 2, { start: 5, span: 10 }).get()).toEqual({ start: 5, span: 10 });
   });
 });
+
+describe("view controller overscroll", () => {
+  it("lets a centred view past each end by half its span, but not the whole track", () => {
+    const ctl = createViewCtl(0, 100, 4, { start: 10, span: 20 });
+    ctl.setOverscroll(0.5);
+    ctl.set({ start: -50, span: 20 });
+    expect(ctl.get().start).toBe(-10);
+    ctl.set({ start: 500, span: 20 });
+    expect(ctl.get().start).toBe(90);
+    ctl.set({ start: -50, span: 100 });
+    expect(ctl.get().start).toBe(0);
+    ctl.set({ start: 90, span: 20 });
+    ctl.setOverscroll(0);
+    expect(ctl.get().start).toBe(80);
+  });
+});

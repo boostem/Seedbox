@@ -27,12 +27,15 @@ export interface ViewCtl {
   /** Called after every change, synchronously (schedule the redraw with `useFrame`). */
   subscribe: (cb: () => void) => () => void;
   bounds: { min: number; max: number; minSpan: number };
+  /** Let the view scroll past each end by this share of its span: 0.5 for a centred view, whose playhead reaches both. */
+  setOverscroll: (share: number) => void;
 }
 
-export function clampView(v: TimeView, min: number, max: number, minSpan: number): TimeView {
+export function clampView(v: TimeView, min: number, max: number, minSpan: number, overscroll = 0): TimeView {
   const full = Math.max(minSpan, max - min);
   const span = Math.max(Math.min(minSpan, full), Math.min(full, v.span));
-  const start = Math.max(min, Math.min(max - span, v.start));
+  const over = span < full ? span * overscroll : 0; // the whole track always fits exactly
+  const start = Math.max(min - over, Math.min(max - span + over, v.start));
   return { start: Number.isFinite(start) ? start : min, span };
 }
 
@@ -40,7 +43,8 @@ export function clampView(v: TimeView, min: number, max: number, minSpan: number
  * never scrolls past either end. A new range (another track) resets the view to `initial`, or the whole range. */
 export function createViewCtl(min: number, max: number, minSpan: number, initial?: TimeView): ViewCtl {
   const subs = new Set<() => void>();
-  const clamp = (v: TimeView) => clampView(v, min, max, minSpan);
+  let overscroll = 0;
+  const clamp = (v: TimeView) => clampView(v, min, max, minSpan, overscroll);
   let view = clamp(initial ?? { start: min, span: max - min });
   const ctl: ViewCtl = {
     get: () => view,
@@ -67,6 +71,10 @@ export function createViewCtl(min: number, max: number, minSpan: number, initial
       return () => subs.delete(cb);
     },
     bounds: { min, max, minSpan },
+    setOverscroll(share) {
+      overscroll = share;
+      ctl.set(view);
+    },
   };
   return ctl;
 }

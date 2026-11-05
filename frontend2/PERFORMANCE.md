@@ -10,8 +10,10 @@ Anything that moves with the clock or the pointer (playheads, zoom, scroll, hove
 engine's state) is drawn from refs: a canvas, WebGL, or direct DOM writes to an element held in a ref. React renders
 when the *structure* changes (another track, a panel opens), not 60 times a second.
 
-- **Playheads** read `player.time()` (the audio clock now) in their own `requestAnimationFrame` loop, which runs only
-  while their track plays. The player store's `position` changes 25 times a second: don't select it in a component.
+- **Playheads** read `player.time()` (the audio clock now, on `AudioContext.currentTime`) in their own
+  `requestAnimationFrame` loop, which runs only while their track plays. The player store's `position` changes 25 times
+  a second: don't select it in a component. A view that scrolls with the clock also runs it through `FrameSmoother`
+  (`audio/playhead.ts`), as `currentTime` moves in steps of the output buffer: see `TrackWaveform`.
 - **Zoom and scroll** live in a view controller (`features/waveform/hooks.ts`: `useViewCtl`). Canvases subscribe and
   redraw on the next frame (`useFrame` coalesces any number of changes per frame into one draw). Components hear
   about coarse facts only, with `useViewFact(ctl, (v) => v.span < duration)`: it re-renders when the boolean flips.
@@ -24,6 +26,11 @@ when the *structure* changes (another track, a panel opens), not 60 times a seco
 - **Low-power mode** (#85) caps waveform drawing at 30 fps: a loop that draws per animation frame asks `mayDraw()`
   (`lib/frameCap.ts`) first, and `useFrame` already does. Every view gets the same answer within a frame, so they draw
   together. A new loop has to ask too.
+
+- **A centred waveform** (#76) repaints when the view reaches another device column, not on every frame, and its left
+  edge falls on a whole device column: a column then always shows the same points, so the waveform doesn't shimmer as
+  it scrolls. `play_centred` in the benchmark holds it to the 60 fps budget, and measures how even the frames and the
+  playhead are (`frame_stddev_ms`, `head_jitter_ms`).
 
 Measured: the benchmark counts React commits (`react_commits_per_s`). The waveform scenarios (zoom, scroll, hover,
 play) are held to 5 a second at most; they ran at 30–60 before this rule.

@@ -6,6 +6,8 @@ import { create } from "zustand";
 import type { StemView } from "./stems";
 
 export type WaveMode = "rgb" | "bands" | "stacked";
+/** While a track plays: centred scrolls the waveform under a fixed playhead, page moves the playhead and turns pages. */
+export type WaveFollow = "centred" | "page";
 
 export const WAVE_MODES: { id: WaveMode; label: string; title: string }[] = [
   { id: "bands", label: "3-band", title: "Blue lows, amber mids and white highs, layered (Rekordbox 3-band)" },
@@ -18,9 +20,15 @@ export const STEM_VIEWS: { id: StemView; label: string; title: string }[] = [
   { id: "lanes", label: "Lanes", title: "Each stem in its own thin lane" },
 ];
 
+export const WAVE_FOLLOWS: { id: WaveFollow; label: string; title: string }[] = [
+  { id: "centred", label: "Centred", title: "The waveform scrolls under a fixed playhead, as on a deck" },
+  { id: "page", label: "Page", title: "The view stays still and turns a page when the playhead leaves it: for editing" },
+];
+
 const MODE_KEY = "seedbox2.waveMode";
 const STEM_VIEW_KEY = "seedbox2.stemView";
 const GPU_KEY = "seedbox2.waveGpu";
+const FOLLOW_KEY = "seedbox2.waveFollow";
 
 function stored<T extends string>(key: string, ok: readonly T[], fallback: T): T {
   try {
@@ -45,12 +53,15 @@ interface WaveSettings {
   stemView: StemView;
   /** false: always the Canvas 2D painter (for comparing, or a GPU driver that draws it wrong) */
   gpu: boolean;
+  /** how a deck's view follows the playhead */
+  follow: WaveFollow;
 }
 
 export const useWaveSettings = create<WaveSettings>()(() => ({
   mode: stored(MODE_KEY, ["rgb", "bands", "stacked"], "bands"),
   stemView: stored(STEM_VIEW_KEY, ["stacked", "lanes"], "stacked"),
   gpu: stored(GPU_KEY, ["on", "off"], "on") === "on",
+  follow: stored(FOLLOW_KEY, ["centred", "page"], "centred"),
 }));
 
 export const waveSettings = {
@@ -61,6 +72,10 @@ export const waveSettings = {
   setStemView(stemView: StemView) {
     store(STEM_VIEW_KEY, stemView);
     useWaveSettings.setState({ stemView });
+  },
+  setFollow(follow: WaveFollow) {
+    store(FOLLOW_KEY, follow);
+    useWaveSettings.setState({ follow });
   },
   setGpu(gpu: boolean) {
     store(GPU_KEY, gpu ? "on" : "off");

@@ -5,13 +5,16 @@
  *   player.play(id, url, { startAt, title, subtitle })   any audio URL; title/subtitle show in the transport strip
  *   player.toggle(id?) / playPause() / stop() / pause() / resume() / seek(s) / setVolume(v)
  *   usePlayer((s) => s.currentId === id && s.status === "playing")   reactive state
- *   player.time()   the exact position now, for per-frame drawing (canvas playheads read it in their own rAF loop)
+ *   player.time()   the exact position now, on AudioContext.currentTime, for per-frame drawing (playheads read it in
+ *                   their own rAF loop; see playhead.ts)
+ *   playerSource(id)   the same as a `PlayheadSource` for one track
  *
  * `position` in the store updates at 25 Hz for coarse readouts; never draw a playhead from a React render of it.
  */
 import { create } from "zustand";
 import { resolveMediaUrl } from "@/api/client";
 import { toast } from "@/store/toasts";
+import { ClockAnchor, type PlayheadSource } from "./playhead";
 
 export type PlayerStatus = "idle" | "loading" | "playing" | "paused" | "error";
 
@@ -55,6 +58,26 @@ let audio: HTMLAudioElement | null = null;
 let raf = 0;
 let token = 0; // invalidates async work from a previous play() call
 
+// The clock of `player.time()`: an AudioContext with nothing connected, as the element's own currentTime is coarse and
+// noisy. It runs only while something plays. Without it (a browser that refuses, no gesture yet), the element's time.
+let clockContext: AudioContext | null = null;
+const anchor = new ClockAnchor();
+
+function startClock(): void {
+  anchor.reset();
+  try {
+    clockContext ??= typeof AudioContext === "undefined" ? null : new AudioContext({ latencyHint: "playback" });
+    if (clockContext?.state === "suspended") void clockContext.resume().catch(() => {});
+  } catch {
+    clockContext = null;
+  }
+}
+
+function stopClock(): void {
+  anchor.reset();
+  if (clockContext?.state === "running") void clockContext.suspend().catch(() => {});
+}
+
 function el(): HTMLAudioElement {
   if (audio) return audio;
   audio = new Audio();
@@ -62,20 +85,24 @@ function el(): HTMLAudioElement {
   audio.volume = usePlayer.getState().volume;
   audio.addEventListener("playing", () => {
     usePlayer.setState({ status: "playing", error: null });
+    startClock();
     startTicker();
   });
   audio.addEventListener("pause", () => {
     if (usePlayer.getState().status === "playing") usePlayer.setState({ status: "paused" });
+    stopClock();
     stopTicker();
   });
   audio.addEventListener("waiting", () => usePlayer.setState({ status: "loading" }));
   audio.addEventListener("durationchange", () => usePlayer.setState({ duration: finite(audio?.duration) }));
   audio.addEventListener("ended", () => {
+    stopClock();
     stopTicker();
     usePlayer.setState({ status: "idle", position: 0 });
   });
   audio.addEventListener("error", () => {
     if (!usePlayer.getState().currentId) return;
+    stopClock();
     stopTicker();
     const msg = "Couldn't play this audio";
     usePlayer.setState({ status: "error", error: msg });
@@ -129,6 +156,7 @@ function stop(): void {
     audio.removeAttribute("src");
     audio.load();
   }
+  stopClock(); // load() drops the pause event
   stopTicker();
   usePlayer.setState({ currentId: null, url: null, title: null, subtitle: null, status: "idle", position: 0, duration: 0, error: null });
 }
@@ -164,6 +192,7 @@ export const player = {
   seek(seconds: number): void {
     if (!audio) return;
     audio.currentTime = Math.max(0, seconds);
+    anchor.reset();
     usePlayer.setState({ position: audio.currentTime });
   },
   setVolume(v: number): void {
@@ -177,9 +206,32 @@ export const player = {
     }
   },
   isCurrent,
-  /** The playing position right now (s), straight from the audio element: for per-frame drawing. */
-  time: (): number => (audio && usePlayer.getState().currentId ? audio.currentTime : usePlayer.getState().position),
+  /** The playing position right now (s): for per-frame drawing. While playing it runs on AudioContext.currentTime. */
+  time(): number {
+    const s = usePlayer.getState();
+    if (!audio || !s.currentId) return s.position;
+    const running = s.status === "playing" && clockContext?.state === "running";
+    return running ? anchor.read(audio.currentTime, clockContext!.currentTime) : audio.currentTime;
+  },
 };
+
+/** The player as a playhead source for one track: `time()` is null unless the player has this track. */
+export function playerSource(id: string): PlayheadSource {
+  const has = (s: PlayerState) => s.currentId === id && s.status !== "idle" && s.status !== "error";
+  return {
+    time: () => (has(usePlayer.getState()) ? player.time() : null),
+    playing: () => {
+      const s = usePlayer.getState();
+      return s.currentId === id && s.status === "playing";
+    },
+    subscribe: (listener) =>
+      usePlayer.subscribe((s, prev) => {
+        if (s.currentId !== id && prev.currentId !== id) return;
+        // position ticks at 25 Hz while playing; otherwise it changing means a seek
+        if (s.status !== prev.status || s.currentId !== prev.currentId || (s.status !== "playing" && s.position !== prev.position)) listener();
+      }),
+  };
+}
 
 /** True while `id` is the current track and playing or loading. */
 export function useIsPlaying(id: string | null | undefined): boolean {
