@@ -1,11 +1,17 @@
-import { ListMusic, ListOrdered, RotateCcw, Sparkles } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { ListMusic, ListOrdered, Pencil, RotateCcw, Sparkles, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { ArcTemplate, SetOrderResult, SetOrderSettings, SetSummary } from "@/api/types";
-import { Button, EmptyState, Field, Input, Page, PageBody, PageHeader, Panel, PanelHeader, Select, Skeleton } from "@/components/ui";
-import { ArcEditor } from "@/features/sets/ArcEditor";
+import { onServerEvent } from "@/api/events";
+import type { ArcTemplate, SetOrderResult, SetOrderSettings, SetOrderTrack, SetSummary, SetTimelineData } from "@/api/types";
+import { player } from "@/audio/player";
+import { Button, EmptyState, Field, IconButton, Input, Page, PageBody, PageHeader, Panel, PanelHeader, Select, Skeleton, Tabs } from "@/components/ui";
+import { TransitionEditor } from "@/features/mix/TransitionEditor";
+import { ARC_GRID, arcPoints, toGrid, toPoints } from "@/features/sets/arc";
 import { BridgePanel } from "@/features/sets/BridgePanel";
 import { OrderList } from "@/features/sets/OrderList";
+import { layoutTimeline, type PlacedTransition } from "@/features/sets/timeline/layout";
+import { SetPlayback } from "@/features/sets/timeline/playback";
+import { SetTimeline } from "@/features/sets/timeline/SetTimeline";
 import { navigate } from "@/lib/router";
 import { toast } from "@/store/toasts";
 
@@ -21,6 +27,60 @@ function missingNote(u: SetOrderResult["unknown"], total: number): string | null
 
 const number = (s: string): number | null => (s.trim() === "" || !Number.isFinite(Number(s)) ? null : Number(s));
 
+const PLANNING_POLL_MS = 5000;
+const REFRESH_MS = 150; // a set's worth of plans finishing together is one request
+const CUSTOM = "custom";
+
+/** The timeline's data for this running order: asking starts the plans it lacks, and it asks again as they finish. */
+function useTimelineData(setId: number | null, hashes: string[]): { data: SetTimelineData | null; refresh: () => void; retry: () => void } {
+  const [data, setData] = useState<SetTimelineData | null>(null);
+  const key = hashes.join(" ");
+  const asked = useRef(0);
+  const ask = useCallback(
+    (retry = false) => {
+      if (setId === null || !key) return;
+      const mine = ++asked.current;
+      api.sets.timeline(setId, key.split(" "), retry, { quiet: true }).then(
+        (d) => {
+          if (mine === asked.current) setData(d);
+        },
+        () => {}, // a track went from the set, or the server's away: what's on screen stays, marked by the next answer
+      );
+    },
+    [setId, key],
+  );
+  useEffect(() => ask(), [ask]);
+  const unfinished = data?.transitions.some((t) => t.state === "pending" || t.state === "waiting") ?? false;
+  useEffect(() => {
+    if (!unfinished) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const soon = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => ask(), REFRESH_MS);
+    };
+    const off = onServerEvent((ev) => {
+      if (ev.type !== "job.done" && ev.type !== "job.failed") return;
+      const kind = (ev.data as { kind?: string } | null)?.kind;
+      if (kind === "set_plan" || kind === "beats") soon();
+    });
+    const poll = setInterval(() => ask(), PLANNING_POLL_MS); // the events may be away
+    return () => {
+      off();
+      clearInterval(poll);
+      clearTimeout(timer);
+    };
+  }, [unfinished, ask]);
+  return { data, refresh: useCallback(() => ask(), [ask]), retry: useCallback(() => ask(true), [ask]) };
+}
+
+function planningNote(data: SetTimelineData | null): string | null {
+  const count = (state: string) => data?.transitions.filter((t) => t.state === state).length ?? 0;
+  const pending = count("pending");
+  const waiting = count("waiting");
+  const parts = [pending && `Planning ${pending} transition${pending === 1 ? "" : "s"}…`, waiting && `${waiting} waiting for beats`].filter(Boolean);
+  return parts.length ? parts.join(", ") : null;
+}
+
 export function SetsPage() {
   const [sets, setSets] = useState<SetSummary[] | null>(null);
   const [arcs, setArcs] = useState<ArcTemplate[]>([]);
@@ -34,6 +94,9 @@ export function SetsPage() {
   const [busy, setBusy] = useState<"order" | "apply" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [bridgeAt, setBridgeAt] = useState<number | null>(null);
+  const [drawing, setDrawing] = useState(false);
+  const [editing, setEditing] = useState<{ position: number; from: string; to: string } | null>(null);
+  const reorders = useRef(0);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -57,6 +120,8 @@ export function SetsPage() {
     setProposal(null);
     setBridgeAt(null);
     setError(null);
+    setEditing(null);
+    setDrawing(false);
     api.sets.order(setId, { quiet: true, signal: ctrl.signal }).then(
       (r) => {
         setSaved(r);
@@ -80,6 +145,62 @@ export function SetsPage() {
 
   const shown = proposal ?? saved;
   const pinned = useMemo(() => new Set(pins.map((p) => p.position)), [pins]);
+  const hashes = useMemo(() => shown?.order.map((t) => t.hash) ?? [], [shown]);
+  const { data: timeline, refresh: refreshTimeline, retry: planAgain } = useTimelineData(setId, hashes);
+  const layout = useMemo(() => layoutTimeline(shown?.order ?? [], shown?.transitions ?? [], timeline), [shown, timeline]);
+  const failedPlans = timeline?.transitions.some((t) => t.state === "failed") ?? false;
+
+  const playback = useMemo(
+    () =>
+      new SetPlayback({
+        engine: async () => new (await import("@/audio/engine")).LiveEngine(),
+        plan: async (from, to) => (await api.mixes.livePlan(from, to, { quiet: true })).plan,
+        beforePlay: () => player.stop(),
+      }),
+    [],
+  );
+  useEffect(() => () => void playback.close(), [playback]);
+  const playedOrder = useRef("");
+  useEffect(() => {
+    const key = hashes.join(" ");
+    playback.setLayout(layout, key === playedOrder.current);
+    playedOrder.current = key;
+  }, [playback, layout, hashes]);
+
+  const openTransition = useCallback(
+    (t: PlacedTransition) => {
+      if (t.state !== "ready") {
+        toast.info(t.state === "failed" ? `Couldn't plan this transition: ${t.error ?? "unknown error"}` : "This transition is still being planned");
+        return;
+      }
+      playback.pause();
+      setEditing({ position: t.position, from: t.from, to: t.to });
+    },
+    [playback],
+  );
+
+  /** The editor saves as it goes, and a plan's length is where the tracks sit. */
+  const closeEditor = () => {
+    setEditing(null);
+    refreshTimeline();
+  };
+
+  /** A track dragged on the timeline: it's there at once, and saved. Its new transitions plan in the background. */
+  const reorder = (next: SetOrderTrack[]) => {
+    if (setId === null || !saved) return;
+    const before = saved;
+    const mine = ++reorders.current;
+    setEditing(null);
+    setSaved({ ...saved, order: next.map((t, position) => ({ ...t, position })), transitions: [] });
+    api.sets.applyOrder(setId, next.map((t) => t.hash), settings()).then(
+      (r) => {
+        if (mine === reorders.current) setSaved(r);
+      },
+      () => {
+        if (mine === reorders.current) setSaved(before); // the client has shown why
+      },
+    );
+  };
 
   const togglePin = (position: number) => {
     const track = shown?.order[position];
@@ -91,7 +212,9 @@ export function SetsPage() {
     if (setId === null) return;
     setBusy("order");
     try {
-      setProposal(await api.sets.solveOrder(setId, settings()));
+      const found = await api.sets.solveOrder(setId, settings());
+      setEditing(null);
+      setProposal(found);
       setBridgeAt(null);
     } catch {
       // the client has shown it
@@ -122,6 +245,7 @@ export function SetsPage() {
   };
 
   const discard = () => {
+    setEditing(null);
     setProposal(null);
     setPins(saved?.settings.pins ?? []);
   };
@@ -147,6 +271,18 @@ export function SetsPage() {
   }
 
   const note = shown && missingNote(shown.unknown, shown.order.length);
+  const points = arcPoints(arc, arcs);
+  const arcTab = Array.isArray(arc) ? CUSTOM : (arc ?? "peak_time");
+  const arcItems = [...arcs.map((t) => ({ id: t.name, label: t.label, title: t.description })), { id: CUSTOM, label: "Custom", title: "Draw on the timeline" }];
+  const chooseArc = (id: string) => {
+    if (id === CUSTOM) {
+      setArc(toPoints(toGrid(points, ARC_GRID)));
+      setDrawing(true);
+    } else {
+      setArc(id);
+      setDrawing(false);
+    }
+  };
   const saving = shown && proposal ? proposal.cost_before - proposal.cost : 0;
 
   return (
@@ -175,12 +311,40 @@ export function SetsPage() {
             <Skeleton className="h-64" />
           </div>
         ) : (
-          <div className="flex max-w-4xl flex-col gap-3">
+          <div className="flex flex-col gap-3">
             <Panel>
-              <PanelHeader title="Energy and tempo" description="The line is the shape to follow, from the set's quietest track to its most intense; each bar is a track where it plays now. Drag to draw your own." />
+              <PanelHeader
+                title="Timeline"
+                description={planningNote(timeline) ?? (proposal ? "The proposed order: use it or keep the saved one to drag tracks again." : "Drag a track to move it. Click a transition to edit it, anywhere else to play from there.")}
+                actions={
+                  failedPlans ? (
+                    <Button size="sm" onClick={planAgain}>
+                      Plan the failed transitions again
+                    </Button>
+                  ) : undefined
+                }
+              />
               <div className="flex flex-col gap-3 p-4">
-                <ArcEditor arc={arc} templates={arcs} tracks={shown.order} onChange={setArc} />
-                <div className="flex items-end gap-3">
+                <SetTimeline
+                  key={setId ?? "none"}
+                  layout={layout}
+                  arc={points}
+                  onArc={setArc}
+                  drawing={drawing}
+                  reorderable={!proposal}
+                  pinned={pinned}
+                  onReorder={reorder}
+                  open={editing?.position ?? null}
+                  onOpen={openTransition}
+                  playback={playback}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Tabs variant="segmented" items={arcItems} value={arcTab} onChange={chooseArc} />
+                  <Button size="sm" icon={Pencil} variant={drawing ? "primary" : "secondary"} aria-pressed={drawing} onClick={() => setDrawing((d) => !d)}>
+                    Draw the arc
+                  </Button>
+                </div>
+                <div className="flex flex-wrap items-end gap-3">
                   <Field label="Tempo from" hint={shown.tempo?.auto ? `Empty: ${shown.tempo.start.toFixed(0)} from this set` : undefined} className="w-40">
                     <Input inputMode="decimal" suffix="BPM" value={tempoStart} onChange={(e) => setTempoStart(e.target.value)} aria-label="Tempo from" />
                   </Field>
@@ -208,6 +372,15 @@ export function SetsPage() {
                 </div>
               </div>
             </Panel>
+            {editing && (
+              <Panel>
+                <PanelHeader
+                  title={`${shown.order[editing.position]?.title ?? ""} → ${shown.order[editing.position + 1]?.title ?? ""}`}
+                  actions={<IconButton size="sm" icon={X} label="Close the transition" onClick={closeEditor} />}
+                />
+                <TransitionEditor key={`${editing.from}/${editing.to}`} from={editing.from} to={editing.to} />
+              </Panel>
+            )}
             <Panel>
               <PanelHeader
                 title={proposal ? "Proposed order" : "Running order"}
@@ -219,6 +392,7 @@ export function SetsPage() {
                   result={shown}
                   pinned={pinned}
                   onPin={togglePin}
+                  onOpen={(position) => layout.transitions[position] && openTransition(layout.transitions[position])}
                   onBridge={proposal ? undefined : (p) => setBridgeAt((at) => (at === p ? null : p))}
                   bridgeAt={proposal ? null : bridgeAt}
                   bridgePanel={setId !== null && bridgeAt !== null && <BridgePanel key={`${setId}-${bridgeAt}`} setId={setId} position={bridgeAt} onInserted={bridged} />}

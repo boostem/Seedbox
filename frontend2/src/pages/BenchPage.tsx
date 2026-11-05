@@ -6,6 +6,10 @@ import { TrackWaveform, type WaveFollow, waveRendererInfo, waveSettings } from "
 import { demoAnalysis } from "@/lib/demo/analysis";
 import { toneWav } from "@/lib/demo/tone";
 import { DemoTrackTable } from "@/lib/demo/tracks";
+import { demoSet } from "@/lib/demo/setTimeline";
+import { layoutTimeline } from "@/features/sets/timeline/layout";
+import { SetPlayback } from "@/features/sets/timeline/playback";
+import { SetTimeline } from "@/features/sets/timeline/SetTimeline";
 
 /** `window.__seedboxBench`: what `python -m seedbox2.bench frontend` drives over the DevTools protocol. */
 export interface BenchHooks {
@@ -33,8 +37,23 @@ declare global {
   }
 }
 
-/** #/bench: the waveform and a 10,000-row virtualised table, for the frontend benchmark (not in the sidebar). The
- * whole-set timeline (#75) and the stem lanes (#78) join this page when they land. */
+const NO_PINS = new Set<number>();
+const noop = () => {};
+
+/** A 30-track set, every track with its own waveform: as much as a long night puts on screen at once. */
+function BenchTimeline() {
+  const { layout, wave, playback } = useMemo(() => {
+    const set = demoSet(30);
+    const layout = layoutTimeline(set.order, [], set.data);
+    const playback = new SetPlayback({ engine: () => Promise.reject(new Error("not in the benchmark")), plan: () => Promise.reject(new Error("not in the benchmark")) });
+    playback.setLayout(layout);
+    return { layout, wave: (hash: string) => set.waves.get(hash) ?? null, playback };
+  }, []);
+  return <SetTimeline layout={layout} arc={[[0, 0.5], [0.7, 1], [1, 0.75]]} onArc={noop} drawing={false} reorderable pinned={NO_PINS} onReorder={noop} open={null} onOpen={noop} playback={playback} waves={wave} />;
+}
+
+/** #/bench: the waveform, the whole-set timeline and a 10,000-row virtualised table, for the frontend benchmark (not in
+ * the sidebar). The stem lanes (#78) join this page when they land. */
 export function BenchPage() {
   const analysis = useMemo(demoAnalysis, []);
   useEffect(() => {
@@ -76,6 +95,12 @@ export function BenchPage() {
           <PanelHeader title="Waveform" />
           <div className="p-4" data-bench="waveform">
             <TrackWaveform analysis={analysis} trackId="demo" height={160} deck />
+          </div>
+        </Panel>
+        <Panel className="mt-4">
+          <PanelHeader title="Whole set" />
+          <div className="p-4">
+            <BenchTimeline />
           </div>
         </Panel>
         <Panel className="mt-4">

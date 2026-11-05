@@ -10,6 +10,9 @@
   it was last ordered with.
 - `POST /sets/{id}/order`: the best order found for those settings. Nothing is saved.
 - `PUT /sets/{id}/order` with `hashes` too: saves that order and the settings. 409 if the set has other tracks by then.
+- `POST /sets/{id}/timeline` with `hashes`, the running order to draw (#75): tracks' sections and energy, and each
+  transition's place in its two files. Pairs without a plan come back `pending` and their `set_plan` job is queued
+  (`waiting` while a track's beats are still to come; `retry` tries `failed` pairs again). 409 if the tracks aren't the set's.
 
 - `GET /sets/{id}/bridge?position&limit` (#64): what would fit between that position and the next, from the library.
 - `GET /sets/{id}/bridge/online?position&limit`: the same from tunebat's recommendations of both neighbours. 502 if it
@@ -39,7 +42,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from seedbox2.analysis import beats, energy, key, stems, vibe
 from seedbox2.library import Library
 from seedbox2.mix import convert
-from seedbox2.server.deps import JobsDep, LibraryDep, TunebatDep, vibe_index
+from seedbox2.server.deps import JobsDep, LibraryDep, TunebatDep, get_jobs, vibe_index
 from seedbox2.sets import TEMPLATES, OrderRequest, bridge, evaluate_set, order_set
 from seedbox2.sets.arcs import ArcError
 from seedbox2.sets.longset import (
@@ -52,6 +55,7 @@ from seedbox2.sets.longset import (
 )
 from seedbox2.sets.service import live_pins, request_from_settings
 from seedbox2.sets.solver import SolverError
+from seedbox2.sets.timeline import timeline
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/sets", tags=["sets"])
@@ -340,6 +344,21 @@ def insert_bridge(set_id: int, body: InsertBridge, lib: LibraryDep) -> dict:
     if request is None:
         raise HTTPException(404, "no such set")
     return {**evaluate_set(lib, set_id, request), "settings": _settings_out(request)}  # type: ignore[dict-item]
+
+
+class TimelineBody(BaseModel):
+    hashes: list[str]
+    retry: bool = False
+
+
+@router.post("/{set_id}/timeline")
+def set_timeline(set_id: int, body: TimelineBody, request: Request, lib: LibraryDep) -> dict:
+    hashes = lib.set_hashes(set_id)
+    if hashes is None:
+        raise HTTPException(404, "no such set")
+    if Counter(hashes) != Counter(body.hashes):
+        raise HTTPException(409, "the set's tracks have changed")
+    return timeline(lib, body.hashes, get_jobs(request), retry=body.retry)
 
 
 def _add(lib: Library, set_id: int, hashes: list[str]) -> int:

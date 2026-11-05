@@ -371,7 +371,30 @@ tracks order as well as any once they're analysed.
   `key_fix`, `tempo_wide`, `tempo_over_limit`, `genre_change`, `vocal_run`) and the cost of each term.
 - **API:** `GET /api/sets/arcs`; `GET /api/sets/{id}/order` (the set as it stands, explained, and its saved settings);
   `POST` the same path for the best order (saves nothing); `PUT` it with `hashes` to save an order and its settings (the
-  `sets.order_settings` column, schema v3). The whole-set timeline, with the arc on it, is #75's.
+  `sets.order_settings` column, schema v3).
+
+**The timeline** (#75, `frontend2/src/features/sets/timeline/`, `seedbox2/sets/timeline.py`, `#/sets`): the whole set on one
+canvas, tracks overlapping where they mix, with their waveforms and sections, the transitions' regions, the energy, the
+target arc, the tempo and the Camelot path.
+
+- **Zoom** is one renderer and one view from the whole set to a few bars (⌘/ctrl + wheel, = − 0). Clicking a transition glides
+  to it and opens the transition editor (#79) under the timeline; closing it glides back.
+- **Time:** a track plays at its own speed outside its transitions, and both files last the plan's master seconds inside one.
+  An arc's time counts tracks, not seconds, as the solver does, so the drawn arc is the one it's asked to follow.
+- **Dragging a track** saves the order at once (pins keep their positions). `POST /api/sets/{id}/timeline` then answers with
+  each pair's place in its files; a pair with no plan is `pending`, estimated at 16 bars and hatched, and goes to a `set_plan`
+  job (`waiting` while a track's beats are still to come, `failed` with why). An order that's only proposed plans too, but
+  can't be dragged until it's used or discarded.
+- **`set_plan` is a stopgap:** one pair at a time, `musicreco.mixplan.generate` on our beats and energy analysis, with the vocal
+  stem's activity when a track has it (`vocals.plan_input_for`). It doesn't use stems or the set around the pair, and
+  doesn't run #56's `adapt`: that's #53 and #61. It never touches a pair that has a plan, so edits and imports stand.
+- **Playing:** the live engine has two decks, so the set plays as a chain of plans (`playback.ts`), as now-playing does: each is
+  stretched over its first track's part of the set, and `engine.schedule(next, carry)` moves on once the outgoing track has
+  gone and the tempo has settled on the incoming one's, with the track they share going on from its sample. Unlike
+  now-playing's fixed chain it plays from any second of the set and copes with plans still to come: a next plan that isn't
+  ready holds the music at the last of this one, and it picks up when it is. Reordering stops the music. A seek before Play
+  only moves the playhead: the AudioContext waits for Play. `key_shift` doesn't sound until #66 reaches the live engine, so
+  a semitone fix in the order isn't heard yet.
 
 **A track for a gap** (#64, `seedbox2/sets/bridge.py`, `#/sets`): every transition has a `score` out of 100, from what its two
 tracks cost each other (key, tempo, vibe, genre, the energy step; not how they fit the arc or journey). Under 55 it is a

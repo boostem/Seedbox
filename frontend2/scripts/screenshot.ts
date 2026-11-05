@@ -171,6 +171,49 @@ const SET_ORDER = {
   unknown: { bpm: 0, key: 0, energy: 0, vibe: 2, vocals: 6, genre: 6 },
   settings: { arc: "peak_time", tempo_start: null, tempo_end: null, pins: [{ position: 0, hash: "h0" }] },
 };
+/** A transition that has its plan, on the fixture's tracks. */
+const PLANNED = (from: string, to: string, technique: string, bars: number, aIn: number, bIn: number) => ({ from, to, state: "ready", technique, bars, edited: false, user_edited: false, seconds: bars * 2, a_in_s: aIn, a_out_s: aIn + bars * 2, b_in_s: bIn, b_out_s: bIn + bars * 2 });
+const SET_TIMELINE = {
+  tracks: [300, 280, 260, 320, 290, 270].map((duration_s, i) => ({
+    hash: `h${i}`,
+    duration_s,
+    bar_s: 2,
+    sections: [{ kind: "intro", start_s: 0, end_s: 32 }, { kind: "build", start_s: 32, end_s: 64 }, { kind: "drop", start_s: 64, end_s: 128 }, { kind: "breakdown", start_s: 128, end_s: 160 }, { kind: "drop", start_s: 160, end_s: duration_s - 40 }, { kind: "outro", start_s: duration_s - 40, end_s: duration_s }],
+    curve: Array.from({ length: 48 }, (_, k) => [(k / 48) * duration_s, Number(Math.min(1, ([0.33, 0.44, 0.55, 0.77, 0.88, 0.66][i]) * (k < 6 || k > 42 ? 0.6 : k > 20 && k < 25 ? 0.75 : 1)).toFixed(3))]),
+  })),
+  transitions: [
+    PLANNED("h0", "h1", "long blend", 32, 236, 0),
+    PLANNED("h1", "h2", "bass swap", 16, 248, 0),
+    PLANNED("h2", "h3", "phrase blend", 16, 228, 0),
+    { from: "h3", to: "h4", state: "pending" },
+    { from: "h4", to: "h5", state: "failed", error: "track has no beat analysis yet" },
+  ],
+};
+
+/** A track's waveform: the file format of `prepare.ts`, deterministic, at a resolution a set's overview can show. */
+function waveFile(seed: number, duration: number): Uint8Array {
+  const pps = 30;
+  const n = duration * pps;
+  const bytes = new Uint8Array(16 + 3 * n);
+  const view = new DataView(bytes.buffer);
+  bytes.set(new TextEncoder().encode("SBWF"));
+  bytes[4] = 1;
+  bytes[5] = 3;
+  view.setFloat32(8, pps, true);
+  view.setUint32(12, n, true);
+  let s = seed + 1;
+  const random = () => (s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  for (let i = 0; i < n; i++) {
+    const beat = (i / pps) % 0.5;
+    const body = Math.min(1, i / (30 * pps), (n - i) / (30 * pps), 1 - 0.5 * Number(i / pps > 130 && i / pps < 160));
+    const level = (a: number) => (a <= 0.001 ? 0 : Math.max(1, Math.min(255, Math.round(255 + (20 * Math.log10(a) / 60) * 254))));
+    bytes[16 + i] = level(body * Math.max(0.05, 1 - beat * 5));
+    bytes[16 + n + i] = level(body * (0.2 + 0.25 * random()));
+    bytes[16 + 2 * n + i] = level(body * (beat > 0.25 ? 0.3 * random() : 0.08));
+  }
+  return bytes;
+}
+
 const API: Record<string, unknown> = {
   "/api/health": { ok: true },
   "/api/system": SYSTEM,
@@ -370,6 +413,9 @@ function serve(shot: () => Shot): { server: Deno.HttpServer<Deno.NetAddr>; close
       if (req.method === "GET" && shot().fail?.includes(path)) return Response.json({ detail: "database is locked" }, { status: 500 });
       if (req.method === "GET" && data[path] !== undefined) return Response.json(data[path]);
       if (req.method === "POST" && shot().posts?.[path] !== undefined) return Response.json(shot().posts?.[path]);
+      if (req.method === "POST" && path === "/api/sets/1/timeline") return Response.json(SET_TIMELINE);
+      const wave = path.match(/^\/api\/tracks\/h(\d+)\/waveform$/);
+      if (wave) return new Response(waveFile(Number(wave[1]), SET_TIMELINE.tracks[Number(wave[1])]?.duration_s ?? 240), { headers: { "content-type": "application/octet-stream" } });
       if (path === "/api/events") {
         // an open stream with nothing on it, until the page goes away or the server closes
         let close = () => {};

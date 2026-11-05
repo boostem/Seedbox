@@ -118,7 +118,7 @@ def test_run_on_synthetic_tracks(tmp_path, monkeypatch):
                     reason="needs Chrome and frontend2/dist")  # fmt: skip
 def test_frontend_bench_measures_every_scenario():
     fe = frontend.run(seconds=0.5, log=lambda _: None)
-    assert set(fe["scenarios"]) == {"zoom", "scroll", "hover", "play", "play_centred", "list", "now_playing", "now_playing_low_power"}
+    assert set(fe["scenarios"]) == {"zoom", "scroll", "hover", "play", "play_centred", "list", "now_playing", "now_playing_low_power", "timeline_zoom", "timeline_drag"}
     for name, sc in fe["scenarios"].items():
         assert sc["frames"] > 5, (name, sc)
         assert "react_commits_per_s" in sc, (name, sc)

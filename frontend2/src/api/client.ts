@@ -4,7 +4,7 @@
  */
 import { toast } from "@/store/toasts";
 import type { MixPlan } from "./mixplan.generated";
-import type { ArcTemplate, CrateLink, LongSetResult, SetSourceRef, LibraryBridges, OnlineBridges, MasterStatus, MasterTarget, SetSession, SetOrderResult, SetOrderSettings, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
+import type { ArcTemplate, CrateLink, LongSetResult, SetSourceRef, LibraryBridges, OnlineBridges, MasterStatus, MasterTarget, SetSession, SetOrderResult, SetOrderSettings, SetTimelineData, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -218,6 +218,8 @@ export const api = {
     bridgeOnline: (id: number, position: number, opts?: RequestOptions) => get<OnlineBridges>(`/api/sets/${id}/bridge/online?position=${position}`, opts),
     /** Puts a track between two neighbours and answers with the set as it now stands. */
     insertBridge: (id: number, body: { position: number; hash: string; from: string; to: string }, opts?: RequestOptions) => post<SetOrderResult>(`/api/sets/${id}/bridge`, body, opts),
+    /** This running order as the timeline draws it; pairs without a plan get one in the background. */
+    timeline: (id: number, hashes: string[], retry = false, opts?: RequestOptions) => post<SetTimelineData>(`/api/sets/${id}/timeline`, { hashes, retry }, opts),
   },
   jobs: {
     list: (state?: string, opts?: RequestOptions) => get<JobsResponse>(`/api/jobs${state ? `?state=${state}` : ""}`, opts),

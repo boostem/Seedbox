@@ -35,6 +35,10 @@ when the *structure* changes (another track, a panel opens), not 60 times a seco
 - **The now-playing decks** (#77) have one loop for the panels (`usePaintLoop`), besides each waveform's own: meters and
   knobs repaint when a value reaches another step, and text is written only when it changes. `now_playing` and
   `now_playing_low_power` hold them to the budgets, and to 30 draws a second at low power's cap.
+- **The whole-set timeline** (#75) is one canvas with every visible track's waveform on the shared renderer: a zoom only
+  changes uniforms, but a set can hold more tracks than a view of a single one, so the renderer keeps up to 128 textures
+  and a drag or an arc stroke lives in refs until the pointer lets go. `timeline_zoom` and `timeline_drag` in the benchmark
+  run it with 30 tracks.
 
 Measured: the benchmark counts React commits (`react_commits_per_s`). The waveform scenarios (zoom, scroll, hover,
 play) are held to 5 a second at most; they ran at 30–60 before this rule.
