@@ -1,7 +1,7 @@
 # Seedbox TODO
 
 ## Next up
-- [ ] **Full set mix render** (requested 2026-10-03): render the whole set as one continuous mix MP3 using every
+- [x] **Full set mix render** (requested 2026-10-03; done in Seedbox 2, #70): render the whole set as one continuous mix MP3 using every
       transition's MixPlan back to back, with set-wide tempo continuity (each track drifts imperceptibly toward the
       next meeting tempo), a tracklist (.txt + .cue with timestamps) and progress in the UI. Builds on
       `musicreco/mixplan.py` + `musicreco/mixrender.py`.

@@ -18,7 +18,7 @@ export function fmtEta(seconds: number | null): string {
   return `~${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ""}`;
 }
 
-const KIND_LABEL: Record<string, string> = { waveform: "Waveform", beats: "Beats", key: "Key", stems: "Stems", energy: "Energy", sections: "Sections", vocals: "Vocals", embedding: "Vibe" };
+const KIND_LABEL: Record<string, string> = { set_export: "Export", waveform: "Waveform", beats: "Beats", key: "Key", stems: "Stems", energy: "Energy", sections: "Sections", vocals: "Vocals", embedding: "Vibe" };
 const label = (kind: string) => KIND_LABEL[kind] ?? kind;
 
 /** Re-render once a second while `on` (the ETA counts down between job events). */

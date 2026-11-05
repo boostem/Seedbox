@@ -19,6 +19,10 @@
   doesn't answer. `POST /tunebat/download` fetches one.
 - `POST /sets/{id}/bridge` `{position, hash, from, to}`: puts a track there. 409 if those aren't neighbours there any more.
 
+- `POST /sets/{id}/export` `{format, target?}` (#70): the set as one continuous mix, as a `set_export` job (`wav`, `flac`,
+  `mp3`, `aac`). 409 with `pairs` while a transition has no plan. `GET /sets/{id}/export`: the formats, where mixes go and
+  the set's latest export job. Progress and cancel are the job's: `job.progress`, `POST /jobs/{id}/cancel`.
+
 Long sets (#62), nothing saved until the result goes to `POST /sets`:
 - `POST /sets/build`: the best order for `sources` (`[{kind: "crate"|"set"|"library", id}]`), `max_tracks`, `keep_order`.
 - `POST /sets/build/explain` with `hashes`: those tracks as they stand, explained, after a track was put in.
@@ -42,8 +46,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from seedbox2.analysis import beats, energy, key, stems, vibe
 from seedbox2.library import Library
 from seedbox2.mix import convert
+from seedbox2.mix import master as master_chain
+from seedbox2.mix.setexport import FORMATS
 from seedbox2.server.deps import JobsDep, LibraryDep, TunebatDep, get_jobs, vibe_index
 from seedbox2.sets import TEMPLATES, OrderRequest, bridge, evaluate_set, order_set
+from seedbox2.sets import export as set_export
 from seedbox2.sets.arcs import ArcError
 from seedbox2.sets.longset import (
     MAX_TRACKS,
@@ -270,6 +277,7 @@ def _session_track(lib: Library, hash_: str) -> dict | None:
         "sections": vibe.spans_of(lib, hash_, curve["data"] if curve else None),
         "key": key.effective(lib, hash_),
         "integrated_lufs": (level["data"].get("integrated_lufs") if level else None),
+        "track_gain_db": set_export.track_gain_db(lib, hash_),
     }  # fmt: skip
 
 
@@ -361,6 +369,37 @@ def set_timeline(set_id: int, body: TimelineBody, request: Request, lib: Library
     if Counter(hashes) != Counter(body.hashes):
         raise HTTPException(409, "the set's tracks have changed")
     return timeline(lib, body.hashes, get_jobs(request), retry=body.retry)
+
+
+class ExportBody(BaseModel):
+    format: Literal["wav", "flac", "mp3", "aac"]
+    target: Literal["streaming", "club"] | None = None
+
+
+def _export_jobs(lib: Library, set_id: int) -> list[dict]:
+    return [j for j in lib.jobs() if j.get("kind") == set_export.JOB and isinstance(j.get("payload"), dict) and j["payload"].get("set_id") == set_id]
+
+
+@router.get("/{set_id}/export")
+def export_status(set_id: int, lib: LibraryDep) -> dict:
+    if lib.set_hashes(set_id) is None:
+        raise HTTPException(404, "no such set")
+    jobs = sorted(_export_jobs(lib, set_id), key=lambda j: j.get("created_at") or "")
+    return {"formats": [{"id": f.name, "label": f.label} for f in FORMATS.values()], "folder": str(set_export.mix_folder()),
+            "targets": master_chain.TARGETS, "job": jobs[-1] if jobs else None}  # fmt: skip
+
+
+@router.post("/{set_id}/export", status_code=202)
+def export_set(set_id: int, body: ExportBody, lib: LibraryDep, jobs: JobsDep) -> dict:
+    s = lib.set(set_id)
+    if s is None:
+        raise HTTPException(404, "no such set")
+    hashes = lib.set_hashes(set_id)
+    try:
+        set_export.check(lib, hashes)
+    except set_export.NotReady as e:
+        raise HTTPException(409, {"message": str(e), "pairs": e.pairs}) from None
+    return jobs.submit(set_export.JOB, {"set_id": set_id, "hashes": hashes, "format": body.format, "target": body.target, "name": s["name"]}, priority="set")
 
 
 def _add(lib: Library, set_id: int, hashes: list[str]) -> int:

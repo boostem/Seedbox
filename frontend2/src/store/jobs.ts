@@ -23,9 +23,9 @@ export interface RunningJob {
 }
 
 /** Seconds a job of each type takes before we have seen one finish (README budgets, on the reference laptop). */
-export const DEFAULT_SECONDS: Record<string, number> = { waveform: 0.5, beats: 5, key: 3, energy: 2, sections: 3, vocals: 4, embedding: 3, stems: 60 };
+export const DEFAULT_SECONDS: Record<string, number> = { waveform: 0.5, beats: 5, key: 3, energy: 2, sections: 3, vocals: 4, embedding: 3, stems: 60, set_export: 300 };
 const FALLBACK_SECONDS = 5;
-const HEAVY = new Set(["stems", "render"]);
+const HEAVY = new Set(["stems", "render", "set_export"]);
 
 export interface JobsState {
   running: Record<string, RunningJob>;

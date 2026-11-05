@@ -68,6 +68,11 @@ class JobContext:
             self._cache[key] = factory()
         return self._cache[key]
 
+    def release_sessions(self) -> None:
+        """Lets go of this worker's model sessions, for a job that wants the memory more than the next job wants the time."""
+        for key in [k for k in self._cache if k.startswith(SESSION_PREFIX)]:
+            del self._cache[key]
+
     def session(self, name: str) -> Any:
         """The model's onnxruntime session, made once per worker process (threads: this pool's share of the
         physical cores). Raises seedbox2.models.ModelMissing if the model isn't downloaded."""
