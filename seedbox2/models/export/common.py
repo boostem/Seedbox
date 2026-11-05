@@ -64,8 +64,9 @@ def _as_list(out: Any) -> list[np.ndarray]:
 
 
 def parity(module: Any, onnx_path: Path | str, cases: Sequence[dict[str, np.ndarray]],
-           tolerance: float = TOLERANCE) -> Parity:  # fmt: skip
-    """Run each case (input name -> array) through torch and onnxruntime (CPU) and compare every output."""
+           tolerance: float = TOLERANCE, transform: Any = None) -> Parity:  # fmt: skip
+    """Run each case (input name -> array) through torch and onnxruntime (CPU) and compare every output, after
+    `transform` if there is one."""
     import onnxruntime as ort
     import torch
 
@@ -75,6 +76,8 @@ def parity(module: Any, onnx_path: Path | str, cases: Sequence[dict[str, np.ndar
         for case in cases:
             want = _as_list(module(*(torch.from_numpy(v) for v in case.values())))
             got = session.run(None, case)
+            if transform is not None:
+                want, got = [transform(w) for w in want], [transform(g) for g in got]
             if len(got) != len(want):
                 raise ValueError(f"ONNX has {len(got)} outputs, torch {len(want)}")
             err = max(float(np.max(np.abs(g.astype(np.float64) - w.astype(np.float64)))) if g.size else 0.0

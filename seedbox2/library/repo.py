@@ -269,6 +269,10 @@ class Library:
             sql, args = sql + " AND kind = ?", [*args, kind]
         return _rows(self.db.read().execute(sql + " ORDER BY kind, created_at", args))
 
+    def artifacts_of_kind(self, kind: str) -> list[dict]:
+        """That kind's artifacts of all the tracks."""
+        return _rows(self.db.read().execute("SELECT * FROM artifacts WHERE kind = ? ORDER BY hash", (kind,)))
+
     def delete_artifacts(self, hash_: str, kind: str) -> None:
         with self.db.write() as c:
             c.execute("DELETE FROM artifacts WHERE hash = ? AND kind = ?", (hash_, kind))

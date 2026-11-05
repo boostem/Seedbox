@@ -39,6 +39,10 @@ HTDEMUCS_INPUTS = ("input float32 [1, 2, 343980] (7.8 s at 44.1 kHz), x float32 
                    "im per channel) -> output [1, 4, 4, 2048, 336] (each source's spectrogram), add_67 [1, 4, 2, "
                    "343980] (each source's time branch); sources: drums, bass, other, vocals")
 
+_CLAP = "https://huggingface.co/Xenova/larger_clap_music_and_speech/resolve/e9fd5ac1dbf3280936a7fc3ec8a020453ff184db"
+_CLAP_CREDIT = ("Large-scale Contrastive Language-Audio Pretraining by Yusong Wu, Ke Chen, Tianyu Zhang et al. (LAION), "
+                "ICASSP 2023: laion/larger_clap_music_and_speech. ONNX export by Xenova.")
+
 MODELS: dict[str, ModelSpec] = {
     spec.name: spec
     for spec in [
@@ -123,6 +127,55 @@ MODELS: dict[str, ModelSpec] = {
             fallback="HTDemucs",
             inputs=HTDEMUCS_INPUTS,
             low_memory=True,
+        ),
+        ModelSpec(
+            name="clap_audio",
+            version="music-and-speech-fp16-1",
+            title="CLAP audio encoder",
+            file="audio_model_fp16.onnx",
+            # chosen over larger_clap_music on the golden tracks (README); within 1e-5 of torch's embedding by
+            # `python -m seedbox2.models.export clap_audio --check`
+            url=f"{_CLAP}/onnx/audio_model_fp16.onnx",
+            sha256="7445c5f85f6be805b535c216b928490549abfb92658dfbd1b12856bde0bf2842",
+            size=143_432_227,
+            licence="Apache-2.0",
+            attribution=_CLAP_CREDIT,
+            homepage="https://github.com/LAION-AI/CLAP",
+            used_for="The vibe: similar tracks, and text search over the library",
+            fallback="No similarity or text search; BPM, key and energy still work",
+            inputs="input_features float32 [batch, 1, 1001, 64] (10 s at 48 kHz, seedbox2.analysis.clap.log_mel) -> "
+                   "audio_embeds [batch, 512]",
+        ),
+        ModelSpec(
+            name="clap_text",
+            version="music-and-speech-fp16-1",
+            title="CLAP text encoder",
+            file="text_model_fp16.onnx",
+            url=f"{_CLAP}/onnx/text_model_fp16.onnx",
+            sha256="79da753839b7fd22afc3fa2076cb75ffb5729c24b3249042cf3ec6a4e2c924b3",
+            size=251_029_088,
+            licence="Apache-2.0",
+            attribution=_CLAP_CREDIT,
+            homepage="https://github.com/LAION-AI/CLAP",
+            used_for="Text search over the library (\"warm\", \"dark\", \"vocal house\"), for the set assistant",
+            fallback="No text search; similar tracks still work",
+            inputs="input_ids int64 [batch, tokens] (seedbox2.analysis.clap.Tokenizer) -> text_embeds [batch, 512]",
+            low_memory=True,
+        ),
+        ModelSpec(
+            name="clap_tokenizer",
+            version="music-and-speech-1",
+            title="CLAP tokenizer",
+            file="tokenizer.json",
+            url=f"{_CLAP}/tokenizer.json",
+            sha256="dc239041d98de27ffc3975473a1a23e3db4c937b23c138c38bbc66588bd247e5",
+            size=2_108_774,
+            licence="MIT",
+            attribution="RoBERTa's vocabulary (Liu et al., 2019), as CLAP's text encoder uses it.",
+            homepage="https://github.com/LAION-AI/CLAP",
+            used_for="Text search: turns the text into tokens for the CLAP text encoder",
+            fallback="No text search; similar tracks still work",
+            inputs="Not a graph: a Hugging Face tokenizer.json, read by seedbox2.analysis.clap.Tokenizer",
         ),
     ]
 }

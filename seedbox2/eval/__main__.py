@@ -9,6 +9,7 @@
     python -m seedbox2.eval listen [PAIRS.toml] [--techniques A,B]   (renders for the #/listen page, #86)
     python -m seedbox2.eval stems --musdb DIR --model FILE...  (HTDemucs through ONNX against torch, #44)
     python -m seedbox2.eval golden [--help]                    (the golden corpus and render regression, #87)
+    python -m seedbox2.eval energy [--help]                    (calibrate the track energy against hand ratings, #48)
 """
 
 from __future__ import annotations
@@ -177,6 +178,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     st.add_argument("--max-loss", type=float, default=0.1, help="dB of mean SI-SDR below torch's that still passes")
     st.set_defaults(fn=cmd_stems)
     sub.add_parser("mixes", help="objective mix metrics of rendered transitions (#54); --help after it", add_help=False)
+    sub.add_parser("energy", help="calibrate the track energy against hand ratings (#48); --help after it",
+                   add_help=False)  # fmt: skip
     sub.add_parser("golden", help="render the golden corpus and catch regressions (#87); --help after it",
                    add_help=False)
     return p.parse_args(argv)
@@ -192,6 +195,10 @@ def main(argv: list[str] | None = None) -> int:
         from . import mixes
 
         return mixes.main(argv[1:])
+    if argv and argv[0] == "energy":  # has its own parser
+        from . import energy
+
+        return energy.main(argv[1:])
     if argv and argv[0] == "golden":  # has its own parser
         from . import golden
 

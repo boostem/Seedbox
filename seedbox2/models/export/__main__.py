@@ -12,7 +12,9 @@ from pathlib import Path
 # model name -> (exporter module, the checkpoint it exports)
 EXPORTERS = {"beat_this": ("seedbox2.models.export.beat_this", "final0"),
              "beat_this_small": ("seedbox2.models.export.beat_this", "small0"),
-             "htdemucs": ("seedbox2.models.export.htdemucs", "htdemucs")}
+             "htdemucs": ("seedbox2.models.export.htdemucs", "htdemucs"),
+             "clap_audio": ("seedbox2.models.export.clap", "audio"),
+             "clap_text": ("seedbox2.models.export.clap", "text")}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -32,11 +34,19 @@ def main(argv: list[str] | None = None) -> int:
     import onnxruntime as ort
 
     name = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"]).get_inputs()[0].name
-    cases = mod.cases(name=name) if "name" in mod.cases.__code__.co_varnames else mod.cases()
+    if "name" in mod.cases.__code__.co_varnames:
+        cases = mod.cases(name=name)
+    elif "which" in mod.cases.__code__.co_varnames:
+        cases = mod.cases(checkpoint)
+    else:
+        cases = mod.cases()
     report = common.parity(mod.reference(checkpoint), path, cases,
-                           getattr(mod, "TOLERANCE", common.TOLERANCE) if args.tolerance is None else args.tolerance)  # fmt: skip
+                           getattr(mod, "TOLERANCE", common.TOLERANCE) if args.tolerance is None else args.tolerance,
+                           transform=getattr(mod, "TRANSFORM", None))  # fmt: skip
     out = {"model": args.model, **common.registry_entry(path), "parity": report.cases, "max_error": report.max_error,
            "tolerance": report.tolerance, "ok": report.ok}
+    if hasattr(mod, "front_end_report"):
+        out["front_end"] = mod.front_end_report()
     print(json.dumps(out, indent=1))
     return 0 if report.ok else 1
 

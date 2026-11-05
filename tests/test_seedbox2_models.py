@@ -127,7 +127,7 @@ def test_every_registered_model_is_pinned_checksummed_and_credited():
     for name, spec in MODELS.items():
         assert spec.name == name
         assert re.fullmatch(r"[0-9a-f]{64}", spec.sha256), name
-        assert spec.size > 0 and spec.version and spec.file.endswith((".onnx", ".ort"))
+        assert spec.size > 0 and spec.version and spec.file.endswith((".onnx", ".ort", ".json"))
         assert spec.url.startswith("https://") and re.search(r"/[0-9a-f]{40}/", spec.url), "pin a revision"
         assert spec.licence and spec.attribution and spec.homepage and spec.fallback and spec.used_for
 
@@ -503,10 +503,12 @@ def test_registered_model_downloads_verifies_and_runs(name):
     root = store.models_dir()
     store.download(spec, root)
     assert store.verify(spec, root)
+    if spec.file.endswith(".json"):  # a tokenizer, not a graph
+        return
     sess = runtime.load_session(name, root=root)
     feed = {}
     for i in sess.get_inputs():
         shape = [d if isinstance(d, int) else 64 for d in i.shape]
-        feed[i.name] = np.zeros(shape, np.float32)
+        feed[i.name] = np.zeros(shape, np.int64 if "int64" in i.type else np.float32)
     outputs = sess.run(None, feed)
     assert outputs and all(np.isfinite(o).all() for o in outputs)

@@ -160,17 +160,22 @@ def to_amplitude(byte: np.ndarray) -> np.ndarray:
     return 10 ** ((np.asarray(byte, np.float64) / 255 - 1) * FLOOR_DB / 20)
 
 
-def decode_chunks(path: Path | str, chunk_samples: int, *, sample_rate: int = SAMPLE_RATE, channels: int = 1) -> Any:
+def decode_chunks(path: Path | str, chunk_samples: int, *, sample_rate: int = SAMPLE_RATE, channels: int = 1,
+                  start_s: float | None = None, seconds: float | None = None) -> Any:  # fmt: skip
     """Float32 chunks of the file's first audio stream, streamed from ffmpeg: `chunk_samples` samples per channel,
-    interleaved. Mono at SAMPLE_RATE by default."""
+    interleaved. Mono at SAMPLE_RATE by default. `start_s` and `seconds` read only that stretch, seeking to it."""
     from musicreco.paths import ffmpeg_path
 
     path = Path(path)
     ffmpeg = ffmpeg_path()
     if ffmpeg is None:
         raise WaveformError("ffmpeg not found")
-    cmd = [ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-i", str(path), "-map", "0:a:0", "-vn",
-           "-ac", str(channels), "-ar", str(sample_rate), "-f", "f32le", "-"]  # fmt: skip
+    cmd = [ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error"]
+    if start_s is not None:
+        cmd += ["-ss", f"{start_s:.3f}"]
+    if seconds is not None:
+        cmd += ["-t", f"{seconds:.3f}"]
+    cmd += ["-i", str(path), "-map", "0:a:0", "-vn", "-ac", str(channels), "-ar", str(sample_rate), "-f", "f32le", "-"]
     errors = tempfile.TemporaryFile()  # a file, not a pipe: a chatty ffmpeg can't fill it and stall
     try:
         proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=errors)
