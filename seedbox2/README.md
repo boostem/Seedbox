@@ -91,7 +91,7 @@ front. Importers call `waveform.submit(jobs, hash)` first; the stems job (#44) c
 
 **Stem waveforms** (#78, `StemWaveform` in `frontend2/src/features/waveform/`): drums, bass, vocals and other, in their
 stem colours, as one waveform split into four layers or as four thin lanes (Settings → Waveforms → Stems). Stem detail
-is a file of its own (`<hash>.sbsw.gz`, 150 points/s, same byte scale, at most 149 KB per 6 minutes on dense noise),
+is a file of its own (`<hash>.sbsw.gz`, 150 points/s, same byte scale, about 149 KB per 6 minutes on dense noise),
 so the 200 KB file every view loads doesn't grow: the waveform job writes both when the track has stems, and `GET
 /api/tracks/{hash}/waveform/stems` answers 200, 202 while the job writes it, or 404 until the track has stems. Whole
 tracks and windows read the same file through the peak mip chain. `gainsAt` takes the gains at the playhead, normally
