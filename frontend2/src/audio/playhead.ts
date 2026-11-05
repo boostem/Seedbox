@@ -47,8 +47,8 @@ export class FrameSmoother {
   private value = 0;
   private frame = NaN;
 
-  at(clock: number, frameMs: number): number {
-    const predicted = this.value + (frameMs - this.frame) / 1000;
+  at(clock: number, frameMs: number, rate = 1): number {
+    const predicted = this.value + (rate * (frameMs - this.frame)) / 1000;
     const error = clock - predicted;
     this.value = Math.abs(error) < SMOOTH_SNAP_S ? predicted + error * SMOOTH_GAIN : clock;
     this.frame = frameMs;
@@ -65,6 +65,8 @@ export interface PlayheadSource {
   /** The position now, s of the track; null when this source has nothing loaded. Cheap: read it every frame. */
   time(): number | null;
   playing(): boolean;
+  /** Seconds of track per second, when it isn't 1: an off-tempo deck, or 0 for one waiting at its cue. */
+  rate?(): number;
   /** Coarse changes only: status, another track, a seek while paused. Never per frame. */
   subscribe(listener: () => void): () => void;
 }

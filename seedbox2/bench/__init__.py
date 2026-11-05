@@ -27,8 +27,10 @@ FRONTEND_BUDGETS: dict[str, tuple[float, str, str]] = {
 }
 # frontend2/PERFORMANCE.md: zooming, scrolling, hovering and playing the waveform draw from refs, not React renders.
 # A few commits a second are left for coarse UI that changes with the view ("zoomed in?" enables the fit button).
-RENDERLESS_SCENARIOS = ("zoom", "scroll", "hover", "play", "play_centred")
+RENDERLESS_SCENARIOS = ("zoom", "scroll", "hover", "play", "play_centred", "now_playing", "now_playing_low_power")
 REACT_COMMITS_BUDGET: tuple[float, str, str] = (5.0, "/s", "no React render per frame (waveform scenarios)")
+# Low-power mode's cap on the decks (#77): the display still runs at 60, the decks draw at 30.
+LOW_POWER_DRAWS_BUDGET: tuple[float, str, str] = (31.0, "/s", "draws at most 30 times a second in low-power mode")
 # The centred waveform (#76): no jitter. An even 60 Hz has a frame time spread of about 0.1 ms; at 16 bars on a 1,400 px
 # view, 1 ms of unevenness in the playhead is 0.05 px.
 CENTRED_BUDGETS: dict[str, tuple[float, str, str]] = {

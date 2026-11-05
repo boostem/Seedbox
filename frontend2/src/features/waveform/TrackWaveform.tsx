@@ -18,12 +18,13 @@ import { playerSource } from "@/audio/player";
 import { centredStart, FrameSmoother, headTrace, type PlayheadSource } from "@/audio/playhead";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { barBeat, drawCues, drawEdges, drawGrid, drawSections, drawWave, fmtPrecise, laneOf, setupCanvas, shade, type View, xOf } from "./draw";
+import { barBeat, drawCues, drawEdges, drawGrid, drawPhraseBands, drawRegions, drawSections, drawWave, fmtPrecise, laneOf, setupCanvas, shade, type View, type WaveRegion, xOf } from "./draw";
 import { useFrame, useWaveformKeys, useViewCtl, useViewFact, useWidthRef } from "./hooks";
 import { alpha, sectionColor, wavePalette } from "./palette";
 import { beatPhase, fmtBarsBeats } from "./phase";
 import { useWaveLook, useWaveSettings, type WaveFollow } from "./settings";
 import { WaveFollowTabs } from "./WaveSettings";
+import type { WaveData } from "./prepare";
 import { useWave } from "./waveData";
 import { mayDraw } from "@/lib/frameCap";
 
@@ -39,6 +40,16 @@ export interface TrackWaveformProps {
   follow?: WaveFollow;
   /** Click on the main view → seek to file time t (s). */
   onSeek?: (t: number) => void;
+  /** The waveform when it doesn't come with `analysis`: the binary file (`useTrackWave`). */
+  wave?: WaveData | null;
+  /** Spans of the track to mark on the main view: where a transition happens. */
+  regions?: WaveRegion[];
+  /** Tint every other phrase. */
+  phraseBands?: boolean;
+  /** Seconds of track across the view, chosen from outside: two decks keep a beat the same width this way. */
+  span?: number;
+  /** No row of zoom buttons: the page has its own. */
+  bare?: boolean;
   /** Main view height (px). */
   height?: number;
   overview?: boolean;
@@ -64,8 +75,9 @@ function setText(el: HTMLElement, text: string): void {
   if (el.textContent !== text) el.textContent = text;
 }
 
-export function TrackWaveform({ analysis, trackId, source, deck, follow, onSeek, height = 132, overview = true, hotkeys, toolbar, className }: TrackWaveformProps) {
-  const wave = useWave(analysis);
+export function TrackWaveform({ analysis, trackId, source, deck, follow, onSeek, wave: waveProp, regions, phraseBands, span, bare, height = 132, overview = true, hotkeys, toolbar, className }: TrackWaveformProps) {
+  const ownWave = useWave(analysis);
+  const wave = waveProp ?? ownWave;
   const lane = useMemo(() => laneOf(analysis, wave), [analysis, wave]);
   const duration = analysis.duration_s || wave?.duration || 1;
   const minSpan = Math.max(4, (analysis.bar_s || 2) * 4);
@@ -193,6 +205,8 @@ export function TrackWaveform({ analysis, trackId, source, deck, follow, onSeek,
       b.ctx.fillStyle = p.bg;
       b.ctx.fillRect(0, 0, width, height);
       edgeLabels = drawEdges(b.ctx, lane, view, TOP, waveH, { labels: true });
+      if (phraseBands) drawPhraseBands(b.ctx, lane, view, TOP, waveH);
+      if (regions) drawRegions(b.ctx, regions, view, TOP, waveH);
       drawGrid(b.ctx, lane, view, TOP, waveH, { labels: true, labelY: 2 });
     }
     paintWave();
@@ -337,6 +351,9 @@ export function TrackWaveform({ analysis, trackId, source, deck, follow, onSeek,
   useLayoutEffect(() => paintAll());
   useEffect(() => ctl.subscribe(frameBase), [ctl, frameBase]);
   useLayoutEffect(() => ctl.setOverscroll(mode === "centred" ? 0.5 : 0), [ctl, mode]);
+  useLayoutEffect(() => {
+    if (span) ctl.set({ start: ctl.get().start, span });
+  }, [ctl, span]);
 
   // ---- playhead: its own rAF loop while this track plays, reading the audio clock every frame. Centred, everything
   // scrolls: the view repaints when it reaches another device column. Paged, only the playhead moves, and the waveform
@@ -365,7 +382,7 @@ export function TrackWaveform({ analysis, trackId, source, deck, follow, onSeek,
     const loop = (now: number) => {
       if (mayDraw()) {
         const clock = src.time();
-        const head = clock == null ? null : smoother.current.at(clock, now);
+        const head = clock == null ? null : smoother.current.at(clock, now, src.rate?.() ?? 1);
         frameT.current = head;
         if (headTrace.on && clock != null && head != null) {
           headTrace.frames.push(now);
@@ -493,14 +510,16 @@ export function TrackWaveform({ analysis, trackId, source, deck, follow, onSeek,
 
   return (
     <div className={cn("flex flex-col", className)}>
-      <div className="mb-1.5 flex h-6 items-center gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2">{toolbar}</div>
-        {deck && !follow && <WaveFollowTabs />}
-        <span ref={barsRef} className="mr-0.5 text-2xs text-fg-subtle num" />
-        <IconButton icon={Minus} label="Zoom out (−)" size="sm" onClick={() => ctl.zoom(1 / 1.6)} disabled={!zoomed} />
-        <IconButton icon={Plus} label="Zoom in (=)" size="sm" onClick={() => ctl.zoom(1.6)} disabled={atMax} />
-        <IconButton icon={Scan} label="Fit whole track (0)" size="sm" onClick={ctl.fit} disabled={!zoomed} />
-      </div>
+      {!bare && (
+        <div className="mb-1.5 flex h-6 items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">{toolbar}</div>
+          {deck && !follow && <WaveFollowTabs />}
+          <span ref={barsRef} className="mr-0.5 text-2xs text-fg-subtle num" />
+          <IconButton icon={Minus} label="Zoom out (−)" size="sm" onClick={() => ctl.zoom(1 / 1.6)} disabled={!zoomed} />
+          <IconButton icon={Plus} label="Zoom in (=)" size="sm" onClick={() => ctl.zoom(1.6)} disabled={atMax} />
+          <IconButton icon={Scan} label="Fit whole track (0)" size="sm" onClick={ctl.fit} disabled={!zoomed} />
+        </div>
+      )}
       {deck && (
         <div className="mb-1.5 flex h-4 items-center gap-3 text-2xs text-fg-subtle num">
           <canvas ref={rulerRef} aria-hidden="true" style={{ width: RULER_W, height: RULER_H }} title="Beat phase: the four beats of the bar" />

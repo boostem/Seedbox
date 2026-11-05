@@ -1,7 +1,8 @@
 /**
  * Tiny hash router. Routes: #/ (home), #/library, #/crates, #/sets, #/discover, #/mixes, #/settings (#/system, its old
  * name, still works), #/ui (design tokens and the waveform), #/bench (the waveform alone, for
- * `python -m seedbox2.bench frontend`), #/listen (the blind listening test, not linked from anywhere).
+ * `python -m seedbox2.bench frontend`), #/listen (the blind listening test, not linked from anywhere), #/now-playing (?set=ID, the full-screen decks; ?demo=1 on
+ * synthetic data).
  * Path segments are URI-encoded. Areas get their sub-routes as their tickets land.
  */
 import { type AnchorHTMLAttributes, useSyncExternalStore } from "react";
@@ -17,6 +18,7 @@ export type Route =
   | { name: "ui" }
   | { name: "bench" }
   | { name: "listen" }
+  | { name: "nowPlaying" }
   | { name: "notFound"; path: string };
 
 export type RouteName = Route["name"];
@@ -51,6 +53,8 @@ export function parseHash(hash: string): Route {
     case "bench":
     case "listen":
       return { name: segs[0] };
+    case "now-playing":
+      return { name: "nowPlaying" };
     case "system":
       return { name: "settings" };
     default:
@@ -60,7 +64,7 @@ export function parseHash(hash: string): Route {
 
 /** Route → "#/…" href. Optional query params are appended (`?q=…`). */
 export function href(route: Route, query?: Record<string, string | number | null | undefined>): string {
-  const path = route.name === "home" ? "" : route.name === "notFound" ? route.path : route.name;
+  const path = route.name === "home" ? "" : route.name === "notFound" ? route.path : route.name === "nowPlaying" ? "now-playing" : route.name;
   const qs = query
     ? new URLSearchParams(
         Object.entries(query)

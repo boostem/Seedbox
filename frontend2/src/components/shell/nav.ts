@@ -22,6 +22,7 @@ export const TITLES: Record<RouteName, string> = {
   library: "Library",
   crates: "Crates",
   sets: "Sets",
+  nowPlaying: "Now playing",
   discover: "Discover",
   mixes: "Mixes",
   settings: "Settings",

@@ -31,7 +31,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py tests/test_seedbox2_now_playing.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -103,6 +103,25 @@ that to the view as `source`. As `currentTime` moves in steps of the output buff
 `python -m seedbox2.bench frontend` (scenario `play_centred`, headless Chrome on SwiftShader, 10 s, on a 12-thread desktop under other load, not yet the reference laptops): 59.6 fps,
 frame time spread 1.36 ms, no long tasks, no React commits; the raw clock's unevenness 8.98 ms a frame, the playhead's 0.41 ms.
 
+**Now playing** (#77, `frontend2/src/features/nowplaying/`, `#/now-playing?set=ID`, ⌘K "Go to Now playing"): the set as two
+stacked decks, full screen and without the shell. Both waveforms scroll under one playhead column, zoomed together in bars so
+a beat is the same width on both, so the grids line up when the plan has the tracks in sync; every other phrase is tinted and
+the transition is marked on each deck's track. A deck's panel shows its BPM, its pitch against its own tempo, its key and the
+time left, with stem meters and the plan's EQ, filter and fader moving as it plays; the strip along the bottom names the next track, the
+technique and the bars to go. `?demo=1` shows it on synthetic data (screenshots, the benchmark).
+
+- **Playing a set:** `GET /api/sets/{id}/session` gives the tracks and each pair's plan as version 3. `SetDriver` plays those on
+  one `LiveEngine`: `planChain` stretches each plan's window over its tracks (the first from the top of its A, the last to the
+  end of its B), and 8 beats before a window ends the next plan takes over. `engine.schedule(next, { from: "b", to: "a" })`
+  has the worklet carry the file position across, so the track goes on from its sample. A pair with no plan stops the set after that track, and the strip says so
+  beforehand. Track `i` stays on deck A or B by its parity, so a track doesn't move when the next plan takes over. There's no
+  set-wide tempo line yet: each plan keeps its own tempo map (#70).
+- **Meters aren't output levels:** the worklet taps no stems, so a meter is that point of the stem waveform by the plan's gain and
+  fader (the 3 bands through the EQ without stems). Nothing else in this view reads the audio.
+- **Measured** (`python -m seedbox2.bench frontend`, scenarios `now_playing` and `now_playing_low_power`; 1440x900, on an RTX 4070 Ti
+  desktop running WebGL on SwiftShader, with the CPU throttled 4x as well): 58-60 fps, no long tasks, no React commits; at low power's cap
+  the decks draw 30 times a second. **Not yet measured on a real integrated GPU or the reference laptops.**
+
 **Waveforms** (#49, `seedbox2/analysis/waveform.py`): the `waveform` job (light pool, so it never waits behind
 stems) decodes a track to mono at 22,050 Hz, a second at a time, and splits it with 4th-order Bessel filters
 (low-pass 600 Hz, band-pass 600-4,000 Hz, high-pass 4,000 Hz, as Mixxx). Each band keeps its peak and RMS at 150
@@ -122,8 +141,8 @@ so the 200 KB file every view loads doesn't grow: the waveform job writes both w
 tracks and windows read the same file through the peak mip chain. `gainsAt` takes the gains at the playhead, normally
 `planStemGains(deck, beat)` (the curves of `lane_value`), and each frame they go to the shader as a uniform with no
 React render, so a stem dims as the plan plays it down. The dimming applies to the whole view at the current gain;
-nothing shows a real plan yet: the now-playing view (#77) and transition editor (#79) mount it with the engine's
-clock (#65), and `#/ui` plays a synthetic bass hand-off.
+the transition editor (#79) will mount it with the engine's clock (#65), and `#/ui` plays a synthetic bass hand-off. The
+now-playing view (#77) draws the band waveform on its decks and reads the same gains for its stem meters.
 
 **Energy, loudness and the vibe** (#48, `seedbox2/analysis/energy.py`, `loudness.py`, `clap.py`, `vibe.py`): the
 `energy` job (light pool) runs once a track's beats have finished, and again if a grid or stems arrive later. One streamed
@@ -420,7 +439,7 @@ What it doesn't do yet:
   reacting about a second late, and the limiter has 25 ms of latency and works on sample peaks. They only act on loud
   blends; below them, the two engines null.
 - **Trim:** the caller passes each deck's `trimDb`; nothing computes it in the page yet (0 dB by default).
-- **Screens:** `#/mixes` (#67) plays through it; #77 and #79 come next, and `audio/player.ts` stays for the library's single tracks.
+- **Screens:** `#/mixes` (#67) and the now-playing view (#77) play through it; #79 comes next, and `audio/player.ts` stays for the library's single tracks.
 
 `python -m seedbox2.bench engine` measures it in headless Chrome (below).
 

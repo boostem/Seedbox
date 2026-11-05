@@ -1,5 +1,5 @@
 /** The shell's commands: going places, the actions the ticket lists, playback and the app itself (lib/commands.ts). */
-import { ArrowLeft, ArrowRight, AudioWaveform, Disc3, FileOutput, House, Keyboard, ListPlus, Palette, Pause, Sparkles, Square, Volume1, Volume2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, AudioLines, AudioWaveform, Disc3, FileOutput, House, Keyboard, ListPlus, Palette, Pause, Sparkles, Square, Volume1, Volume2 } from "lucide-react";
 import { player, usePlayer } from "@/audio/player";
 import type { Command } from "@/lib/commands";
 import { navigate, type Route } from "@/lib/router";
@@ -27,6 +27,7 @@ export function appCommands(): Command[] {
       (e): Command => ({ id: `go.${e.route}`, title: `Go to ${e.label}`, group: "Go to", icon: e.icon, combo: e.combo, run: go({ name: e.route }) }),
     ),
     { id: "go.mixes", title: "Go to Mixes", group: "Go to", icon: Disc3, combo: "Mod+5", keywords: "transitions", run: go({ name: "mixes" }) },
+    { id: "go.nowPlaying", title: "Go to Now playing", group: "Go to", icon: AudioLines, keywords: "decks booth set live", run: go({ name: "nowPlaying" }) },
     { id: "go.ui", title: "Go to Design system", group: "Go to", icon: Palette, keywords: "tokens components ui", run: go({ name: "ui" }) },
     { id: "go.back", title: "Back", group: "Go to", icon: ArrowLeft, combo: "Mod+[", keywords: "previous history", run: () => history.back() },
     { id: "go.forward", title: "Forward", group: "Go to", icon: ArrowRight, combo: "Mod+]", keywords: "next history", run: () => history.forward() },

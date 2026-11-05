@@ -29,6 +29,20 @@ export function deckTime(deck: Deck, beat: number): number {
   return s.start_s + ((u - s.start_beat) * 60) / s.bpm;
 }
 
+/** The master beat at which a deck without a loop reaches file time `seconds`: `deckTime`'s inverse. The grid's first
+ * segment holds before it and its last after it. */
+export function beatAtFile(deck: Deck, seconds: number): number {
+  let lo = 0;
+  let hi = deck.grid.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (deck.grid[mid].start_s <= seconds) lo = mid;
+    else hi = mid - 1;
+  }
+  const s = deck.grid[lo];
+  return s.start_beat + ((seconds - s.start_s) * s.bpm) / 60;
+}
+
 /** The deck's own tempo at a master beat. */
 export function deckBpm(deck: Deck, beat: number): number {
   return segmentAt(deck, deckPosition(deck, beat)).bpm;

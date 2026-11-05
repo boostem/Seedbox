@@ -267,6 +267,52 @@ export function drawGrid(ctx: CanvasRenderingContext2D, lane: Lane, view: View, 
   ctx.restore();
 }
 
+/** A span of the track marked on a view. */
+export interface WaveRegion {
+  start_s: number;
+  end_s: number;
+  label?: string;
+}
+
+/** Every other phrase tinted, so the eye can count phrases as they pass. Under the grid. */
+export function drawPhraseBands(ctx: CanvasRenderingContext2D, lane: Lane, view: View, y: number, h: number): void {
+  const an = lane.an;
+  if (!an || !(an.bar_s > 0)) return;
+  const starts = an.phrases?.length ? an.phrases.map((ph) => ph.bar) : null;
+  const off = ((an.phrase_offset % 8) + 8) % 8;
+  const barAt = (i: number): number => (starts ? (starts[i] ?? an.bar_count) : off + i * 8);
+  const count = starts ? starts.length : Math.ceil((an.bar_count - off) / 8);
+  const xOfBar = (bar: number) => xOf(view, toMix(lane, an.first_downbeat_s + bar * an.bar_s));
+  ctx.fillStyle = alpha(wavePalette().phrase, 0.09);
+  for (let i = 1; i < count; i += 2) {
+    const x0 = xOfBar(barAt(i));
+    const x1 = xOfBar(Math.min(barAt(i + 1), an.bar_count));
+    if (x1 < 0 || x0 > view.width) continue;
+    ctx.fillRect(Math.round(x0), y, Math.round(x1) - Math.round(x0), h);
+  }
+}
+
+/** Marked spans: a tint between two edges, and the label at the first edge. */
+export function drawRegions(ctx: CanvasRenderingContext2D, regions: WaveRegion[], view: View, y: number, h: number): void {
+  const p = wavePalette();
+  ctx.save();
+  ctx.font = font(p, 10, 600);
+  ctx.textBaseline = "top";
+  for (const r of regions) {
+    const x0 = Math.round(xOf(view, r.start_s));
+    const x1 = Math.round(xOf(view, r.end_s));
+    if (x1 < 0 || x0 > view.width) continue;
+    ctx.fillStyle = alpha(p.cueMix, 0.12);
+    ctx.fillRect(x0, y, Math.max(1, x1 - x0), h);
+    ctx.fillStyle = alpha(p.cueMix, 0.8);
+    ctx.fillRect(x0, y, 1, h);
+    ctx.fillRect(x1, y, 1, h);
+    // the label stays on screen while its region does
+    if (r.label) ctx.fillText(r.label, Math.max(x0, 0) + 4, y + 16); // under the labels of intros and outros
+  }
+  ctx.restore();
+}
+
 // ------------------------------------------------------------------------------------------------ sections
 
 /** Section strip: tinted blocks with a coloured top rule and a label when it fits. */
