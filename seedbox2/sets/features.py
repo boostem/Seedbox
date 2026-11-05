@@ -16,7 +16,7 @@ from seedbox2.analysis import vibe
 log = logging.getLogger(__name__)
 
 VOCALS_ANALYSER = "vocals"  # #47's analysis; a track without stems has none, and its vocal heaviness is unknown
-_OURS = {"analysis", "user"}
+OURS = {"analysis", "user"}
 
 
 @dataclass
@@ -63,7 +63,7 @@ def load_features(lib: Any, hashes: Iterable[str]) -> dict[str, TrackFeatures]:
         out[h] = TrackFeatures(
             hash=h, title=row.get("title") or "", artist=row.get("artist") or "",
             bpm=row["bpm"] if row.get("bpm_from") == "analysis" else None,
-            camelot=row["key"] if row.get("key_from") in _OURS else None,
+            camelot=row["key"] if row.get("key_from") in OURS else None,
             energy=row["energy"] if row.get("energy_from") == "analysis" else None,
             vocals=vocal_share(vocals["data"]) if vocals else None,
             genre=row.get("genre") or None,

@@ -32,7 +32,7 @@ from starlette.responses import JSONResponse
 from seedbox2.analysis import beats, clap, energy, key, loudness, stems, vibe, vocals
 from seedbox2.library.service import SETTINGS_FILE, Settings
 from seedbox2.library.view import to_camelot
-from seedbox2.server.deps import LibraryDep, get_jobs, get_library
+from seedbox2.server.deps import LibraryDep, get_jobs, get_library, vibe_index
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -135,10 +135,7 @@ def track_vibe(hash_: str, request: Request, lib: LibraryDep) -> dict | JSONResp
 
 
 def _index(request: Request) -> vibe.Index:
-    state = request.app.state
-    if getattr(state, "vibe_index", None) is None:
-        state.vibe_index = vibe.Index()
-    return state.vibe_index
+    return vibe_index(request)
 
 
 @router.get("/{hash_}/similar", responses={200: {}, 404: {}, 409: {}}, response_model=None)

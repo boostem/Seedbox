@@ -11,6 +11,11 @@
 - `POST /sets/{id}/order`: the best order found for those settings. Nothing is saved.
 - `PUT /sets/{id}/order` with `hashes` too: saves that order and the settings. 409 if the set has other tracks by then.
 
+- `GET /sets/{id}/bridge?position&limit` (#64): what would fit between that position and the next, from the library.
+- `GET /sets/{id}/bridge/online?position&limit`: the same from tunebat's recommendations of both neighbours. 502 if it
+  doesn't answer. `POST /tunebat/download` fetches one.
+- `POST /sets/{id}/bridge` `{position, hash, from, to}`: puts a track there. 409 if those aren't neighbours there any more.
+
 Events: `stems.set` (`ready`, `ready_tracks`, `total`, `progress`) when a track of the set finishes, and `job.progress`
 (with the track's `hash`) while one runs.
 """
@@ -20,15 +25,16 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, ConfigDict, Field
 
 from seedbox2.analysis import beats, energy, key, stems, vibe
 from seedbox2.library import Library
 from seedbox2.mix import convert
-from seedbox2.server.deps import JobsDep, LibraryDep
-from seedbox2.sets import TEMPLATES, OrderRequest, evaluate_set, order_set
+from seedbox2.server.deps import JobsDep, LibraryDep, TunebatDep, vibe_index
+from seedbox2.sets import TEMPLATES, OrderRequest, bridge, evaluate_set, order_set
 from seedbox2.sets.arcs import ArcError
 from seedbox2.sets.service import live_pins, request_from_settings
 from seedbox2.sets.solver import SolverError
@@ -203,6 +209,57 @@ def set_session(set_id: int, lib: LibraryDep) -> dict:
         "id": set_id, "name": s["name"], "tracks": tracks,
         "plans": [_session_plan(lib, a["hash"], b["hash"]) for a, b in zip(tracks, tracks[1:], strict=False)],
     }  # fmt: skip
+
+
+def _gap(lib: Library, set_id: int, position: int) -> tuple[bridge.Gap, list[str]]:
+    try:
+        found = bridge.set_gap(lib, set_id, position)
+    except (ArcError, SolverError, bridge.BridgeError) as e:
+        raise HTTPException(422, str(e)) from None
+    if found is None:
+        raise HTTPException(404, "no such set")
+    return found
+
+
+Limit = Query(default=bridge.DEFAULT_LIMIT, ge=1, le=50)
+
+
+@router.get("/{set_id}/bridge")
+def find_bridge(set_id: int, position: int, request: Request, lib: LibraryDep, limit: int = Limit) -> dict[str, Any]:
+    gap, hashes = _gap(lib, set_id, position)
+    return bridge.search_library(lib, vibe_index(request), gap, hashes, limit)
+
+
+@router.get("/{set_id}/bridge/online")
+def find_bridge_online(set_id: int, position: int, lib: LibraryDep, tunebat: TunebatDep, limit: int = Limit) -> dict[str, Any]:
+    from seedbox2.library.tunebat_try import TunebatUnavailable
+
+    gap, _ = _gap(lib, set_id, position)
+    try:
+        return bridge.search_online(lib, tunebat, gap, limit)
+    except TunebatUnavailable:
+        raise HTTPException(502, "Tunebat isn't answering. Check the connection and try again.") from None
+
+
+class InsertBridge(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    position: int = Field(ge=0)
+    hash: str
+    from_hash: str = Field(alias="from")
+    to_hash: str = Field(alias="to")
+
+
+@router.post("/{set_id}/bridge")
+def insert_bridge(set_id: int, body: InsertBridge, lib: LibraryDep) -> dict:
+    """The set with the track in it, explained as `GET /sets/{id}/order` does."""
+    try:
+        request = bridge.insert_bridge(lib, set_id, body.position, body.hash, body.from_hash, body.to_hash)
+    except bridge.BridgeError as e:
+        raise HTTPException(409, str(e)) from None
+    if request is None:
+        raise HTTPException(404, "no such set")
+    return {**evaluate_set(lib, set_id, request), "settings": _settings_out(request)}  # type: ignore[dict-item]
 
 
 def _add(lib: Library, set_id: int, hashes: list[str]) -> int:

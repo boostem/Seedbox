@@ -31,7 +31,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py tests/test_seedbox2_now_playing.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_bridge.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py tests/test_seedbox2_now_playing.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -372,6 +372,28 @@ tracks order as well as any once they're analysed.
 - **API:** `GET /api/sets/arcs`; `GET /api/sets/{id}/order` (the set as it stands, explained, and its saved settings);
   `POST` the same path for the best order (saves nothing); `PUT` it with `hashes` to save an order and its settings (the
   `sets.order_settings` column, schema v3). The whole-set timeline, with the arc on it, is #75's.
+
+**A track for a gap** (#64, `seedbox2/sets/bridge.py`, `#/sets`): every transition has a `score` out of 100, from what its two
+tracks cost each other (key, tempo, vibe, genre, the energy step; not how they fit the arc or journey). Under 55 it is a
+`gap`, and the saved order offers "Find a bridge" there. That catches any clash left in the order and any tempo over the
+limit, and leaves out a +2 move with a vibe shift and a genre change, or a pair nothing is known about. A clash a semitone
+fixes isn't a gap by itself: the shift counts for 1.5, half on each of the track's transitions. **The threshold comes from
+those cases on the cost scale, which is itself a prior: it hasn't met real sets.**
+
+- **Library:** the analysed tracks outside the set, ranked by what their two new transitions would cost: tempo (cheapest
+  halfway between the neighbours, half and double time count), the Camelot move of each leg (from the keys the neighbours
+  are played at, and the bridge may be shifted a semitone), how far the energy goes outside the neighbours' range, and the
+  CLAP distance of each leg, relative to the spread among the candidates. A long intro (30 s or more) takes a little off the
+  best 40. Only tracks with both legs cheaper than the gap are shown. A track with no analysed tempo and key isn't a
+  candidate; the answer counts them. On a development machine, 5,000 synthetic tracks with embeddings: 0.6 s for the first
+  search (it builds the vibe index), then 0.12-0.17 s (not measured on the reference laptops).
+- **Tunebat:** "Look on tunebat" asks for the recommendations of both neighbours, using the id Seedbox 1's import kept or
+  else a search for the title and artist, which must match. It ranks them the same way on tunebat's tempo and key, with no
+  vibe or energy, and leaves out what the library has. A track recommended from both comes first, all else equal. A
+  download goes through `TunebatTry` (YouTube, the Imported folder, the importer), and the page searches the library again as
+  analyses finish, so the track shows up there once it has a tempo and key. Calls keep to one at a time, 1.2 s apart.
+- **Putting one in:** `POST /api/sets/{id}/bridge` `{position, hash, from, to}`. Pins after it move with their tracks; 409 if
+  those two aren't neighbours there any more. `GET /api/sets/{id}/bridge?position&limit` and `.../bridge/online` search.
 
 **The renderer** (#69, `seedbox2/mix/render.py`, on `stream.py`): plays a stored plan of either version, holding only
 what it plays. A deck decodes the parts of its file the window and its trim need, sample-accurate against a decode of

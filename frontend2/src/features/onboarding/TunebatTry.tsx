@@ -10,7 +10,7 @@ type Search = { state: "idle" } | { state: "searching" } | { state: "done"; term
 
 const WORD: Partial<Record<TunebatDownload["state"], string>> = { queued: "Waiting…", finding: "Finding…", downloading: "Downloading…" };
 
-function DownloadAction({ dl, onStart }: { dl: TunebatDownload | undefined; onStart: () => void }) {
+export function DownloadAction({ dl, onStart }: { dl: TunebatDownload | undefined; onStart: () => void }) {
   if (dl?.state === "done") {
     return (
       <span className="flex items-center gap-1 text-xs text-ok">
