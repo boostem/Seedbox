@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import struct
 import time
 import urllib.error
 import urllib.request
@@ -215,3 +216,48 @@ def test_the_endpoint_queues_the_job_then_serves_the_binary_with_caching(server,
 
 def test_the_endpoint_404s_for_unknown_tracks(server):
     assert get(f"{server.url}/api/tracks/{'0' * 40}/waveform")[0] == 404
+
+
+def test_stem_detail_is_its_own_file(tmp_path):
+    track = write_wav(tmp_path / "t.wav", tone(200, 3))
+    folder = tmp_path / "stems"
+    folder.mkdir()
+    for i, name in enumerate(wf.STEMS):  # drums silent, the others louder and louder
+        write_wav(folder / f"{name}.wav", tone(200, 3, amp=0.25 * i))
+    w = wf.compute(track, wf.stem_files(folder))
+    assert w.stem_detail.shape == (4, w.points)
+    assert (w.stem_detail[0] == 0).all()
+    assert wf.to_amplitude(w.stem_detail[1:, 100:300]).mean(axis=1) == pytest.approx([0.25, 0.5, 0.75], rel=0.1)
+    raw = w.stems_to_bytes()
+    magic, version, size, pps, count, floor, points, duration = struct.unpack_from(wf.STEM_HEADER_FORMAT, raw)
+    assert (magic, version, size, pps, count, floor, points) == (b"SBSW", 1, 20, 150, 4, wf.FLOOR_DB, w.points)
+    assert duration == pytest.approx(3, abs=0.01)
+    assert np.array_equal(np.frombuffer(raw, np.uint8, offset=size).reshape(4, points), w.stem_detail)
+    assert wf.Waveform.from_bytes(w.to_bytes()).points == w.points  # the main file doesn't carry it
+    assert wf.compute(track).stem_detail.shape[0] == 0
+
+
+def test_the_stem_endpoint_says_no_stems_then_serves_them(server, tmp_path):
+    url = f"{server.url}/api/tracks/{server.hash}/waveform/stems"
+    assert get(url)[0] == 404
+    assert get(f"{server.url}/api/tracks/{'0' * 40}/waveform/stems")[0] == 404
+
+    folder = tmp_path / "separated"
+    folder.mkdir()
+    for name in wf.STEMS:
+        write_wav(folder / f"{name}.wav", tone(200, 4, amp=0.5))
+    lib = Library.open(tmp_path / "library.sqlite3")
+    lib.put_artifact(server.hash, "stems", "test", folder)
+    lib.close()
+
+    status, _, body = get(url)
+    assert status == 202 and json.loads(body)["job"]["kind"] == "waveform"
+    deadline = time.monotonic() + 30
+    while status != 200 and time.monotonic() < deadline:
+        time.sleep(0.05)
+        status, headers, raw = get(url)
+    assert status == 200 and headers["Content-Type"] == "application/octet-stream"
+    assert raw[:4] == b"SBSW" and len(raw) == 20 + 4 * 4 * 150
+    assert get(url, **{"If-None-Match": headers["ETag"]})[0] == 304
+    assert gzip.decompress(get(url, **{"Accept-Encoding": "gzip"})[2]) == raw
+    assert wf.Waveform.from_bytes(gzip.decompress(get(f"{server.url}/api/tracks/{server.hash}/waveform", **{"Accept-Encoding": "gzip"})[2])).stems.shape[0] == 4

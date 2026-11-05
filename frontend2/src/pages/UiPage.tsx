@@ -1,11 +1,13 @@
+import { Play } from "lucide-react";
 import { useMemo } from "react";
 import { player } from "@/audio/player";
 import { Badge, Button, Page, PageBody, PageHeader, Panel, PanelHeader } from "@/components/ui";
 import { MixChecks } from "@/features/mix";
-import { TrackWaveform, WaveModeTabs, WaveOverview, WavePlaceholder } from "@/features/waveform";
+import { StemViewTabs, StemWaveform, TrackWaveform, WaveModeTabs, WaveOverview, WavePlaceholder } from "@/features/waveform";
 import { demoAnalysis } from "@/lib/demo/analysis";
 import { DemoTrackTable } from "@/lib/demo/tracks";
 import { demoMixChecks } from "@/lib/demo/mixChecks";
+import { DEMO_HANDOFF_SPAN, DEMO_HANDOFF_START, demoHandoff } from "@/lib/demo/stems";
 import { toast } from "@/store/toasts";
 
 // class names spelled out: Tailwind only generates classes (and emits theme variables) it finds whole in the source
@@ -26,6 +28,7 @@ const SIZES = [["2xs", "text-2xs"], ["xs", "text-xs"], ["sm", "text-sm"], ["base
 /** The design tokens (src/index.css) and the waveform, on synthetic data. */
 export function UiPage() {
   const analysis = useMemo(demoAnalysis, []);
+  const handoff = useMemo(demoHandoff, []);
   return (
     <Page>
       <PageHeader title="Design system" subtitle="Design language v2: the tokens in src/index.css, documented in DESIGN2.md" />
@@ -75,6 +78,24 @@ export function UiPage() {
                 <WaveOverview key={h} analysis={analysis} trackId="demo" height={h} sections={h > 24} onSeek={(t) => player.seek(t)} />
               ))}
             </div>
+          </div>
+        </Panel>
+        <Panel>
+          <PanelHeader title="Stem waveforms" description="features/waveform: a synthetic bass hand-off, each stem dimmed by its gain in the plan" />
+          <div className="flex items-center gap-2 px-4 pt-4">
+            <StemViewTabs />
+            <Button icon={Play} onClick={handoff.play}>
+              Play the hand-off
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 gap-4 p-4">
+            {handoff.decks.map((d) => (
+              <div key={d.label} className="flex flex-col gap-1.5">
+                <div className="text-xs text-fg-subtle">{d.label}</div>
+                <StemWaveform stems={d.stems} clock={handoff.clock} gainsAt={d.gainsAt} start={DEMO_HANDOFF_START} span={DEMO_HANDOFF_SPAN} height={124} />
+                <StemWaveform stems={d.stems} clock={handoff.clock} gainsAt={d.gainsAt} height={32} legend={false} />
+              </div>
+            ))}
           </div>
         </Panel>
         <Panel>

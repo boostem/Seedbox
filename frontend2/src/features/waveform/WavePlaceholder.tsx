@@ -1,4 +1,5 @@
 import { AlertTriangle, RotateCw } from "lucide-react";
+import type { CSSProperties } from "react";
 import { Button, Spinner, WaveSkeleton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
@@ -11,6 +12,7 @@ export interface WavePlaceholderProps {
   onRetry?: () => void;
   seed?: number;
   className?: string;
+  style?: CSSProperties;
 }
 
 const LABEL: Record<WavePlaceholderState, string> = {
@@ -21,10 +23,10 @@ const LABEL: Record<WavePlaceholderState, string> = {
 };
 
 /** What a waveform view shows until it can draw: the outline of a waveform, with what is happening to it on top. */
-export function WavePlaceholder({ state, message, onRetry, seed, className }: WavePlaceholderProps) {
+export function WavePlaceholder({ state, message, onRetry, seed, className, style }: WavePlaceholderProps) {
   const failed = state === "failed";
   return (
-    <div className={cn("relative h-40 overflow-hidden rounded-sm bg-bg/60", className)} role={failed ? "alert" : "status"}>
+    <div className={cn("relative h-40 overflow-hidden rounded-sm bg-bg/60", className)} style={style} role={failed ? "alert" : "status"}>
       <WaveSkeleton seed={seed} tone={failed ? "failed" : state === "analysing" ? "active" : "waiting"} />
       <div className="absolute inset-0 grid place-items-center p-3">
         <div className={cn("flex max-w-full items-center gap-2 rounded-sm border border-line bg-panel/90 px-2.5 py-1.5 text-xs", failed ? "text-danger" : "text-fg-muted")}>

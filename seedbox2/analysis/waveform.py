@@ -24,6 +24,14 @@ File format (little-endian), stored gzipped (`<hash>.sbwf.gz` under the cache fo
 Rows are planar (one band's values in a row), which gzip compresses far better than interleaved points, and which a
 renderer can upload as texture rows as they are.
 
+Stem detail (#78) is a second file (`<hash>.sbsw.gz`, `GET /api/tracks/{hash}/waveform/stems`), so the file every view
+loads stays under its 200 KB budget and only the views that draw stems pay for them. Same scale, same points:
+
+    header, STEM_HEADER_SIZE (20) bytes, STEM_HEADER_FORMAT:
+        magic b"SBSW", version u16, header size u16, points per second u16, stems u8 (4), floor dB u8, points u32,
+        duration f32 (seconds)
+    detail: per stem (STEMS order): full-band peak[points], u8
+
 The job (`waveform`, light pool) runs right after import: stems run in the heavy pool, so waveforms never wait for
 them. The stems job (#44) queues `waveform` again when it is done, which adds the stem overviews.
 """
@@ -64,8 +72,14 @@ DECODE_TIMEOUT_S = 300
 GZIP_LEVEL = 9
 ARTIFACT_KIND = "waveform"
 MODEL_VERSION = f"v{VERSION}"
+STEM_MAGIC = b"SBSW"
+STEM_VERSION = 1
+STEM_HEADER_FORMAT = "<4sHHHBBIf"
+STEM_HEADER_SIZE = struct.calcsize(STEM_HEADER_FORMAT)
+STEM_MODEL_VERSION = f"stems-v{STEM_VERSION}"  # a `waveform` artifact of its own version, next to the main file's
 
 assert HEADER_SIZE == 32
+assert STEM_HEADER_SIZE == 20
 assert SAMPLE_RATE % POINTS_PER_S == 0
 
 
@@ -79,6 +93,7 @@ class Waveform:
     detail: np.ndarray  # uint8 [bands, 2 (peak, rms), points]
     overview: np.ndarray  # uint8 [bands, 2, OVERVIEW_COLUMNS]
     stems: np.ndarray = field(default_factory=lambda: np.zeros((0, OVERVIEW_COLUMNS), np.uint8))  # [0 or 4, cols]
+    stem_detail: np.ndarray = field(default_factory=lambda: np.zeros((0, 0), np.uint8))  # [0 or 4, points]: its own file
 
     @property
     def points(self) -> int:
@@ -102,6 +117,13 @@ class Waveform:
         shape = (h["bands"], h["values_per_band"])
         return cls(h["duration"], detail.reshape(*shape, n), overview.reshape(*shape, cols),
                    stems.reshape(h["stems"], cols))  # fmt: skip
+
+
+    def stems_to_bytes(self) -> bytes:
+        """The stem detail file (see the module docstring)."""
+        header = struct.pack(STEM_HEADER_FORMAT, STEM_MAGIC, STEM_VERSION, STEM_HEADER_SIZE, POINTS_PER_S,
+                             len(self.stem_detail), FLOOR_DB, self.points, self.duration)  # fmt: skip
+        return header + self.stem_detail.tobytes()
 
 
 def read_header(data: bytes) -> dict[str, Any]:
@@ -252,14 +274,17 @@ def compute(path: Path | str, stems: dict[str, Path] | None = None, progress: Ca
     env, total = band_envelopes(decode_chunks(path, CHUNK_POINTS * HOP), check=check(1.0))
     done += total
     stem_rows = []
+    stem_detail = []
     for name in STEMS if stems else ():
         stem_env, samples = band_envelopes(decode_chunks(stems[name], CHUNK_POINTS * HOP), bands=False,
                                            check=check(0.25))  # fmt: skip
         done += samples * 0.25
         stem_env = _fit(stem_env, env.shape[-1])  # stems are cut from the track, but may be a few samples off
         stem_rows.append(overview(stem_env)[0, 0])
+        stem_detail.append(stem_env[0, 0])
     wf = Waveform(round(total / SAMPLE_RATE, 3), to_byte(env), to_byte(overview(env)),
-                  to_byte(np.array(stem_rows, np.float32).reshape(len(stem_rows), OVERVIEW_COLUMNS)))  # fmt: skip
+                  to_byte(np.array(stem_rows, np.float32).reshape(len(stem_rows), OVERVIEW_COLUMNS)),
+                  to_byte(np.array(stem_detail, np.float32).reshape(len(stem_detail), env.shape[-1] if stems else 0)))  # fmt: skip
     if progress is not None:
         progress(1.0)
     return wf
@@ -285,10 +310,23 @@ def artifact_path(hash_: str) -> Path:
     return waveform_dir() / hash_[:2] / f"{hash_}.sbwf.gz"
 
 
+def stem_artifact_path(hash_: str) -> Path:
+    return waveform_dir() / hash_[:2] / f"{hash_}.sbsw.gz"
+
+
 def write(wf: Waveform, path: Path) -> int:
-    """Write the gzipped file atomically; returns its size in bytes."""
+    """Write the gzipped waveform file atomically; returns its size in bytes."""
+    return _write_gz(wf.to_bytes(), path)
+
+
+def write_stems(wf: Waveform, path: Path) -> int:
+    """Write the gzipped stem detail file atomically; returns its size in bytes."""
+    return _write_gz(wf.stems_to_bytes(), path)
+
+
+def _write_gz(raw: bytes, path: Path) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = gzip.compress(wf.to_bytes(), GZIP_LEVEL, mtime=0)
+    data = gzip.compress(raw, GZIP_LEVEL, mtime=0)
     fd, tmp = tempfile.mkstemp(prefix=path.name, suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(fd, "wb") as f:
@@ -321,10 +359,19 @@ def current_artifact(lib: Any, hash_: str) -> Path | None:
     return None
 
 
+def current_stem_artifact(lib: Any, hash_: str) -> Path | None:
+    """The track's stem detail file in this version, if computed and still there."""
+    for art in lib.artifacts(hash_, ARTIFACT_KIND):
+        if art["model_version"] == STEM_MODEL_VERSION and Path(art["path"]).is_file():
+            return Path(art["path"])
+    return None
+
+
 @register("waveform", pool="light")
 def waveform_job(payload: dict, ctx: Any) -> dict:
     """Payload `{"hash": ...}`: compute the track's waveform from its first readable file (and its stems, if the
-    library has them), store it and record it as the track's `waveform` artifact."""
+    library has them), store it and record it as the track's `waveform` artifact, with the stem detail file next to it
+    under STEM_MODEL_VERSION."""
     hash_ = payload["hash"]
     lib = ctx.library
     track = lib.track(hash_)
@@ -341,6 +388,10 @@ def waveform_job(payload: dict, ctx: Any) -> dict:
     path = artifact_path(hash_)
     size = write(wf, path)
     lib.put_artifact(hash_, ARTIFACT_KIND, MODEL_VERSION, path)
+    if stems:
+        stem_path = stem_artifact_path(hash_)
+        write_stems(wf, stem_path)
+        lib.put_artifact(hash_, ARTIFACT_KIND, STEM_MODEL_VERSION, stem_path)
     return {"hash": hash_, "path": str(path), "bytes": size, "points": wf.points, "stems": len(wf.stems)}
 
 
