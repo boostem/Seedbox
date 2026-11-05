@@ -7,6 +7,8 @@
  *   engine.schedule(plan);                       // a plan v3 for those tracks; stem lanes fold into EQ without stems
  *   await engine.play();                         // or play(when), in AudioContext seconds, on the sample
  *   engine.seek(beat); engine.pause(); engine.setLoop(startBeat, endBeat); engine.setLoop(null);
+ *   engine.schedule(edited);                     // while playing too: heard in 5 ms, with no click and no restart
+ *   engine.scrub(beat); engine.endScrub();       // the pointer's on the waveform, then lets go
  *   engine.beat(); engine.time();                // now, for per-frame drawing: read these, don't re-render per frame
  *   engine.subscribe(listener);                  // coarse state changes: status, what the decks play
  *
@@ -99,6 +101,7 @@ export class LiveEngine {
   private plan: MixPlan | null = null;
   private played: MixPlan | null = null;
   private clock: Clock | null = null;
+  private timeline = "";
   private planned: PlannedDeck[] = [];
   private total = 0;
   private loop: { from: number; to: number } | null = null;
@@ -106,6 +109,8 @@ export class LiveEngine {
   private reportFrame = 0;
   private reportQ = 0;
   private reportMissing = 0;
+  private scrubbing = false;
+  private scrubPumpedAt = -Infinity;
   private playing = false;
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly listeners = new Set<(s: EngineState) => void>();
@@ -166,7 +171,7 @@ export class LiveEngine {
     this.reportFrame = m.frame;
     this.reportQ = m.q;
     this.reportMissing = m.missing;
-    this.playing = m.playing;
+    this.playing = m.playing && !this.scrubbing;
     if (m.ended) {
       this.stopPump();
       this.setState({ status: "ended" });
@@ -207,7 +212,10 @@ export class LiveEngine {
     }
   }
 
-  /** Runs this plan from now on, with what the decks have now: without stems, its stem lanes fold into EQ. */
+  /**
+   * Runs this plan from now on, with what the decks have now: without stems, its stem lanes fold into EQ. While playing
+   * this is a live edit: the position (in beats) and the loop region carry over, and it's heard in 5 ms without a click.
+   */
   schedule(plan: MixPlan): void {
     for (const id of ["a", "b"] as const) {
       const t = this.tracks[id];
@@ -240,17 +248,25 @@ export class LiveEngine {
     const w0 = played.window.start_beat;
     const w1 = played.window.end_beat;
     const lo = Math.min(w0, Math.max(played.a.play_from_beat, w0) - 3, Math.max(played.b.play_from_beat, w0) - 3);
-    this.clock = new Clock(played.tempo, lo, w1 + 2, w0);
-    this.total = pyRound(this.clock.time(w1) * SR);
+    const timeline = JSON.stringify([played.tempo, lo, w0, w1]);
+    if (timeline !== this.timeline) {
+      // a drag on a lane comes here 60 times a second and leaves the clock as it is
+      const heard = this.clock ? this.beat() : null;
+      this.timeline = timeline;
+      this.clock = new Clock(played.tempo, lo, w1 + 2, w0);
+      this.total = pyRound(this.clock.time(w1) * SR);
+      if (heard !== null && this.ctx) {
+        // the same beat on the new clock: the playhead shouldn't jump until the next report
+        this.reportQ = pyRound(this.clock.time(Math.max(heard, w0)) * SR);
+        this.reportFrame = pyRound((this.ctx.currentTime - (this.ctx.outputLatency || 0) - this.ctx.baseLatency) * SR);
+      }
+    }
+    const clock = this.clock!;
     this.played = played;
     this.planned = planned;
     this.post({ type: "plan", plan: played, audio });
-    if (this.loopBeats) {
-      // a plan starts without a loop region: this one stays, on the new plan's clock
-      this.post({ type: "loop", startBeat: this.loopBeats[0], endBeat: this.loopBeats[1] });
-      this.loop = { from: this.clock.time(this.loopBeats[0]), to: this.clock.time(this.loopBeats[1]) };
-    }
-    this.setState({ decks });
+    if (this.loopBeats) this.loop = { from: clock.time(this.loopBeats[0]), to: clock.time(this.loopBeats[1]) };
+    if (decks.a !== this.state.decks.a || decks.b !== this.state.decks.b) this.setState({ decks });
     this.pump();
   }
 
@@ -316,6 +332,40 @@ export class LiveEngine {
     if (this.state.status === "ended") this.setState({ status: "paused" });
   }
 
+  /**
+   * The pointer is at this beat, and you hear it: call it as the pointer moves, then `endScrub`. Playing carries on from
+   * where it lets go, if it was playing. Call the first one inside the pointer's event, so the browser allows the sound.
+   */
+  scrub(beat: number): void {
+    if (!this.clock || !this.ctx) return;
+    if (!this.scrubbing) {
+      this.scrubbing = true;
+      void this.ctx.resume();
+    }
+    this.post({ type: "scrub", beat });
+    this.reportQ = pyRound(this.clock.time(beat) * SR);
+    this.playing = false;
+    // the chunks around the pointer; not on every pixel of a drag
+    const at = this.reportQ / SR;
+    if (Math.abs(at - this.scrubPumpedAt) > 1) {
+      this.scrubPumpedAt = at;
+      this.pump();
+    }
+    if (this.state.status === "ended") this.setState({ status: "paused" });
+  }
+
+  endScrub(): void {
+    if (!this.scrubbing) return;
+    this.scrubbing = false;
+    this.scrubPumpedAt = -Infinity;
+    this.post({ type: "endScrub" });
+    this.pump();
+    if (this.state.status === "playing" && this.ctx) {
+      this.playing = true;
+      this.reportFrame = pyRound(this.ctx.currentTime * SR);
+    }
+  }
+
   /** Loop [startBeat, endBeat) of the master timeline; `setLoop(null)` plays on. */
   setLoop(startBeat: number | null, endBeat: number | null = null): void {
     this.post({ type: "loop", startBeat, endBeat });
@@ -354,6 +404,8 @@ export class LiveEngine {
     this.node = null;
     this.ready = null;
     this.loader = null;
+    this.clock = null;
+    this.timeline = "";
     this.streamsPosted.clear();
     for (const id of ["a", "b"] as const) delete this.tracks[id];
   }

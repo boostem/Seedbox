@@ -3,6 +3,7 @@
  * show an error toast, unless `{ quiet: true }` (then the caller handles it).
  */
 import { toast } from "@/store/toasts";
+import type { MixPlan } from "./mixplan.generated";
 import type { PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
@@ -95,6 +96,11 @@ export const api = {
     /** Writes a ratings file in the listening folder: a browser download doesn't work in every app window. */
     saveExport: (rater: string, opts?: RequestOptions) => post<{ path: string; ratings: number }>("/api/listen/export/save", { rater }, opts),
     import: (doc: unknown, opts?: RequestOptions) => post<ListenImport>("/api/listen/import", doc, opts),
+  },
+  mixes: {
+    plans: (opts?: RequestOptions) => get<SavedPlan[]>("/api/mixes/plans", { quiet: true, ...opts }),
+    /** A saved plan as v3, for the live engine. */
+    livePlan: (from: string, to: string, opts?: RequestOptions) => get<{ plan: MixPlan; user_edited: boolean }>(`/api/mixes/plans/${from}/${to}/live`, { quiet: true, ...opts }),
   },
   onboarding: {
     status: (opts?: RequestOptions) => get<Onboarding>("/api/onboarding", opts),
@@ -192,6 +198,15 @@ export const api = {
 };
 
 /** A saved filter (smart crate), as settings.json keeps it. */
+/** A pair's saved mix plan, without the plan. */
+export interface SavedPlan {
+  from_hash: string;
+  to_hash: string;
+  from_name: string;
+  to_name: string;
+  user_edited: boolean;
+}
+
 export interface SmartCrateJson {
   id: string;
   name: string;

@@ -306,6 +306,10 @@ def test_library_sets_and_plans_over_http(tmp_path):
         assert len(plans) == 1 and "plan" not in plans[0]
         full = client.get(f"/api/mixes/plans/{plans[0]['from_hash']}/{plans[0]['to_hash']}")
         assert full["plan"]["to_id"] == "S1"
+        assert plans[0]["from_name"] and plans[0]["to_name"]
+        # this one is too sparse for a plan's checks: the live engine isn't handed it (a good one: the engine's browser test)
+        assert client.request("GET", f"/api/mixes/plans/{plans[0]['from_hash']}/{plans[0]['to_hash']}/live")[0] == 422
+        assert client.request("GET", "/api/mixes/plans/none/none/live")[0] == 404
     finally:
         handle.stop()
     assert handle.app.state.library is None  # closed on shutdown
@@ -410,3 +414,16 @@ def test_worker_processes_write_to_the_same_file(tmp_path):
     assert [p.wait(60) for p in procs] == [0, 0, 0]
     assert len(lib.jobs()) == 400
     lib.close()
+
+
+def test_the_server_renders_no_audio_for_playback(tmp_path, monkeypatch):
+    """Playing and editing a mix is the live engine's job in the browser (#65, #67): the server renders for export only
+    (#70). The one thing that plays server-side audio files is the blind listening page, whose renders are made offline."""
+    from seedbox2.server.app import create_app
+
+    monkeypatch.setenv("SEEDBOX_SUPPORT_DIR", str(tmp_path))
+    paths = [r.path for r in create_app(None).routes if "/render" in getattr(r, "path", "") or "/audition" in getattr(r, "path", "")]
+    assert paths == []
+    routers = Path(__file__).parent.parent / "seedbox2" / "server" / "routers"
+    for source in routers.glob("*.py"):
+        assert "mixrender" not in source.read_text("utf-8"), f"{source.name} imports the offline renderer"

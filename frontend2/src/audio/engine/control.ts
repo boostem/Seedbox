@@ -8,16 +8,23 @@ import { CTL, pyRound, SR } from "./constants";
 
 const RING = 1024; // control points kept: enough for what the filter looks ahead (24 of its blocks)
 
+/** Samples a live edit takes to reach its new values: 5 ms. */
+export const EDIT_FADE = pyRound(0.005 * SR);
+
 export class ControlLane {
-  readonly lane: Lane;
+  lane: Lane;
   private readonly width: number;
   private readonly left: number;
   private readonly right: number;
   private readonly points: number;
-  private readonly ring = new Float64Array(RING);
+  private ring = new Float64Array(RING);
   private lo = 0;
   private hi = -1;
   private sum = 0;
+  /** The lane before a live edit, for the 5 ms that fades from it: kept and reused, drags come 60 times a second. */
+  private previous: ControlLane | null = null;
+  private fading = false;
+  private fadeFrom = 0;
 
   /** The lane over `size` samples from master sample `start`. */
   constructor(
@@ -25,7 +32,7 @@ export class ControlLane {
     private readonly clock: Clock,
     private readonly start: number,
     private readonly size: number,
-    smoothS: number,
+    private readonly smoothS: number,
   ) {
     this.lane = lane;
     this.width = Math.max(1, pyRound((smoothS * SR) / CTL));
@@ -35,7 +42,30 @@ export class ControlLane {
   }
 
   get constant(): boolean {
-    return this.lane.constant;
+    return this.lane.constant && !this.fading;
+  }
+
+  /** A live edit: this lane from now on, faded to over EDIT_FADE samples from sample `at` of the lane's range. */
+  retarget(lane: Lane, at: number): void {
+    const old = (this.previous ??= new ControlLane(lane, this.clock, this.start, this.size, this.smoothS));
+    const ring = old.ring;
+    old.lane = this.lane;
+    old.ring = this.ring;
+    old.lo = this.lo;
+    old.hi = this.hi;
+    old.sum = this.sum;
+    this.ring = ring;
+    this.lane = lane;
+    this.lo = 0;
+    this.hi = -1;
+    this.sum = 0;
+    this.fading = true;
+    this.fadeFrom = at;
+  }
+
+  /** The edit's fade has played out. */
+  settle(): void {
+    this.fading = false;
   }
 
   private raw(k: number): number {
@@ -69,6 +99,15 @@ export class ControlLane {
 
   /** The value at sample `i` of the lane's range (past the end: its last). */
   at(i: number): number {
+    if (this.fading && i < this.fadeFrom + EDIT_FADE) {
+      const old = this.previous!.at(i);
+      if (i <= this.fadeFrom) return old;
+      return old + ((this.plain(i) - old) * (i - this.fadeFrom)) / EDIT_FADE;
+    }
+    return this.plain(i);
+  }
+
+  private plain(i: number): number {
     if (this.lane.constant) return this.lane.values[0];
     const s = i >= this.size ? this.size - 1 : i;
     const k = s >> 4;
@@ -79,6 +118,10 @@ export class ControlLane {
 
   /** Values of samples [i, i + n) into `out` from `offset`. True if they're all one value (for cheap gain stages). */
   fill(i: number, n: number, out: Float64Array, offset = 0): boolean {
+    if (this.fading && i < this.fadeFrom + EDIT_FADE) {
+      for (let o = 0; o < n; o++) out[offset + o] = this.at(i + o);
+      return false;
+    }
     if (this.lane.constant) {
       out.fill(this.lane.values[0], offset, offset + n);
       return true;
@@ -89,7 +132,7 @@ export class ControlLane {
     let b = NaN;
     let k = -1;
     let flat = true;
-    const first = this.at(i);
+    const first = this.plain(i);
     for (let o = offset; o < end; o++, s++) {
       const c = s >= this.size ? this.size - 1 : s;
       const kk = c >> 4;
@@ -108,5 +151,6 @@ export class ControlLane {
   relocate(): void {
     this.hi = -1;
     this.lo = 0;
+    this.fading = false;
   }
 }

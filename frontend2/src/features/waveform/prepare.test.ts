@@ -49,4 +49,29 @@ describe("binary waveform file", () => {
     expect(() => decodeWaveBinary(buf)).toThrow(/version 9/);
     expect(() => decodeWaveBinary(encodeWaveBinary(150, [[1, 1], [1, 1], [1, 1]]).slice(0, WAVE_HEADER + 3))).toThrow(/corrupt/);
   });
+
+  it("reads the file the server writes (seedbox2/analysis/waveform.py), peaks out of peak and RMS planes", () => {
+    const n = 4;
+    const header = 32;
+    const buf = new ArrayBuffer(header + 3 * 2 * n);
+    const v = new DataView(buf);
+    "SBWF".split("").forEach((c, i) => v.setUint8(i, c.charCodeAt(0)));
+    v.setUint16(4, 1, true);
+    v.setUint16(6, header, true);
+    v.setUint16(8, 150, true);
+    v.setUint8(10, 3);
+    v.setUint8(11, 2);
+    v.setUint32(12, n, true);
+    v.setUint8(19, 60);
+    v.setFloat32(20, 12.5, true);
+    new Uint8Array(buf, header + 0, n).set([0, 128, 255, 255]); // low's peaks
+    new Uint8Array(buf, header + n, n).fill(9); // low's RMS: must not be read as mid's peaks
+    new Uint8Array(buf, header + 2 * n, n).set([255, 255, 255, 255]); // mid's peaks
+    const w = decodeWaveBinary(buf);
+    expect([w.pps, w.n, w.duration]).toEqual([150, n, 12.5]);
+    expect(w.low[0]).toBe(0);
+    expect(w.low[1]).toBeGreaterThan(0);
+    expect(w.low[1]).toBeLessThan(w.low[2]);
+    expect(w.mid[0]).toBeGreaterThan(0.9);
+  });
 });

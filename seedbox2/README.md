@@ -243,7 +243,7 @@ It needs `mir_eval` (in `requirements-dev.txt`).
 
 **The live engine** (#65, `frontend2/src/audio/engine/`): plays a plan in the browser with no server render.
 `new LiveEngine()`, then `load(deck, { hash, trimDb })`, `schedule(plan)`, `play(when?)`, `pause()`, `seek(beat)`,
-`setLoop(startBeat, endBeat)`, and `beat()` / `seconds()` for playheads (`index.ts` has the whole API). One AudioWorklet
+`setLoop(startBeat, endBeat)`, `scrub(beat)` / `endScrub()`, and `beat()` / `seconds()` for playheads (`index.ts` has the whole API). One AudioWorklet
 (`processor.ts`) runs `core.ts`: both decks' graphs and the master, on one sample clock. A deck is four stems or the full
 track -> per-stem gain -> trim -> FX -> LR4 isolator -> filter -> fader, with echo and reverb sends. The core has no browser
 in it, so the same code runs under deno for the parity test: `tests/test_seedbox2_engine_parity.py` nulls it against
@@ -263,9 +263,17 @@ What it doesn't do yet:
   reacting about a second late, and the limiter has 25 ms of latency and works on sample peaks. They only act on loud
   blends; below them, the two engines null.
 - **Trim:** the caller passes each deck's `trimDb`; nothing computes it in the page yet (0 dB by default).
-- **Screens:** nothing in the UI plays through it yet; #67 and #77 are its first users, and `audio/player.ts` stays until then.
+- **Screens:** `#/mixes` (#67) plays through it; #77 and #79 come next, and `audio/player.ts` stays for the library's single tracks.
 
 `python -m seedbox2.bench engine` measures it in headless Chrome (below).
+
+**Editing while it plays** (#67). `schedule(plan)` can come at any time. If only lanes' keyframes moved, the running voices fade each changed lane to its new values over 5 ms (`EDIT_FADE`) and keep their filters and tails, and it costs next to nothing, so a drag can send one per pointer event. Any other change (tempo, ranges, FX, an isolator or a send switching on) builds a new graph, settles its filters unheard and fades to it over the same 5 ms, handing over echo and reverb tails where the sends match. A plan that arrives during a fade waits and only the newest is kept; the position and the loop region carry over in beats. After the fade the output nulls against a fresh run of the new plan (`engine.test.ts`).
+
+`scrub(beat)` / `endScrub()` play 40 ms bursts forward from the pointer with 3 ms fades, on one graph, so scrubbing costs what playing costs. It goes quiet when the pointer rests, and playing carries on from where it lets go if it was playing. A/B (`features/mix/session.ts`) is just `schedule` of the other plan.
+
+`#/mixes` is the first screen on all this: a saved plan with scrubbing on the waveforms, a loop selection on the ruler, "loop the transition", A/B and draggable keyframes. The library keeps one plan per pair and nothing generates auto plans until #53, so side A is "Saved" for an edited plan. Edits aren't saved yet (#79). `trimDb` is 0 there because the library has no loudness to work it out from yet.
+
+**The server renders for export only** (#70). Nothing under `/api` renders audio to listen to: `tests/test_seedbox2_library.py` holds that, and playing or auditioning a plan is the live engine's job. The listening page (`#/listen`) plays files rendered offline, and `python -m seedbox2.eval` renders for its reports.
 
 **Mix metrics** (#54): `seedbox2/eval/mixmetrics.py` measures a rendered transition from its audio: beat alignment
 between the decks (ms), bass overlap below 120 Hz (s, dB·s), vocal overlap (s), the short-term loudness dip/bump
