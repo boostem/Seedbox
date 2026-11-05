@@ -1,8 +1,8 @@
 """The benchmarked stages. Each runs in its own process (measure.py) and hands its output to the next stage in files.
 
 Until Seedbox 2's own code lands they run Seedbox 1's (`IMPL` says which): analysis is musicreco.structure until
-#43 (beats) and #49 (waveforms), plus our key (#45), planning and rendering are musicreco.mixplan / mixrender until #51 and
-the v2 mix engine. Stems run Seedbox 2's own code (#44) and are skipped until the model is downloaded. Point the
+#43 (beats) and #49 (waveforms), plus our key (#45), planning is musicreco.mixplan until the v2 planner. Rendering is Seedbox
+2's own streaming renderer (#69), still with Rubber Band for key lock until #52. Stems run Seedbox 2's own code (#44) and are skipped until the model is downloaded. Point the
 wrappers below at the new code as each ticket lands.
 """
 
@@ -12,15 +12,16 @@ import json
 from pathlib import Path
 
 # imported here, before measure.py starts the clock
-from musicreco import mixplan, mixrender, structure
+from musicreco import mixplan, structure
 from musicreco.models import Track
 from musicreco.paths import ffmpeg_path
+from seedbox2.mix import render as renderer
 
 IMPL = {
     "analysis": "musicreco.structure.analyze (Seedbox 1, until #43/#49) + seedbox2.analysis.key (#45)",
     "stems": "seedbox2.analysis.stems.separate, htdemucs (#44)",
     "plan": "musicreco.mixplan.generate, 32 bars (Seedbox 1, until #51)",
-    "render": "musicreco.mixrender.render_audio (Seedbox 1, until the v2 engine)",
+    "render": "seedbox2.mix.render.render_audio (#69), Rubber Band for key lock until #52",
 }
 ORDER = ("analysis", "stems", "plan", "render")
 
@@ -43,6 +44,7 @@ def analysis(path: str, out_json: str) -> dict:
     from seedbox2.analysis import key
 
     an = structure.analyze(Path(path), track_id=Path(path).stem)
+    renderer.track_lufs(Path(path))  # analysis's job in the app too (#48): a render reads it, not measures it
     Path(out_json).write_text(json.dumps(an))
     k = key.analyse_signal(key.decode_mono(path))
     return {"bpm": an.get("bpm"), "bars": an.get("bar_count"), "key": k["camelot"]}
@@ -70,5 +72,5 @@ def plan(a_path: str, a_json: str, b_path: str, b_json: str, out_json: str) -> d
 
 
 def render(plan_json: str, a_path: str, b_path: str) -> dict:
-    r = mixrender.render_audio(json.loads(Path(plan_json).read_text()), Path(a_path), Path(b_path))
+    r = renderer.render_audio(json.loads(Path(plan_json).read_text()), Path(a_path), Path(b_path))
     return {"duration_s": round(float(r["duration_s"]), 2)}
