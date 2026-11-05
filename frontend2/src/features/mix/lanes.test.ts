@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Deck, Keyframe, MixPlan } from "@/api/mixplan.generated";
-import { addKeyframe, laneNames, laneOf, moveKeyframe, transitionRange, withLane } from "./lanes";
+import { addKeyframe, laneNames, laneOf, moveKeyframe, removeKeyframe, setCurve, transitionRange, withLane } from "./lanes";
 
 const kf = (beat: number, value: number): Keyframe => ({ beat, value, curve: "linear" });
 const lanes = { volume: [kf(0, 0.5), kf(8, 1), kf(16, 0)] };
@@ -46,5 +46,33 @@ describe("lane edits", () => {
   it("the transition is where both decks sound; without that, the window", () => {
     expect(transitionRange(plan(deck({ play_from_beat: 0, play_to_beat: 32 }), deck({ play_from_beat: 16, play_to_beat: 64 })))).toEqual([16, 32]);
     expect(transitionRange(plan(deck({ play_to_beat: 8 }), deck({ play_from_beat: 16 })))).toEqual([0, 64]);
+  });
+});
+
+describe("the editor's lane edits", () => {
+  const kf = (beat: number, value: number) => ({ beat, value, curve: "linear" as const });
+  const deck = () => ({ lanes: { volume: [kf(0, 1)] }, stem_lanes: null, pinned: [] as string[] }) as unknown as MixPlan["a"];
+  const plan = () => ({ a: deck(), b: deck(), window: { start_beat: -8, end_beat: 40 }, edited: false }) as unknown as MixPlan;
+
+  it("pins a lane a person set, once", () => {
+    const once = withLane(plan(), "a", "volume", [kf(0, 0.5)]);
+    const twice = withLane(once, "a", "volume", [kf(0, 0.4)]);
+    expect(twice.a.pinned).toEqual(["volume"]);
+    expect(twice.edited).toBe(true);
+  });
+
+  it("gives a deck without stem lanes all four when one is edited, the others flat", () => {
+    const next = withLane(plan(), "b", "gain_bass", [kf(4, 0)]);
+    expect(next.b.stem_lanes?.gain_bass).toEqual([kf(4, 0)]);
+    expect(next.b.stem_lanes?.gain_drums).toEqual([kf(-8, 1)]);
+    expect(next.a.stem_lanes).toBeNull();
+  });
+
+  it("removes a keyframe but never a lane's last one, and changes a curve", () => {
+    const two = [kf(0, 1), kf(4, 0)];
+    expect(removeKeyframe(two, 0)).toEqual([kf(4, 0)]);
+    expect(removeKeyframe([kf(4, 0)], 0)).toEqual([kf(4, 0)]);
+    expect(setCurve(two, 1, "ease")[1].curve).toBe("ease");
+    expect(two[1].curve).toBe("linear");
   });
 });

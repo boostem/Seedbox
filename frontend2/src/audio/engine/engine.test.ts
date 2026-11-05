@@ -21,6 +21,7 @@ function deck(track_id: string, over: Partial<Deck> = {}): Deck {
     grid: [{ start_beat: 0, start_s: 0, bpm: BPM }],
     pinned: [],
     key_shift: 0,
+    pinned: [],
     play_from_beat: 0,
     play_to_beat: 64,
     lanes: { ...lanes, volume: [kf(0, 0.5, "hold")] },

@@ -41,16 +41,6 @@ describe("A/B on a running engine", () => {
     expect(s.plan).toBe(second);
   });
 
-  it("tells listeners about coarse changes, not about every move of a drag", () => {
-    const s = new PlanSession({ schedule: vi.fn() }, plan("auto"));
-    const heard = vi.fn();
-    s.subscribe(heard);
-    s.edit(plan("1"));
-    s.edit(plan("2"));
-    s.edit(plan("3"));
-    expect(heard).toHaveBeenCalledTimes(1);
-  });
-
   it("discarding the edit goes back to the plan as it came", () => {
     const schedule = vi.fn();
     const auto = plan("auto");
@@ -60,5 +50,83 @@ describe("A/B on a running engine", () => {
     expect(s.side).toBe("auto");
     expect(s.edited).toBeNull();
     expect(schedule).toHaveBeenLastCalledWith(auto);
+  });
+});
+
+describe("undo and redo", () => {
+  it("takes a gesture back in one step, however many moves it scheduled", () => {
+    const schedule = vi.fn();
+    const auto = plan("auto");
+    const s = new PlanSession({ schedule }, auto);
+    s.begin();
+    s.edit(plan("1"));
+    s.edit(plan("2"));
+    s.end();
+    expect(s.canUndo).toBe(true);
+    s.undo();
+    expect(s.plan).toBe(auto);
+    expect(s.side).toBe("auto");
+    expect(s.canUndo).toBe(false);
+    expect(schedule).toHaveBeenLastCalledWith(auto);
+  });
+
+  it("redoes what undo took back, until there's a new edit", () => {
+    const s = new PlanSession({ schedule: vi.fn() }, plan("auto"));
+    const first = plan("first");
+    s.edit(first);
+    s.undo();
+    s.redo();
+    expect(s.plan).toBe(first);
+    s.undo();
+    s.edit(plan("other"));
+    expect(s.canRedo).toBe(false);
+  });
+
+  it("a gesture that changed nothing leaves no step and tells nobody", () => {
+    const s = new PlanSession({ schedule: vi.fn() }, plan("auto"));
+    const heard = vi.fn();
+    s.subscribe(heard);
+    s.begin();
+    s.end();
+    expect(s.canUndo).toBe(false);
+    expect(heard).not.toHaveBeenCalled();
+  });
+
+  it("a drag is news only at its end; a slider's steps each are", () => {
+    const s = new PlanSession({ schedule: vi.fn() }, plan("auto"));
+    const heard = vi.fn();
+    s.subscribe(heard);
+    s.begin();
+    s.edit(plan("1"));
+    s.edit(plan("2"));
+    expect(heard).not.toHaveBeenCalled();
+    s.end();
+    expect(heard).toHaveBeenCalledTimes(1);
+    s.begin(true);
+    s.edit(plan("3"));
+    s.edit(plan("4"));
+    expect(heard).toHaveBeenCalledTimes(3);
+    s.end();
+    s.undo();
+    expect(s.plan.technique).toBe("2");
+  });
+
+  it("reset to auto can be undone", () => {
+    const s = new PlanSession({ schedule: vi.fn() }, plan("auto"));
+    const edit = plan("edit");
+    s.edit(edit);
+    s.reset();
+    expect(s.edited).toBeNull();
+    s.undo();
+    expect(s.plan).toBe(edit);
+  });
+
+  it("opens on a saved edit, with the plan it started from on the other side", () => {
+    const auto = plan("auto");
+    const saved = plan("saved");
+    const s = new PlanSession({ schedule: vi.fn() }, auto, saved);
+    expect(s.plan).toBe(saved);
+    s.reset();
+    expect(s.plan).toBe(auto);
   });
 });

@@ -39,10 +39,9 @@ afterEach(cleanup);
 function setup() {
   const engine = { beat: vi.fn(() => 0), scrub: vi.fn(), endScrub: vi.fn(), seek: vi.fn(), setLoop: vi.fn() };
   const onLoop = vi.fn();
-  const onEdit = vi.fn();
   const planRef = { current: plan() };
-  render(<PlanTimeline planRef={planRef} engine={engine} waves={{ a: null, b: null }} deck="a" lane="volume" loop={null} onLoop={onLoop} onEdit={onEdit} />);
-  return { engine, onLoop, onEdit, box: screen.getByTestId("plan-timeline") };
+  render(<PlanTimeline planRef={planRef} engine={engine} waves={{ a: null, b: null }} loop={null} onLoop={onLoop} />);
+  return { engine, onLoop, box: screen.getByTestId("plan-timeline") };
 }
 const at = (x: number, y: number) => ({ clientX: x, clientY: y, button: 0, pointerId: 1 });
 const WAVE_Y = 60; // inside deck A, between the volume lane's points
@@ -72,28 +71,5 @@ describe("the plan timeline", () => {
     fireEvent.pointerDown(box, at(101, RULER_Y));
     fireEvent.pointerUp(box, at(101, RULER_Y));
     expect(onLoop).toHaveBeenLastCalledWith(null);
-  });
-
-  it("drags a keyframe rather than scrubbing, with an edit on every move", () => {
-    const { engine, onEdit, box } = setup();
-    // the volume lane's second point: beat 32, value 1, at the top of deck A
-    fireEvent.pointerDown(box, at(320, 30));
-    fireEvent.pointerMove(box, at(320, 64));
-    fireEvent.pointerMove(box, at(320, 70));
-    fireEvent.pointerUp(box, at(320, 70));
-    expect(engine.scrub).not.toHaveBeenCalled();
-    expect(onEdit).toHaveBeenCalledTimes(2);
-    const moved: MixPlan = onEdit.mock.calls[0][0];
-    expect(moved.a.lanes.volume[1].beat).toBe(32);
-    expect(moved.a.lanes.volume[1].value).toBeLessThan(1);
-    expect(moved.edited).toBe(true);
-  });
-
-  it("adds a keyframe on a double-click in the lane's deck, and not in the other", () => {
-    const { onEdit, box } = setup();
-    fireEvent.doubleClick(box, at(480, WAVE_Y));
-    expect(onEdit.mock.calls[0][0].a.lanes.volume).toHaveLength(3);
-    fireEvent.doubleClick(box, at(480, 150));
-    expect(onEdit).toHaveBeenCalledTimes(1);
   });
 });

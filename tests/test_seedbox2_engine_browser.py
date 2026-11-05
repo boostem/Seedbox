@@ -279,11 +279,14 @@ def test_the_mixes_page_scrubs_loops_and_takes_edits_while_it_plays(tmp_path, mo
                     click("Loop the transition")
                     assert pressed("Loop the transition")
 
-                    # A keyframe dragged while it plays: B's edit is there, and the transport doesn't stop or jump
+                    # A keyframe dragged while it plays, on Manual's fader row: B's edit is there, and the transport doesn't stop or jump
                     before = out()
-                    y_top = 22 + 8  # volume 1 at the deck's top; A's point at beat 48 is at 0, its bottom
-                    y_of = lambda v: y_top + (1 - v) * (84 - 16)  # noqa: E731
-                    assert not cdp.eval("""[...document.querySelectorAll('button')].find((b) => b.textContent.includes('Discard')) !== undefined""")
+                    assert cdp.eval("""[...document.querySelectorAll('button')].find((b) => b.textContent.includes('Reset to auto')).disabled""")
+                    cdp.eval("""[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent === 'Manual').click()""")
+                    frontend._wait(lambda: cdp.eval("!!document.querySelector('[data-testid=lane-a-volume]')"), 5, "the Manual view")
+                    box.update(cdp.eval("(() => { const r = document.querySelector('[data-testid=plan-timeline]').getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width }; })()"))  # Manual has no controls above it
+                    row = cdp.eval("(() => { const r = document.querySelector('[data-testid=lane-a-volume]').getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()")
+                    y_of = lambda v: row["y"] - box["y"] + 5 + (1 - v) * (row["h"] - 10)  # noqa: E731
                     mouse("mousePressed", 16.0, y_of(0.8))
                     for v in (0.7, 0.5, 0.3, 0.15):
                         mouse("mouseMoved", 16.0, y_of(v))
@@ -295,7 +298,18 @@ def test_the_mixes_page_scrubs_loops_and_takes_edits_while_it_plays(tmp_path, mo
                     assert 16.0 <= after["beat"] < 48.0
                     assert after["beat"] != before["beat"]
                     assert pressed("B: Your edit")
-                    assert cdp.eval("""[...document.querySelectorAll('button')].some((b) => b.textContent.includes('Discard'))""")
+                    assert not cdp.eval("""[...document.querySelectorAll('button')].find((b) => b.textContent.includes('Reset to auto')).disabled""")
+
+                    # it's saved a moment later, and undo takes the whole drag back while it plays
+                    def saved_volume() -> float:
+                        return cdp.eval(f"""fetch('/api/mixes/plans/{a}/{b}/live').then((r) => r.json()).then((l) => l.plan.a.lanes.volume[1].value)""")
+
+                    frontend._wait(lambda: abs(saved_volume() - 0.15) < 0.03, 5, "the edit to be saved")
+                    cdp.eval("""document.querySelector('button[aria-label=Undo]').click()""")
+                    frontend._wait(lambda: abs(saved_volume() - 0.8) < 0.001, 5, "the undo to be saved")
+                    assert out()["playing"] is True
+                    cdp.eval("""document.querySelector('button[aria-label=Redo]').click()""")
+                    assert pressed("B: Your edit")
 
                     # A/B: both ways round, playing throughout
                     click("A: Auto")

@@ -24,6 +24,7 @@ export function worstPlan(beats: number, offTempo: boolean): MixPlan {
     grid: [{ start_beat: 0, start_s: 0.5, bpm: offTempo ? BPM * 1.02 : BPM }],
     pinned: [],
     key_shift: 0,
+    pinned: [],
     play_from_beat: 0,
     play_to_beat: beats,
     lanes: lanes({

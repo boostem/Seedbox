@@ -1,14 +1,12 @@
 /**
- * A plan on its master timeline: both decks' waveforms, the loop region, one lane's keyframes and the playhead.
+ * A plan on its master timeline: both decks' waveforms, the loop region and the playhead. `LaneStack` has the keyframes.
  *
  * - Drag on the waveforms: scrub, audibly. Letting go carries on playing from there, if it was playing.
  * - Drag on the ruler: select a loop, on whole beats. A click on the ruler clears it.
- * - Drag a keyframe, double-click to add one: the edit is heard as the pointer moves.
  *
  * Everything here that moves is painted from refs (PERFORMANCE.md): React doesn't render per move or per frame.
  */
 import { type PointerEvent as ReactPointerEvent, type RefObject, useEffect, useLayoutEffect, useRef } from "react";
-import { LANE_RANGES } from "@/api/mixplan.generated";
 import type { MixPlan } from "@/api/mixplan.generated";
 import { deckTime } from "@/audio/engine/position";
 import { setupCanvas } from "@/features/waveform/draw";
@@ -16,7 +14,7 @@ import { useFrame, useWidthRef } from "@/features/waveform/hooks";
 import { alpha, wavePalette } from "@/features/waveform/palette";
 import type { WaveData } from "@/features/waveform/prepare";
 import { mayDraw } from "@/lib/frameCap";
-import { addKeyframe, type DeckId, type LaneName, laneOf, moveKeyframe, withLane } from "./lanes";
+import type { DeckId } from "./lanes";
 
 /** What the timeline needs of the engine. */
 export interface TimelineEngine {
@@ -32,12 +30,8 @@ export interface PlanTimelineProps {
   planRef: RefObject<MixPlan>;
   engine: TimelineEngine;
   waves: Record<DeckId, WaveData | null>;
-  /** The lane with keyframes on it. */
-  deck: DeckId;
-  lane: LaneName;
   loop: [number, number] | null;
   onLoop: (loop: [number, number] | null) => void;
-  onEdit: (plan: MixPlan) => void;
   className?: string;
 }
 
@@ -45,21 +39,18 @@ const RULER = 22;
 const DECK_H = 84;
 const GAP = 2;
 const HEIGHT = RULER + DECK_H * 2 + GAP;
-const GRAB_PX = 7;
-const PAD = 8; // the lane's top and bottom inside its deck
 
 type Drag =
   | { kind: "scrub" }
-  | { kind: "loop"; from: number; to: number }
-  | { kind: "keyframe"; index: number };
+  | { kind: "loop"; from: number; to: number };
 
-export function PlanTimeline({ planRef, engine, waves, deck, lane, loop, onLoop, onEdit, className }: PlanTimelineProps) {
+export function PlanTimeline({ planRef, engine, waves, loop, onLoop, className }: PlanTimelineProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const topRef = useRef<HTMLCanvasElement>(null);
   const drag = useRef<Drag | null>(null);
-  const shown = useRef({ deck, lane, loop });
-  shown.current = { deck, lane, loop };
+  const shown = useRef({ loop });
+  shown.current = { loop };
 
   const range = () => planRef.current.window;
   const xOf = (beat: number, width: number) => {
@@ -71,14 +62,6 @@ export function PlanTimeline({ planRef, engine, waves, deck, lane, loop, onLoop,
     return a + (Math.max(0, Math.min(width, x)) / (width || 1)) * (b - a);
   };
   const deckTop = (id: DeckId) => (id === "a" ? RULER : RULER + DECK_H + GAP);
-  const yOf = (value: number) => {
-    const [lo, hi] = LANE_RANGES[shown.current.lane];
-    return deckTop(shown.current.deck) + PAD + (1 - (value - lo) / (hi - lo)) * (DECK_H - 2 * PAD);
-  };
-  const valueOf = (y: number) => {
-    const [lo, hi] = LANE_RANGES[shown.current.lane];
-    return lo + (1 - (y - deckTop(shown.current.deck) - PAD) / (DECK_H - 2 * PAD)) * (hi - lo);
-  };
 
   const paintBase = () => {
     const c = baseRef.current;
@@ -128,26 +111,6 @@ export function PlanTimeline({ planRef, engine, waves, deck, lane, loop, onLoop,
       ctx.fillRect(Math.round(x0), 0, 1, HEIGHT);
       ctx.fillRect(Math.round(x1), 0, 1, HEIGHT);
     }
-    const keyframes = laneOf(planRef.current[shown.current.deck], shown.current.lane);
-    if (keyframes.length) {
-      ctx.strokeStyle = p.accent;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(0, yOf(keyframes[0].value));
-      keyframes.forEach((k, i) => {
-        const x = xOf(k.beat, width);
-        if (i > 0 && keyframes[i - 1].curve === "hold") ctx.lineTo(x, yOf(keyframes[i - 1].value));
-        ctx.lineTo(x, yOf(k.value));
-      });
-      ctx.lineTo(width, yOf(keyframes[keyframes.length - 1].value));
-      ctx.stroke();
-      ctx.fillStyle = p.accent;
-      for (const k of keyframes) {
-        ctx.beginPath();
-        ctx.arc(xOf(k.beat, width), yOf(k.value), 3.5, 0, 2 * Math.PI);
-        ctx.fill();
-      }
-    }
     const x = Math.round(xOf(engine.beat(), width)) + 0.5;
     ctx.fillStyle = p.playhead;
     ctx.fillRect(x - 0.5, 0, 1.5, HEIGHT);
@@ -179,20 +142,6 @@ export function PlanTimeline({ planRef, engine, waves, deck, lane, loop, onLoop,
     return { x: e.clientX - r.left, y: e.clientY - r.top, width: r.width || widthRef.current };
   };
 
-  const hitKeyframe = (x: number, y: number, width: number): number => {
-    const keyframes = laneOf(planRef.current[shown.current.deck], shown.current.lane);
-    let best = -1;
-    let bestD = GRAB_PX;
-    keyframes.forEach((k, i) => {
-      const d = Math.hypot(xOf(k.beat, width) - x, yOf(k.value) - y);
-      if (d <= bestD) {
-        best = i;
-        bestD = d;
-      }
-    });
-    return best;
-  };
-
   const onDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -201,13 +150,8 @@ export function PlanTimeline({ planRef, engine, waves, deck, lane, loop, onLoop,
       const beat = Math.round(beatOf(x, width));
       drag.current = { kind: "loop", from: beat, to: beat };
     } else {
-      const index = hitKeyframe(x, y, width);
-      if (index >= 0) {
-        drag.current = { kind: "keyframe", index };
-      } else {
-        drag.current = { kind: "scrub" };
-        engine.scrub(beatOf(x, width));
-      }
+      drag.current = { kind: "scrub" };
+      engine.scrub(beatOf(x, width));
     }
     frameTop();
   };
@@ -215,17 +159,9 @@ export function PlanTimeline({ planRef, engine, waves, deck, lane, loop, onLoop,
   const onMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = drag.current;
     if (!d) return;
-    const { x, y, width } = pointer(e);
-    if (d.kind === "scrub") {
-      engine.scrub(beatOf(x, width));
-    } else if (d.kind === "loop") {
-      d.to = Math.round(beatOf(x, width));
-    } else {
-      const { deck: id, lane: name } = shown.current;
-      const plan = planRef.current;
-      const moved = moveKeyframe(laneOf(plan[id], name), name, d.index, beatOf(x, width), valueOf(y));
-      onEdit(withLane(plan, id, name, moved));
-    }
+    const { x, width } = pointer(e);
+    if (d.kind === "scrub") engine.scrub(beatOf(x, width));
+    else d.to = Math.round(beatOf(x, width));
     frameTop();
   };
 
@@ -242,19 +178,6 @@ export function PlanTimeline({ planRef, engine, waves, deck, lane, loop, onLoop,
     frameTop();
   };
 
-  const onDouble = (e: React.MouseEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - r.left;
-    const y = e.clientY - r.top;
-    const { deck: id, lane: name } = shown.current;
-    if (y < deckTop(id) || y >= deckTop(id) + DECK_H) return;
-    const width = r.width || widthRef.current;
-    const plan = planRef.current;
-    const { keyframes } = addKeyframe(laneOf(plan[id], name), name, beatOf(x, width), valueOf(y));
-    onEdit(withLane(plan, id, name, keyframes));
-    frameTop();
-  };
-
   return (
     <div
       ref={boxRef}
@@ -265,7 +188,6 @@ export function PlanTimeline({ planRef, engine, waves, deck, lane, loop, onLoop,
       onPointerMove={onMove}
       onPointerUp={onUp}
       onPointerCancel={onUp}
-      onDoubleClick={onDouble}
     >
       <canvas ref={baseRef} className="absolute inset-0 h-full w-full" />
       <canvas ref={topRef} className="pointer-events-none absolute inset-0 h-full w-full" />

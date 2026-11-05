@@ -20,7 +20,7 @@ from seedbox2.library.db import Database
 TRACK_COLUMNS = ("title", "artist", "album", "tags", "source", "source_id")
 ARTIFACT_KINDS = ("stems", "waveform", "embedding")
 JOB_STATES = ("queued", "running", "done", "failed", "cancelled")
-_JSON = ("tags", "data", "plan", "payload", "result")
+_JSON = ("tags", "data", "plan", "auto_plan", "payload", "result")
 _NOW = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
 
 
@@ -437,12 +437,29 @@ class Library:
         """Save the plan for this pair; with overwrite=False only if the pair has none from another source.
         Returns whether it was written."""
         sql = ("INSERT INTO plans (from_hash, to_hash, plan, user_edited, source) VALUES (?, ?, ?, ?, ?) "
-               f"ON CONFLICT DO UPDATE SET plan = excluded.plan, user_edited = excluded.user_edited, "
+               f"ON CONFLICT DO UPDATE SET plan = excluded.plan, auto_plan = NULL, user_edited = excluded.user_edited, "
                f"source = excluded.source, updated_at = {_NOW}")  # fmt: skip
         if not overwrite:
             sql += " WHERE plans.source = excluded.source"
         with self.db.write() as c:
             return c.execute(sql, (from_hash, to_hash, _dumps(plan), int(user_edited), source)).rowcount > 0
+
+    def save_plan_edit(self, from_hash: str, to_hash: str, plan: Any) -> bool:
+        """A person's edit of the pair's plan. The plan it started from stays in `auto_plan`, however often it's saved."""
+        with self.db.write() as c:
+            return c.execute(f"UPDATE plans SET auto_plan = COALESCE(auto_plan, plan), plan = ?, user_edited = 1, "
+                             f"source = 'local', updated_at = {_NOW} WHERE from_hash = ? AND to_hash = ?",
+                             (_dumps(plan), from_hash, to_hash)).rowcount > 0  # fmt: skip
+
+    def reset_plan_edit(self, from_hash: str, to_hash: str) -> bool:
+        """Back to the plan the edits started from. Its `edited` flag says whether a person made that one (an import)."""
+        p = self.plan(from_hash, to_hash)
+        if p is None or p["auto_plan"] is None:
+            return False
+        was_edited = isinstance(p["auto_plan"], dict) and bool(p["auto_plan"].get("edited"))
+        with self.db.write() as c:
+            return c.execute(f"UPDATE plans SET plan = auto_plan, auto_plan = NULL, user_edited = ?, updated_at = {_NOW} "
+                             "WHERE from_hash = ? AND to_hash = ?", (int(was_edited), from_hash, to_hash)).rowcount > 0  # fmt: skip
 
     def plan(self, from_hash: str, to_hash: str) -> dict | None:
         return _row(self.db.read().execute("SELECT * FROM plans WHERE from_hash = ? AND to_hash = ?",

@@ -2,7 +2,7 @@ import { Disc3 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, type SavedPlan } from "@/api/client";
 import { Page, PageBody, PageHeader, Panel, Select } from "@/components/ui";
-import { LivePlanPanel } from "@/features/mix/LivePlanPanel";
+import { TransitionEditor } from "@/features/mix/TransitionEditor";
 import { AreaPage } from "./AreaPage";
 
 const keyOf = (p: SavedPlan) => `${p.from_hash}/${p.to_hash}`;
@@ -39,7 +39,7 @@ export function MixesPage() {
               ))}
             </Select>
           </div>
-          <LivePlanPanel from={current.from_hash} to={current.to_hash} />
+          <TransitionEditor from={current.from_hash} to={current.to_hash} />
         </Panel>
       </PageBody>
     </Page>
