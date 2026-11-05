@@ -15,6 +15,8 @@ An order is scored by
   to how far apart this set's tracks are. CLAP cosines aren't an absolute scale (see the README).
 - **Vocals:** each run of three vocal-heavy tracks.
 - **Genre:** a change of genre tag, unless the tags share a word ("deep house", "tech house").
+- **Crate order** (only for a set built from several crates, `Problem(groups=...)`): a track playing outside its crate's
+  share of the set, more the further out it is. It's soft: a track leaves its crate when that saves more than it costs.
 
 What's unknown costs a small fixed amount where a term depends on a pair, so a known good move beats an unknown one, and
 nothing where it depends on a position. The weights are a prior, not fitted to anything: no human-ordered sets exist here
@@ -59,6 +61,8 @@ class Weights:
     vibe_unknown: float = 0.3
     vocal_run: float = 1.0
     genre: float = 0.4
+    crate_order: float = 0.75  # times (1 + positions outside its crate's share): a clash is worth three places out, and
+    # swapping two crates of four costs 30, more than an arc can save (`energy_level` is 3 per track at the very most)
 
 
 @dataclass(frozen=True)
@@ -134,6 +138,13 @@ _KEY_STEPS = np.array([[key_step(a, b) for b in range(24)] for a in range(24)])
 _SHIFTED = np.array([[shifted(k, s) for s in SHIFTS] for k in range(UNKNOWN_KEY + 1)], np.int64)  # key x shift's index
 
 
+def key_table(w: Weights) -> np.ndarray:
+    """The cost of a move from one key index to another, unknown keys included."""
+    table = np.full((UNKNOWN_KEY + 1, UNKNOWN_KEY + 1), w.key_unknown)
+    table[:24, :24] = w.key * _KEY_STEPS
+    return table
+
+
 # --- tempo ----------------------------------------------------------------------------------------------------------
 
 
@@ -207,11 +218,20 @@ def _vibe_matrix(tracks: Sequence[TrackFeatures]) -> tuple[np.ndarray, np.ndarra
     return np.nan_to_num(scaled), known
 
 
+def group_bands(groups: Sequence[int] | np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Per item, the first and last position of its group's share of the set: the groups in order, each as long as it has
+    tracks."""
+    groups = np.asarray(groups, np.int64)
+    names, inverse, counts = np.unique(groups, return_inverse=True, return_counts=True)
+    ends = np.cumsum(counts) if names.size else counts
+    return (ends - counts)[inverse], (ends - 1)[inverse]
+
+
 class Problem:
     """The numbers of one set under one arc and journey: items by index, positions 0..n-1."""
 
     def __init__(self, tracks: Sequence[TrackFeatures], arc: Arc, journey: TempoJourney | None = None,
-                 weights: Weights | None = None) -> None:  # fmt: skip
+                 weights: Weights | None = None, groups: Sequence[int] | None = None) -> None:  # fmt: skip
         self.tracks = list(tracks)
         self.arc = arc
         self.w = w = weights or Weights()
@@ -240,11 +260,12 @@ class Problem:
         self.terms_vibe = np.where(self.vibe_known, w.vibe * self.vibe, w.vibe_unknown)
         self.terms_genre = w.genre * self.genre_change
         self.base_pairs = tempo + self.terms_vibe + self.terms_genre
-        self._key_table = np.full((UNKNOWN_KEY + 1, UNKNOWN_KEY + 1), w.key_unknown)
-        self._key_table[:24, :24] = w.key * _KEY_STEPS
+        self._key_table = key_table(w)
         self.level_cost = self._level_cost()
         self.journey_cost = self._journey_cost()
-        self.slot = self.level_cost + self.journey_cost
+        self.groups = None if groups is None else np.asarray(groups, np.int64)
+        self.crate_cost = self._crate_cost()
+        self.slot = self.level_cost + self.journey_cost + self.crate_cost
 
     # --- set-up -----------------------------------------------------------------------------------------------------
 
@@ -284,6 +305,15 @@ class Problem:
         bpm = np.nan_to_num(self.bpm, nan=1.0)[:, None]
         away = np.abs(_fold(bpm, self.targets[None, :]) / self.targets[None, :] - 1) * 100 / TEMPO_PREFER_PCT
         return self.w.journey * away * known[:, None]
+
+    def _crate_cost(self) -> np.ndarray:
+        n = self.n
+        if self.groups is None or not n:
+            return np.zeros((n, n))
+        first, last = group_bands(self.groups)
+        positions = np.arange(n)[None, :]
+        outside = np.maximum(first[:, None] - positions, 0) + np.maximum(positions - last[:, None], 0)
+        return self.w.crate_order * (outside + (outside > 0))
 
     # --- keys -------------------------------------------------------------------------------------------------------
 

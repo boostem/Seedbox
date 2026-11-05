@@ -28,7 +28,7 @@ function Scores({ a, b }: { a: number; b: number }) {
   );
 }
 
-function LibraryRow({ track, adding, onAdd }: { track: LibraryBridge; adding: boolean; onAdd: () => void }) {
+export function LibraryRow({ track, adding, onAdd }: { track: LibraryBridge; adding: boolean; onAdd: () => void }) {
   return (
     <li className="flex items-center gap-3 py-1">
       <div className="min-w-0 flex-1">

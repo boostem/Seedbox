@@ -113,6 +113,8 @@ def transition(p: Problem, order: Sequence[int], shifts: np.ndarray, at: int) ->
     terms = {"key": key_cost, "tempo": float(p.terms_tempo[a, b]), "energy": energy_step + float(p.level_cost[b, at + 1]),
              "journey": float(p.journey_cost[b, at + 1]), "vibe": float(p.terms_vibe[a, b]),
              "genre": float(p.terms_genre[a, b]), "vocals": float(p.run_costs(pos)[0, at]) if at + 2 < len(order) else 0.0}  # fmt: skip
+    if p.groups is not None:
+        terms["crate"] = float(p.crate_cost[b, at + 1])
     # Only what the two tracks do to each other: not how they fit the arc or the journey, nor a run of three. A shift
     # stays on for the whole track, so each of its two transitions carries half.
     fixes = p.w.key_fix / 2 * (int(shifts[a] != 0) + int(shifts[b] != 0))

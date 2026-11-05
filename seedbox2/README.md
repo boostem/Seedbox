@@ -31,7 +31,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_bridge.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py tests/test_seedbox2_now_playing.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_bridge.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py tests/test_seedbox2_longset.py tests/test_seedbox2_now_playing.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -394,6 +394,31 @@ those cases on the cost scale, which is itself a prior: it hasn't met real sets.
   analyses finish, so the track shows up there once it has a tempo and key. Calls keep to one at a time, 1.2 s apart.
 - **Putting one in:** `POST /api/sets/{id}/bridge` `{position, hash, from, to}`. Pins after it move with their tracks; 409 if
   those two aren't neighbours there any more. `GET /api/sets/{id}/bridge?position&limit` and `.../bridge/online` search.
+
+**Long sets** (#62, `seedbox2/sets/longset.py`, `#/crates`): one set from several crates, sets or the whole library, in the
+order they're ticked. An imported playlist is a crate, so that's how playlists come in. A saved smart crate isn't a source
+yet.
+
+- **Crate order:** each source gets a share of the set's positions, in order, and a track playing outside its share costs
+  `Weights.crate_order` x (1 + the positions it's out), in the same cost as everything else. So it's soft: a track leaves
+  its crate when that saves more than it costs, and the page says how many did. Switched off, the crates mix freely. A track
+  in two sources plays once, for the first, and a track that comes back in a set comes in once.
+- **Length:** at most 200 tracks, what the solver takes in about 10 s. Crates and sets stay whole if they fit, and the
+  library fills up what's left (60 tracks if no length is asked for, or as many as the crates have if that's more). Sources
+  too large for the length are cut to their shares by a greedy walk along the arc and the tempo journey: key, tempo and
+  arc for every track, then the embeddings of the best 30 per pick. The solver then orders what was picked.
+- **Bridges:** for each ordered pair of sources, the cheapest pair from the last 5 tracks of one to the first 5 of the other,
+  by the same key, tempo, vibe and genre costs plus the step in energy, with no semitone fixes. A crate's end is its last
+  tracks as it stands, so it says little until the crate has a running order. `good` (2.0 or less) is a prior like the
+  weights, not fitted to anything; a clash or a tempo over the limit is `poor`, and a pair without a key or tempo `unknown`.
+- **Gaps:** a built set shows #64's scores, and "Find a bridge" runs its library search before the set is saved, leaving out
+  the set's own tracks. "Add here" puts one in, and the set is explained again. Tunebat's recommendations need a saved set:
+  they're on `#/sets` once it is.
+- **Timings:** on a development machine, 5,000 random synthetic tracks with embedding files: whole library to 60 tracks
+  0.8 s, to 200 tracks 4 to 7 s; three crates of 50, about 4 s (without embedding files). Not measured on the
+  reference laptops, and none of this has met a real library: the crate-order weight is a prior too.
+- **API:** `POST /api/sets/build` (`sources`, `max_tracks`, `keep_order`, and the order settings), `/build/explain`,
+  `/build/bridge` and `/bridges`. Nothing is saved until the result goes to `POST /api/sets`.
 
 **The renderer** (#69, `seedbox2/mix/render.py`, on `stream.py`): plays a stored plan of either version, holding only
 what it plays. A deck decodes the parts of its file the window and its trim need, sample-accurate against a decode of

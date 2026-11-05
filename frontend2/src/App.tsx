@@ -1,4 +1,4 @@
-import { Boxes, Compass } from "lucide-react";
+import { Compass } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { useServerEvents } from "@/api/events";
 import { AppShell } from "@/components/shell/AppShell";
@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 import { navigate, type Route, useRoute } from "@/lib/router";
 import { AreaPage } from "@/pages/AreaPage";
 import { BenchPage } from "@/pages/BenchPage";
+import { CratesPage } from "@/pages/CratesPage";
 import { HomePage } from "@/pages/HomePage";
 import { LibraryPage } from "@/pages/LibraryPage";
 import { ListenPage } from "@/pages/ListenPage";
@@ -32,7 +33,7 @@ function Page({ route }: { route: Route }) {
     case "library":
       return <LibraryPage />;
     case "crates":
-      return <AreaPage title="Crates" icon={Boxes} description="Group tracks into crates, and plan sets across them (#40, #62)." />;
+      return <CratesPage />;
     case "sets":
       return <SetsPage />;
     case "discover":
