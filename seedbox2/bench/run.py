@@ -88,6 +88,7 @@ def summarise(items: list[dict]) -> dict:
 def check_budgets(results: dict) -> list[dict]:
     """One row per budget that has a measured value: {section, field, value, limit, unit, what, ok}."""
     from seedbox2.bench import FRONTEND_BUDGETS, REACT_COMMITS_BUDGET, RENDERLESS_SCENARIOS
+    from seedbox2.bench.frontend import ENGINE_CPU_BUDGET
 
     rows = []
     sections = results.get("stages", {})
@@ -106,6 +107,10 @@ def check_budgets(results: dict) -> list[dict]:
                 ok = sc[field] >= limit if field == "fps" else sc[field] <= limit
                 rows.append({"section": f"frontend.{name}", "field": field, "value": sc[field], "limit": limit,
                              "unit": unit, "what": what, "ok": ok})  # fmt: skip
+    for name, sc in results.get("engine", {}).get("scenarios", {}).items():
+        rows.append({"section": f"engine.{name}", "field": "cpu_percent", "value": sc["cpu_percent"],
+                     "limit": ENGINE_CPU_BUDGET, "unit": "%", "what": "of one core, 2 decks x 4 stems",
+                     "ok": sc["cpu_percent"] <= ENGINE_CPU_BUDGET})  # fmt: skip
     return rows
 
 

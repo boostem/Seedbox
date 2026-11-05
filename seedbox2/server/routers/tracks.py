@@ -6,18 +6,26 @@
   (at the front of the light queue); the `job.done` event says when to fetch again.
 - `GET /tracks/{hash}/stems/{stem}` (#44): one stem's file (FLAC or Opus, with Range requests), which also counts as
   using the track's stems for the cache's eviction. 404 until they are separated.
+- `GET /tracks/{hash}/audio` (#65): what the live engine can stream: `frames`, `chunk_frames`, and `sources`: `mix`, plus
+  the four stems once they're separated.
+- `GET /tracks/{hash}/audio/{source}/{index}`: chunk `index` of a source as FLAC at 44.1 kHz stereo, its samples exactly
+  those of a whole decode from `chunk_frames * index` on: chunks butt up without a seam. 404 past the end, or for stems
+  that aren't there.
 - `GET /tracks/{hash}/artwork` (#73): the cover saved from the file's tags at import, for the library table.
 """
 
 from __future__ import annotations
 
 import gzip
+import math
+import subprocess
 import zlib
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
 
+from musicreco.paths import ffmpeg_path
 from seedbox2.analysis import stems, waveform
 from seedbox2.server.deps import LibraryDep, get_jobs
 
@@ -82,6 +90,81 @@ def track_stem(hash_: str, stem: str, lib: LibraryDep) -> Response:
     stems.touch(folder)  # type: ignore[arg-type]
     return FileResponse(files[stem], media_type=_STEM_TYPES.get(files[stem].suffix, "application/octet-stream"),
                         headers={"Cache-Control": "no-cache"})  # fmt: skip
+
+
+CHUNK_SAMPLE_RATE = 44100
+CHUNK_FRAMES = 20 * CHUNK_SAMPLE_RATE
+_PRE_ROLL = CHUNK_SAMPLE_RATE // 4  # samples decoded and thrown away after a seek: decoders settle on real history
+_CHUNK_TIMEOUT_S = 120
+
+
+def _chunk_flac(path: Path, index: int, *, seek: bool) -> bytes:
+    """One chunk of a file, sample-exact against a whole decode. Only FLAC at 44.1 kHz (the stems) lands exactly on a
+    seek: AAC and Opus seek off by hundreds of samples, and a resampler's first samples aren't a whole decode's. The rest
+    decode from the start, which costs about a second at the end of a long track."""
+    ffmpeg = ffmpeg_path()
+    if ffmpeg is None:
+        raise HTTPException(503, "ffmpeg isn't installed")
+    start = index * CHUNK_FRAMES
+    skip = _PRE_ROLL if seek and start else start
+    args = [ffmpeg, "-v", "error", "-nostdin"]
+    if seek and start:
+        args += ["-ss", f"{(start - skip) / CHUNK_SAMPLE_RATE:.6f}"]
+    args += ["-i", str(path), "-vn", "-af",
+             f"aresample={CHUNK_SAMPLE_RATE},atrim=start_sample={skip}:end_sample={skip + CHUNK_FRAMES},"
+             "asetpts=PTS-STARTPTS",
+             "-ac", "2", "-c:a", "flac", "-sample_fmt", "s32", "-compression_level", "0", "-f", "flac", "pipe:1"]  # fmt: skip
+    try:
+        r = subprocess.run(args, capture_output=True, timeout=_CHUNK_TIMEOUT_S, check=False)
+    except subprocess.TimeoutExpired as e:
+        raise HTTPException(504, "decoding took too long") from e
+    if r.returncode != 0:
+        raise HTTPException(500, f"couldn't decode the audio: {r.stderr.decode(errors='replace')[-300:]}")
+    return r.stdout
+
+
+def _track_file(lib: LibraryDep, hash_: str) -> tuple[dict, Path]:
+    track = lib.track(hash_)
+    if track is None:
+        raise HTTPException(404, "no such track")
+    for p in track["paths"]:
+        if Path(p).is_file():
+            return track, Path(p)
+    raise HTTPException(404, "the track's file isn't there")
+
+
+@router.get("/{hash_}/audio")
+def track_audio(hash_: str, lib: LibraryDep) -> dict:
+    track, _ = _track_file(lib, hash_)
+    folder = stems.current(lib, hash_)
+    files = waveform.stem_files(folder) if folder is not None else None
+    return {
+        "frames": math.ceil(float(track["duration"] or 0.0) * CHUNK_SAMPLE_RATE),
+        "chunk_frames": CHUNK_FRAMES,
+        "sample_rate": CHUNK_SAMPLE_RATE,
+        "sources": ["mix", *(files or ())],
+    }
+
+
+@router.get("/{hash_}/audio/{source}/{index}", response_class=Response,
+            responses={200: {"content": {"audio/flac": {}}}, 404: {}})  # fmt: skip
+def track_audio_chunk(hash_: str, source: str, index: int, lib: LibraryDep) -> Response:
+    if index < 0:
+        raise HTTPException(404, "no such chunk")
+    track, path = _track_file(lib, hash_)
+    if source == "mix":
+        seek = False
+    else:
+        folder = stems.current(lib, hash_)
+        files = waveform.stem_files(folder) if folder is not None else None
+        if not files or source not in files:
+            raise HTTPException(404, "no such stem yet")
+        stems.touch(folder)  # type: ignore[arg-type]
+        path = files[source]
+        seek = path.suffix == ".flac"
+    if index * CHUNK_FRAMES >= math.ceil(float(track["duration"] or 0.0) * CHUNK_SAMPLE_RATE):
+        raise HTTPException(404, "no such chunk")
+    return Response(_chunk_flac(path, index, seek=seek), media_type="audio/flac", headers={"Cache-Control": "no-cache"})
 
 
 _IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}

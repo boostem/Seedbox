@@ -295,3 +295,50 @@ def run(dist: Path = DIST, seconds: float = 5.0, cpu_throttle: float = 1.0, size
                 f"{sc['long_tasks']} long tasks (longest {sc['long_task_ms_max']:.0f} ms), "
                 f"{sc['react_commits_per_s']:.1f} React commits/s")
     return result
+
+
+ENGINE_CPU_BUDGET = 15.0  # % of one core, 2 decks x 4 stems on the reference laptops (seedbox2/README.md)
+
+
+def engine_ok(result: dict) -> bool:
+    """Within budget, and the worklet computed the same samples as the core outside it. A skip isn't a failure."""
+    if "skipped" in result:
+        return True
+    return all(r["cpu_percent"] < ENGINE_CPU_BUDGET and r["worklet_vs_core_max"] < 1e-5 for r in result["scenarios"].values())
+
+
+def run_engine(dist: Path = DIST, seconds: float = 30.0, chrome: str | None = None, log=print) -> dict:
+    """The real AudioWorklet in an OfflineAudioContext, flat out: wall time over audio time is the share of one core it
+    takes. `on_tempo` copies its stems; `off_tempo` also resamples each (varispeed), the most it does."""
+    chrome = chrome or find_chrome()
+    if chrome is None:
+        return {"skipped": "no Chrome, Chromium or Edge found (set $CHROME)"}
+    if not (dist / "index.html").exists():
+        return {"skipped": f"{dist} isn't built (cd frontend2 && deno task build)"}
+    from websockets.sync.client import connect
+
+    from seedbox2.server import start_server
+
+    server = start_server(dist, port=0)
+    try:
+        with tempfile.TemporaryDirectory(prefix="seedbox2-bench-chrome-") as profile:
+            proc, errors, ws = _launch(chrome, Path(profile), (800, 600))
+            try:
+                with connect(ws, max_size=None, open_timeout=30) as conn:
+                    cdp = Cdp(conn)
+                    agent = cdp.eval("navigator.userAgent")
+                    cdp.call("Page.enable")
+                    cdp.call("Page.navigate", url=f"{server.url.rstrip('/')}/#/bench")
+                    _wait(lambda: cdp.eval("!!window.__seedboxBench?.ready"), 30, "the #/bench page")
+                    scenarios_ = {}
+                    for name, off in (("on_tempo", "false"), ("off_tempo", "true")):
+                        scenarios_[name] = cdp.eval(f"window.__seedboxBench.engine({seconds}, {off})", timeout=seconds * 20 + 60)
+            finally:
+                _stop(proc)
+                errors.close()
+    finally:
+        server.stop()
+    for name, r in scenarios_.items():
+        log(f"engine  {name}: {r['cpu_percent']:.1f}% of one core ({r['seconds']:g} s of audio in {r['wall_s']:.2f} s), "
+            f"worklet vs core {r['worklet_vs_core_max']:.1e}")
+    return {"browser": agent, "budget_percent": ENGINE_CPU_BUDGET, "scenarios": scenarios_}

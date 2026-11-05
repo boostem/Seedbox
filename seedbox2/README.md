@@ -31,7 +31,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_onboarding.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_onboarding.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -241,6 +241,32 @@ It needs `mir_eval` (in `requirements-dev.txt`).
   workflow (`.github/workflows/eval-nightly.yml`) does that on the first 50 GiantSteps tracks against
   `seedbox2/eval/baseline.json`: an analysis ticket that improves a number refreshes it with `--write-baseline`.
 
+**The live engine** (#65, `frontend2/src/audio/engine/`): plays a plan in the browser with no server render.
+`new LiveEngine()`, then `load(deck, { hash, trimDb })`, `schedule(plan)`, `play(when?)`, `pause()`, `seek(beat)`,
+`setLoop(startBeat, endBeat)`, and `beat()` / `seconds()` for playheads (`index.ts` has the whole API). One AudioWorklet
+(`processor.ts`) runs `core.ts`: both decks' graphs and the master, on one sample clock. A deck is four stems or the full
+track -> per-stem gain -> trim -> FX -> LR4 isolator -> filter -> fader, with echo and reverb sends. The core has no browser
+in it, so the same code runs under deno for the parity test: `tests/test_seedbox2_engine_parity.py` nulls it against
+`musicreco/mixrender.py` on blends, EQ, filter sweeps, loops, effects, sends and varispeed (-69 to -75 dB without stretch,
+against a limit of -40 dB; -42 dB in varispeed). When changing either engine's DSP, change both: `constants.ts` lists what they share.
+
+Audio comes in 20 s chunks: `GET /api/tracks/{hash}/audio/{source}/{index}`, FLAC at 44.1 kHz, cut so that they're a whole
+decode sample for sample. `loader.ts` fetches what the plan plays over the next 25 s and evicts what it doesn't need, with
+at most 200 MB decoded in the page, whether held or being decoded. A deck whose track has no stems, or loses them to the
+cache's eviction, plays the full track with its stem lanes folded into its EQ (`fold.ts`, the same result as
+`validate(has_stems=...)`).
+
+What it doesn't do yet:
+- **Key lock and `key_shift` (#66):** off its own tempo a deck plays varispeed, so its pitch moves with the tempo, as a
+  render without key lock does.
+- **The renderer's master (#58):** its leveller and limiter look ahead without limit. Live, the leveller is the same law
+  reacting about a second late, and the limiter has 25 ms of latency and works on sample peaks. They only act on loud
+  blends; below them, the two engines null.
+- **Trim:** the caller passes each deck's `trimDb`; nothing computes it in the page yet (0 dB by default).
+- **Screens:** nothing in the UI plays through it yet; #67 and #77 are its first users, and `audio/player.ts` stays until then.
+
+`python -m seedbox2.bench engine` measures it in headless Chrome (below).
+
 **Mix metrics** (#54): `seedbox2/eval/mixmetrics.py` measures a rendered transition from its audio: beat alignment
 between the decks (ms), bass overlap below 120 Hz (s, dB·s), vocal overlap (s), the short-term loudness dip/bump
 against the tracks (LU), true peak and clipped samples, a spectral masking index per band, and the key distance and
@@ -341,6 +367,7 @@ There is no GPU requirement and no CUDA.
 | Stems (background) | ≤ 60 s per track (M1), ≤ 120 s (x86) |
 | Plan one transition | < 500 ms |
 | Render a 32-bar transition | < 2 s, < 300 MB |
+| Live engine, 2 decks x 4 stems | < 15% of one core, ~200 MB decoded |
 | Whole app peak RSS | < 2.5 GB |
 | Installer (without models) | < 250 MB |
 
