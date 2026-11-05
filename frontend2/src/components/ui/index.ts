@@ -9,7 +9,6 @@ export { Field, Input, Select, type FieldProps, type InputProps } from "./Input"
 export { Kbd } from "./Kbd";
 export { Modal, type ModalProps } from "./Modal";
 export { InfoRow, Page, PageBody, PageHeader, Panel, PanelHeader, type PageHeaderProps } from "./Panel";
-export { PeaksWaveform, type PeaksWaveformProps } from "./PeaksWaveform";
 export { ProgressBar, type ProgressBarProps, type ProgressTone } from "./ProgressBar";
 export { Skeleton, WaveSkeleton, type WaveSkeletonProps } from "./Skeleton";
 export { Slider, type SliderProps } from "./Slider";

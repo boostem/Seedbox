@@ -17,8 +17,9 @@ when the *structure* changes (another track, a panel opens), not 60 times a seco
   about coarse facts only, with `useViewFact(ctl, (v) => v.span < duration)`: it re-renders when the boolean flips.
 - **Hover readouts** (time, bar) are elements that pointer handlers move and fill through refs, not `useState`.
 - **Labels that change with the view** ("12 bars visible") are written with `textContent` in the draw.
-- An SVG with hundreds of elements is fine to render once; it must never take per-frame props
-  (`PeaksWaveform` takes a `trackId` and moves its own playhead).
+- An SVG with hundreds of elements is fine to render once; it must never take per-frame props.
+- A waveform strip (`WaveOverview`) is painted once: its playhead and dimmer unplayed part are an overlay, moved when
+  the playhead reaches another device pixel.
 
 Measured: the benchmark counts React commits (`react_commits_per_s`). The waveform scenarios (zoom, scroll, hover,
 play) are held to 5 a second at most; they ran at 30–60 before this rule.

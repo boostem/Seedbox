@@ -1,13 +1,14 @@
 import { Play } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { player } from "@/audio/player";
 import { Badge, Button, Page, PageBody, PageHeader, Panel, PanelHeader } from "@/components/ui";
 import { MixChecks } from "@/features/mix";
 import { StemViewTabs, StemWaveform, TrackWaveform, WaveModeTabs, WaveOverview, WavePlaceholder } from "@/features/waveform";
-import { demoAnalysis } from "@/lib/demo/analysis";
+import { demoAnalysis, demoClip } from "@/lib/demo/analysis";
 import { DemoTrackTable } from "@/lib/demo/tracks";
 import { demoMixChecks } from "@/lib/demo/mixChecks";
 import { DEMO_HANDOFF_SPAN, DEMO_HANDOFF_START, demoHandoff } from "@/lib/demo/stems";
+import { toneWav } from "@/lib/demo/tone";
 import { toast } from "@/store/toasts";
 
 // class names spelled out: Tailwind only generates classes (and emits theme variables) it finds whole in the source
@@ -29,6 +30,12 @@ const SIZES = [["2xs", "text-2xs"], ["xs", "text-xs"], ["sm", "text-sm"], ["base
 export function UiPage() {
   const analysis = useMemo(demoAnalysis, []);
   const handoff = useMemo(demoHandoff, []);
+  const clip = useMemo(demoClip, []);
+  const clipUrl = useRef<string | null>(null);
+  const playClip = () => {
+    clipUrl.current ??= URL.createObjectURL(toneWav(20));
+    void player.play("demo-clip", clipUrl.current, { title: "Preview clip" });
+  };
   return (
     <Page>
       <PageHeader title="Design system" subtitle="Design language v2: the tokens in src/index.css, documented in DESIGN2.md" />
@@ -77,6 +84,15 @@ export function UiPage() {
               {[28, 36, 22].map((h) => (
                 <WaveOverview key={h} analysis={analysis} trackId="demo" height={h} sections={h > 24} onSeek={(t) => player.seek(t)} />
               ))}
+            </div>
+            <div className="mt-4 mb-1.5 flex items-center gap-2 text-xs text-fg-subtle">
+              Preview clip (20 s): the same strip
+              <Button size="sm" icon={Play} onClick={playClip}>
+                Play the clip
+              </Button>
+            </div>
+            <div className="max-w-xs">
+              <WaveOverview wave={clip} trackId="demo-clip" onSeek={(t) => player.seek(t)} />
             </div>
           </div>
         </Panel>
