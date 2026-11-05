@@ -31,7 +31,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -113,6 +113,44 @@ tracks and windows read the same file through the peak mip chain. `gainsAt` take
 React render, so a stem dims as the plan plays it down. The dimming applies to the whole view at the current gain;
 nothing shows a real plan yet: the now-playing view (#77) and transition editor (#79) mount it with the engine's
 clock (#65), and `#/ui` plays a synthetic bass hand-off.
+
+**Energy, loudness and the vibe** (#48, `seedbox2/analysis/energy.py`, `loudness.py`, `clap.py`, `vibe.py`): the
+`energy` job (light pool) runs once a track's beats have finished, and again if a grid or stems arrive later. One streamed
+decode at 48 kHz gives both analyses.
+
+- **Loudness:** BS.1770 in numpy: 400 ms K-weighted blocks every 100 ms and a 4x-oversampled true peak per second.
+  On 8 real tracks it agrees with ffmpeg's `ebur128` within the 0.1 dB ffmpeg prints (integrated at most 0.04 LU apart, true peak at most 0.05 dB). Those two curves answer everything else, so a change of sections needs no new decode:
+  `GET /api/analysis/{hash}/loudness` adds the integrated LUFS and true peak per section, and
+  `loudness.overlap_gain_db` is the gain that matches two tracks over an overlap, for the mix engine.
+- **Energy:** each bar gets loudness, onset density, brightness, and drums and bass presence, on fixed scales, from the
+  stems when they're cached and otherwise from proxies in the mix. `GET /api/analysis/{hash}/energy` has the 0-1 curve,
+  the track's 1-10 `rating`, and every bar's features.
+- **Calibration:** **not fitted to hand ratings yet: none exist.** The files carry no Mixed In Key tags either (checked on
+  1,500 of the library's files). The weights in `energy.CALIBRATION` are an expert prior. The scale comes from the
+  distribution of 152 real tracks (56 from the golden corpus, 96 from the library at random): their 5th percentile is a 3
+  and their 95th a 9. The order looks right (C418 and Boards of Canada at 1, acid and peak-time house at 9), but deep
+  house also reaches 9 where Mixed In Key would probably say 6, so treat the numbers as provisional. To fit it, rate at
+  least 15 tracks (`python -m seedbox2.eval energy template > ratings.toml`) and run `energy fit ratings.toml`, which prints
+  leave-one-out Spearman and mean error, and the `CALIBRATION` to paste.
+- **CLAP:** `laion/larger_clap_music_and_speech`, Xenova's FP16 ONNX export, chosen on the golden tracks over the music-only
+  checkpoint, whose text queries all returned the same tracks (results below). `python -m seedbox2.models.export
+  clap_audio --check` (and `clap_text`) checks the file and our front ends against torch and transformers:
+  the embeddings are within 2.4e-4 per component of torch's, the log-mel within 4e-5 dB and the tokens identical. The `clap` job embeds 3-5 windows of 10 s (`intro`, `main`, `outro`, and if there's room
+  `breakdown`, `second`), chosen from the `sections` analysis or the energy curve, into `<cache>/embeddings/`. On one thread a window takes about 0.36 s to embed, so a track costs a few seconds, plus 6 s to open the graph once per worker on a loaded machine. Opening it adds about 540 MB to the worker.
+- **Text:** `clap_text` runs in a worker that closes the 251 MB encoder afterwards, because any of the light workers could
+  otherwise keep a copy. Vectors are cached on disk, so a repeated text costs nothing. A new text took 1-2.6 s through a worker on a real library of 30 tracks, and a repeated one under 10 ms.
+- **Similarity:** `GET /api/analysis/{hash}/similar?limit&window&bpm&key&bpm_pct` compares each of the seed's windows with
+  the same window of the others, and keeps tracks within 6 % of its tempo (also half and double time) and adjacent on the
+  Camelot wheel, unless `bpm=false` or `key=false`. A track whose BPM or key is unknown doesn't pass a filter on it.
+  `POST /api/analysis/vibe/search` `{text, limit, bpm, bpm_pct, key}` ranks by a track's best window; the Python
+  function is `vibe.search`, which the set assistant (#63) and gap suggestions (#64) will call.
+
+Which CLAP (56 golden tracks, 3 windows each, FP16 against FP32 files): `larger_clap_music_and_speech` found the genre of
+43 % of the tracks from text alone, 73 % by nearest neighbour and 50 % in the top five. `larger_clap_music` scored 27 %,
+29 % and 30 %, and returned nearly the same tracks for every text ("dark", "warm", "euphoric"). The INT8 text encoder was
+rejected: its cosine with torch's falls to 0.97, enough to change rankings. Subtracting the library's mean vector didn't help
+either (38 % instead of 47 %). The 47 % uses the caption "this is X music", which `vibe.PROMPT` adds. This is a small test,
+and even the chosen model confuses neighbouring genres: expect a useful ordering, not exact labels.
 
 **Local music** (#40, `seedbox2/library/importer.py`, `watch.py`, `playlists_xml.py`, `tags.py`): MP3, AAC/M4A,
 FLAC, WAV, AIFF and OGG/Opus come in three ways. *Watch folders* (Settings; kept in `settings.json` next to the
@@ -421,7 +459,7 @@ Verified licences of the candidates (2026-10-29), for the model list (#42) and i
 |---|---|---|
 | beat_this | MIT | MIT |
 | HTDemucs | MIT | no licence given (upstream: "likely CC-NC-BY") |
-| LAION CLAP `larger_clap_music`, `clap-htsat-fused` | CC0-1.0 | Apache-2.0 |
+| LAION CLAP `larger_clap_music`, `larger_clap_music_and_speech`, `clap-htsat-fused` | CC0-1.0 | Apache-2.0 |
 | MERT, MuQ | Apache-2.0, MIT | CC BY-NC 4.0 |
 | madmom | BSD-2 | CC BY-NC-SA 4.0 |
 | Essentia | AGPL-3.0 | CC BY-NC-SA 4.0 (proprietary licence on request) |
