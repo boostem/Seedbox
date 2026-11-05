@@ -4,7 +4,7 @@
  */
 import { toast } from "@/store/toasts";
 import type { MixPlan } from "./mixplan.generated";
-import type { ArcTemplate, LibraryBridges, OnlineBridges, MasterStatus, MasterTarget, SetSession, SetOrderResult, SetOrderSettings, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
+import type { ArcTemplate, CrateLink, LongSetResult, SetSourceRef, LibraryBridges, OnlineBridges, MasterStatus, MasterTarget, SetSession, SetOrderResult, SetOrderSettings, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -202,6 +202,14 @@ export const api = {
     order: (id: number, opts?: RequestOptions) => get<SetOrderResult>(`/api/sets/${id}/order`, opts),
     /** The best order for these settings. Nothing is saved. */
     solveOrder: (id: number, settings: SetOrderSettings, opts?: RequestOptions) => post<SetOrderResult>(`/api/sets/${id}/order`, settings, opts),
+    /** A long set across crates, sets or the whole library. Nothing is saved. */
+    build: (body: { sources: SetSourceRef[]; max_tracks: number | null; keep_order: boolean } & Partial<SetOrderSettings>, opts?: RequestOptions) => post<LongSetResult>("/api/sets/build", body, opts),
+    /** These tracks as they stand, explained: a built set after a track was put in. */
+    explainBuild: (hashes: string[], settings: Partial<SetOrderSettings>, opts?: RequestOptions) => post<LongSetResult>("/api/sets/build/explain", { ...settings, hashes }, opts),
+    /** How the end of each source mixes into the start of each other one. */
+    bridges: (sources: SetSourceRef[], opts?: RequestOptions) => post<{ links: CrateLink[] }>("/api/sets/bridges", { sources }, opts),
+    /** #64's library search for a gap, in a set that isn't saved yet. */
+    buildBridge: (hashes: string[], position: number, settings: Partial<SetOrderSettings>, opts?: RequestOptions) => post<LibraryBridges>("/api/sets/build/bridge", { ...settings, hashes, position }, opts),
     applyOrder: (id: number, hashes: string[], settings: SetOrderSettings, opts?: RequestOptions) => put<SetOrderResult>(`/api/sets/${id}/order`, { ...settings, hashes }, opts),
     session: (id: number, opts?: RequestOptions) => get<SetSession>(`/api/sets/${id}/session`, opts),
     /** What would fit between this position and the next, from the library (#64). */

@@ -54,6 +54,10 @@ interface Shot {
   data?: Record<string, unknown>;
   /** GET paths that answer 500 for this shot. */
   fail?: string[];
+  /** POST responses for this shot, by path. */
+  posts?: Record<string, unknown>;
+  /** Buttons, labels and spans clicked after the page settled, by their text or aria-label, in turn. */
+  clicks?: string[];
 }
 
 const SYSTEM = {
@@ -192,6 +196,34 @@ const API: Record<string, unknown> = {
 
 // Every route, and the states each one has so far. Area tickets add their screens' states (empty, loading,
 // analysing, error) here as they land.
+const LONG_SET_GAP = 3;
+const LONG_SET = {
+  "/api/sets/bridges": {
+    links: [
+      { from_source: 0, to_source: 1, from: { hash: "h2", title: "Night Bus", artist: "Kerrin", bpm: 124, key: "10A", energy: 0.55, rating: 6 }, to: { hash: "h3", title: "Undertow", artist: "Halcyon Drive", bpm: 125, key: "10A", energy: 0.77, rating: 8 }, cost: 1.3, text: "energy +2, 10A → 10A, related vibe", flags: [], fit: "good" },
+      { from_source: 1, to_source: 0, from: { hash: "h5", title: "Long Way Home", artist: "Oda Mae", bpm: 127, key: "4B", energy: 0.66, rating: 7 }, to: { hash: "h0", title: "Morning Light", artist: "Halcyon Drive", bpm: 122, key: "8A", energy: 0.33, rating: 4 }, cost: 6.1, text: "energy -3, 4B → 8A", flags: ["key_clash"], fit: "poor" },
+    ],
+  },
+  "/api/sets/build": {
+    ...SET_ORDER,
+    order: SET_ORDER.order.map((t) => ({ ...t, pinned: false, source: t.position < 3 ? 0 : 1 })),
+    transitions: SET_ORDER.transitions.map((t, at) => (at === LONG_SET_GAP ? { ...t, text: "energy +1, 10A → 3A, tempo +1.0 %", flags: ["key_clash"], score: 41, gap: true } : t)),
+    sources: [{ kind: "crate", id: 1, name: "Peak time", tracks: 8, picked: 3 }, { kind: "crate", id: 2, name: "Warm-up", tracks: 6, picked: 3 }],
+    left_out: 8,
+    moved: 1,
+  },
+  "/api/sets/build/bridge": {
+    gap: { from: "h3", to: "h4", score: 41, cost: 4.4, text: "energy +1, 10A → 3A, tempo +1.0 %" },
+    want: {},
+    results: [
+      { hash: "s1", title: "Pale Fire", artist: "Saskia Lind", bpm: 125, key: "11A", energy: 0.8, rating: 8, shift: 0, intro_s: 32, cost: 2.1, score_in: 88, score_out: 72, text: "125 BPM, 11A, same vibe, a long intro" },
+      { hash: "s2", title: "Slow Ferry", artist: "Kerrin", bpm: 126, key: "10B", energy: 0.8, rating: 8, shift: 0, intro_s: null, cost: 2.6, score_in: 80, score_out: 66, text: "126 BPM, 10B, related vibe" },
+    ],
+    candidates: 40,
+    unanalysed: 2,
+  },
+};
+
 const SHOTS: Shot[] = [
   { name: "home", hash: "#/" },
   { name: "home-loading", hash: "#/", api: "loading" },
@@ -211,6 +243,8 @@ const SHOTS: Shot[] = [
   { name: "library-importing", hash: "#/library", data: { "/api/library/import": { state: "running", kind: "files", label: "Techno 2026", done: 37, total: 120, file: "/home/dj/Music/Techno 2026/Track 38.flac" } } },
   { name: "library-import-failed", hash: "#/library", data: { "/api/library/import": { state: "failed", kind: "xml", label: "rekordbox.xml", error: "not a Rekordbox or iTunes XML file" } } },
   { name: "crates", hash: "#/crates" },
+  { name: "crates-built", hash: "#/crates", posts: LONG_SET, clicks: ["Peak time", "Warm-up", "Build the set"] },
+  { name: "crates-gap", hash: "#/crates", posts: LONG_SET, clicks: ["Peak time", "Warm-up", "Build the set", "Find a bridge"] },
   { name: "sets", hash: "#/sets" },
   { name: "sets-empty", hash: "#/sets", data: { "/api/sets": [] } },
   { name: "sets-loading", hash: "#/sets", api: "loading" },
@@ -335,6 +369,7 @@ function serve(shot: () => Shot): { server: Deno.HttpServer<Deno.NetAddr>; close
       if (s === "loading") return hang();
       if (req.method === "GET" && shot().fail?.includes(path)) return Response.json({ detail: "database is locked" }, { status: 500 });
       if (req.method === "GET" && data[path] !== undefined) return Response.json(data[path]);
+      if (req.method === "POST" && shot().posts?.[path] !== undefined) return Response.json(shot().posts?.[path]);
       if (path === "/api/events") {
         // an open stream with nothing on it, until the page goes away or the server closes
         let close = () => {};
@@ -511,6 +546,12 @@ async function shoot(cdp: Cdp, url: string, shot: Shot, [width, height]: readonl
     await new Promise((r) => setTimeout(r, shot.settle ?? 1200));
     for (const combo of shot.keys ?? []) {
       await press(cdp, sessionId, combo);
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    for (const text of shot.clicks ?? []) {
+      const expression = `{ const all = [...document.querySelectorAll("button, label, span")]; const it = all.find((e) => e.getAttribute("aria-label") === ${JSON.stringify(text)} || e.textContent.trim() === ${JSON.stringify(text)}); if (!it) throw new Error("nothing to click: " + ${JSON.stringify(text)}); it.click(); it.scrollIntoView({ block: "center" }); }`;
+      const { exceptionDetails } = await cdp.send<{ exceptionDetails?: { exception?: { description?: string } } }>("Runtime.evaluate", { expression }, sessionId);
+      if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? `can't click ${text}`);
       await new Promise((r) => setTimeout(r, 400));
     }
     const { data } = await cdp.send<{ data: string }>("Page.captureScreenshot", { format: "png" }, sessionId);

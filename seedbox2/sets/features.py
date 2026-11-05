@@ -54,19 +54,26 @@ def _vibes(lib: Any, hash_: str) -> dict[str, np.ndarray]:
     return dict(zip(data["names"], data["vectors"], strict=True))
 
 
-def load_features(lib: Any, hashes: Iterable[str]) -> dict[str, TrackFeatures]:
-    """The features of these tracks, by hash. An unknown track has no entry."""
+def add_detail(lib: Any, track: TrackFeatures) -> None:
+    """What `load_features(detail=False)` left out: the vocals analysis and the embeddings, one query and one file."""
+    vocals = lib.analysis(track.hash, VOCALS_ANALYSER)
+    track.vocals = vocal_share(vocals["data"]) if vocals else None
+    track.vibes = _vibes(lib, track.hash)
+
+
+def load_features(lib: Any, hashes: Iterable[str] | None, *, detail: bool = True) -> dict[str, TrackFeatures]:
+    """The features of these tracks (None: the whole library), by hash. An unknown track has no entry. Without `detail`
+    they have no vocals or embeddings, which a large library can't afford to read for every track."""
     out: dict[str, TrackFeatures] = {}
     for row in lib.view_rows(hashes=hashes):
         h = row["hash"]
-        vocals = lib.analysis(h, VOCALS_ANALYSER)
         out[h] = TrackFeatures(
             hash=h, title=row.get("title") or "", artist=row.get("artist") or "",
             bpm=row["bpm"] if row.get("bpm_from") == "analysis" else None,
             camelot=row["key"] if row.get("key_from") in OURS else None,
             energy=row["energy"] if row.get("energy_from") == "analysis" else None,
-            vocals=vocal_share(vocals["data"]) if vocals else None,
             genre=row.get("genre") or None,
-            vibes=_vibes(lib, h),
         )  # fmt: skip
+        if detail:
+            add_detail(lib, out[h])
     return out

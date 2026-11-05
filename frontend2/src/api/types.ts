@@ -589,6 +589,54 @@ export interface OnlineBridges {
   results: OnlineBridge[];
 }
 
+export interface SetSourceRef {
+  kind: "crate" | "set" | "library";
+  id: number | null;
+}
+
+/** One track of a built long set. */
+export type LongSetTrack = SetOrderTrack & {
+  /** Index into `sources`; a track put in by hand has none. */
+  source?: number;
+};
+
+export interface LongSetSource extends SetSourceRef {
+  name: string;
+  tracks: number;
+  picked: number;
+}
+
+/** A long set across crates, not saved yet. After a track is put in, `POST /api/sets/build/explain` has no `sources`. */
+export interface LongSetResult extends Omit<SetOrderResult, "order"> {
+  order: LongSetTrack[];
+  sources?: LongSetSource[];
+  /** Tracks of the sources that aren't in it, for the length asked. */
+  left_out?: number;
+  /** Tracks playing outside their source's share of the set. */
+  moved?: number;
+}
+
+export interface LinkTrack {
+  hash: string;
+  title: string;
+  artist: string;
+  bpm: number | null;
+  key: string | null;
+  energy: number | null;
+  rating: number | null;
+}
+
+export interface CrateLink {
+  from_source: number;
+  to_source: number;
+  from: LinkTrack;
+  to: LinkTrack;
+  cost: number;
+  text: string;
+  flags: SetTransitionFlag[];
+  fit: "good" | "fair" | "poor" | "unknown";
+}
+
 export interface SetOrderResult {
   order: SetOrderTrack[];
   transitions: SetTransition[];

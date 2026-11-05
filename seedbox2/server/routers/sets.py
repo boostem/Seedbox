@@ -16,6 +16,12 @@
   doesn't answer. `POST /tunebat/download` fetches one.
 - `POST /sets/{id}/bridge` `{position, hash, from, to}`: puts a track there. 409 if those aren't neighbours there any more.
 
+Long sets (#62), nothing saved until the result goes to `POST /sets`:
+- `POST /sets/build`: the best order for `sources` (`[{kind: "crate"|"set"|"library", id}]`), `max_tracks`, `keep_order`.
+- `POST /sets/build/explain` with `hashes`: those tracks as they stand, explained, after a track was put in.
+- `POST /sets/bridges` with `sources`: the best link from the end of each to the start of each other.
+- `POST /sets/build/bridge` with `hashes`, `position`, `limit`: #64's library search for a gap in those tracks.
+
 Events: `stems.set` (`ready`, `ready_tracks`, `total`, `progress`) when a track of the set finishes, and `job.progress`
 (with the track's `hash`) while one runs.
 """
@@ -25,7 +31,7 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -36,6 +42,14 @@ from seedbox2.mix import convert
 from seedbox2.server.deps import JobsDep, LibraryDep, TunebatDep, vibe_index
 from seedbox2.sets import TEMPLATES, OrderRequest, bridge, evaluate_set, order_set
 from seedbox2.sets.arcs import ArcError
+from seedbox2.sets.longset import (
+    MAX_TRACKS,
+    SourceError,
+    bridges,
+    build_long_set,
+    explain_hashes,
+    find_bridges,
+)
 from seedbox2.sets.service import live_pins, request_from_settings
 from seedbox2.sets.solver import SolverError
 
@@ -51,6 +65,48 @@ def sets(lib: LibraryDep) -> list[dict]:
 @router.get("/arcs")
 def arcs() -> list[dict]:
     return [a.to_json() for a in TEMPLATES.values()]
+
+
+@router.post("/build")
+def build(body: BuildBody, lib: LibraryDep) -> dict:
+    request = body.request()
+    try:
+        result = build_long_set(lib, [s.model_dump() for s in body.sources], request, max_tracks=body.max_tracks,
+                                keep_order=body.keep_order)  # fmt: skip
+    except SourceError as e:
+        raise HTTPException(404, str(e)) from None
+    except (ArcError, SolverError) as e:
+        raise HTTPException(422, str(e)) from None
+    return {**result, "settings": _settings_out(request)}
+
+
+@router.post("/build/explain")
+def build_explain(body: ExplainBody, lib: LibraryDep) -> dict:
+    request = body.request()
+    try:
+        return {**explain_hashes(lib, body.hashes, request), "settings": _settings_out(request)}
+    except SourceError as e:
+        raise HTTPException(404, str(e)) from None
+    except (ArcError, SolverError) as e:
+        raise HTTPException(422, str(e)) from None
+
+
+@router.post("/build/bridge")
+def build_bridge(body: BuildBridgeBody, request: Request, lib: LibraryDep) -> dict[str, Any]:
+    try:
+        return find_bridges(lib, vibe_index(request), body.hashes, body.position, body.request(), body.limit)
+    except SourceError as e:
+        raise HTTPException(404, str(e)) from None
+    except (ArcError, SolverError, bridge.BridgeError) as e:
+        raise HTTPException(422, str(e)) from None
+
+
+@router.post("/bridges")
+def crate_bridges(body: BridgesBody, lib: LibraryDep) -> dict:
+    try:
+        return bridges(lib, [s.model_dump() for s in body.sources])
+    except SourceError as e:
+        raise HTTPException(404, str(e)) from None
 
 
 @router.get("/{set_id}")
@@ -127,6 +183,30 @@ class OrderBody(BaseModel):
 
 class ApplyOrderBody(OrderBody):
     hashes: list[str]
+
+
+class SourceBody(BaseModel):
+    kind: Literal["crate", "set", "library"]
+    id: int | None = None
+
+
+class BuildBody(OrderBody):
+    sources: list[SourceBody] = Field(min_length=1, max_length=50)
+    max_tracks: int | None = Field(default=None, ge=2, le=MAX_TRACKS)
+    keep_order: bool = True
+
+
+class ExplainBody(OrderBody):
+    hashes: list[str] = Field(max_length=MAX_TRACKS + 50)
+
+
+class BridgesBody(BaseModel):
+    sources: list[SourceBody] = Field(min_length=1, max_length=50)
+
+
+class BuildBridgeBody(ExplainBody):
+    position: int = Field(ge=0)
+    limit: int = Field(default=bridge.DEFAULT_LIMIT, ge=1, le=50)
 
 
 def _settings_out(request: OrderRequest) -> dict:

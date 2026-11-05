@@ -94,16 +94,18 @@ def _result(p: Problem, hashes: Sequence[str], order: Sequence[int], shifts: np.
     }  # fmt: skip
 
 
-def _problem(tracks: Sequence[TrackFeatures], request: OrderRequest) -> Problem:
+def _problem(tracks: Sequence[TrackFeatures], request: OrderRequest, groups: Sequence[int] | None = None) -> Problem:
     arc: Arc = arc_from(request.arc)
-    return Problem(tracks, arc, request.journey(), request.weights)
+    return Problem(tracks, arc, request.journey(), request.weights, groups)
 
 
-def order_tracks(tracks: Sequence[TrackFeatures], request: OrderRequest | None = None) -> dict:
-    """The best order found for these tracks, explained, with the order they came in as the one to beat."""
+def order_tracks(tracks: Sequence[TrackFeatures], request: OrderRequest | None = None,
+                 groups: Sequence[int] | None = None) -> dict:  # fmt: skip
+    """The best order found for these tracks, explained, with the order they came in as the one to beat. `groups` says
+    which crate each track is from, in the crates' order: they then hold to that order softly."""
     request = request or OrderRequest()
     hashes = [t.hash for t in tracks]
-    p = _problem(tracks, request)
+    p = _problem(tracks, request, groups)
     locks = check_locks(p.n, _locks(hashes, request.pins))
     solution = solve(p, locks)
     current = list(range(p.n))
