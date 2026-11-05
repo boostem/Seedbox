@@ -39,8 +39,7 @@ describe("KeyEditor", () => {
     act(() => ui.editKey("h"));
     await screen.findByText("72 %");
     expect(screen.getByText("Bass and other stems")).toBeTruthy();
-    expect(screen.getByText("Tunebat")).toBeTruthy();
-    expect(screen.getByText("3B")).toBeTruthy();
+    expect(screen.getByText("Tunebat").parentElement?.textContent).toContain("3B");
   });
 
   it("says when the analysis isn't sure", async () => {
