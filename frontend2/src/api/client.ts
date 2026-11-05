@@ -3,7 +3,7 @@
  * show an error toast, unless `{ quiet: true }` (then the caller handles it).
  */
 import { toast } from "@/store/toasts";
-import type { CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
+import type { PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -113,6 +113,10 @@ export const api = {
     cancel: (name: string, opts?: RequestOptions) => post<{ cancelled: boolean }>(`/api/models/${encodeURIComponent(name)}/cancel`, undefined, opts),
     remove: (name: string, opts?: RequestOptions) => request<ModelInfo>("DELETE", `/api/models/${encodeURIComponent(name)}`, undefined, opts),
     settings: (changes: Partial<ModelSettings>, opts?: RequestOptions) => post<ModelsStatus>("/api/models/settings", changes, opts),
+  },
+  power: {
+    status: (opts?: RequestOptions) => get<PowerStatus>("/api/power", opts),
+    setMode: (mode: PowerMode, opts?: RequestOptions) => post<PowerStatus>("/api/power/settings", { mode }, opts),
   },
   stems: {
     status: (opts?: RequestOptions) => get<StemsStatus>("/api/analysis/stems", opts),

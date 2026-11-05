@@ -4,7 +4,7 @@ import type { StemsStatus } from "@/api/types";
 import { Input, InfoRow, Panel, PanelHeader, Select, Switch } from "@/components/ui";
 import { fmtBytes } from "@/lib/format";
 
-/** Settings → Stems (#44): what the stems cache holds, its size limit, the file format and low-power mode. */
+/** Settings → Stems (#44): what the stems cache holds, its size limit, the file format and the model. */
 export function StemsPanel() {
   const [status, setStatus] = useState<StemsStatus | null>(null);
   const [limit, setLimit] = useState("");
@@ -53,7 +53,7 @@ export function StemsPanel() {
             </Select>
           </InfoRow>
           <div className="px-4 py-2.5">
-            <Switch size="sm" checked={status.low_power} onChange={(v) => change({ low_power: v })} label="Low-power mode: the INT8 model, with less RAM and about the same quality" />
+            <Switch size="sm" checked={status.low_power} onChange={(v) => change({ low_power: v })} label="Always use the INT8 model, with less RAM and about the same quality, not only in low-power mode" />
           </div>
         </>
       )}

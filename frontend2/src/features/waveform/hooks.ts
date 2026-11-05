@@ -7,6 +7,7 @@
 import { Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { registerCommands } from "@/lib/commands";
+import { mayDraw } from "@/lib/frameCap";
 
 export interface TimeView {
   start: number; // s at the left edge
@@ -85,7 +86,8 @@ export function useViewFact<T extends string | number | boolean>(ctl: ViewCtl, f
   return useSyncExternalStore(ctl.subscribe, get, get);
 }
 
-/** A stable function that runs `fn` once on the next animation frame, however often it's called before that. */
+/** A stable function that runs `fn` once on the next animation frame it may draw in (`frameCap`), however often it's
+ * called before that. */
 export function useFrame(fn: () => void): () => void {
   const f = useRef(fn);
   f.current = fn;
@@ -93,10 +95,15 @@ export function useFrame(fn: () => void): () => void {
   useEffect(() => () => cancelAnimationFrame(raf.current), []);
   return useCallback(() => {
     if (raf.current) return;
-    raf.current = requestAnimationFrame(() => {
+    const run = () => {
+      if (!mayDraw()) {
+        raf.current = requestAnimationFrame(run);
+        return;
+      }
       raf.current = 0;
       f.current();
-    });
+    };
+    raf.current = requestAnimationFrame(run);
   }, []);
 }
 

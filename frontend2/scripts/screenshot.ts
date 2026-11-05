@@ -132,6 +132,8 @@ function modelsStatus(m: ReturnType<typeof model>) {
   };
 }
 const MODEL_MISSING = { state: "missing", installed: false, path: null, done: 0 };
+const POWER = { mode: "auto", low_power: false, reason: null, on_battery: false, battery_percent: 100, thermal: "nominal", limits: { stems_paused: false, analysis_paused: false, light_workers: 6, light_workers_full: 6, fps: null } };
+const ON_BATTERY = { ...POWER, low_power: true, reason: "battery", on_battery: true, battery_percent: 64, limits: { ...POWER.limits, stems_paused: true, light_workers: 3, fps: 30 } };
 const FIRST_RUN = { "/api/onboarding": { first_run: true }, "/api/library/view": { total: 0, items: [] } };
 
 /** What the stub /api answers to a GET in the `live` state (a shot's `data` overrides these). */
@@ -152,6 +154,7 @@ const API: Record<string, unknown> = {
   "/api/sets": [{ id: 1, name: "Friday", track_count: 6 }],
   "/api/models": modelsStatus(model()),
   "/api/onboarding": { first_run: false },
+  "/api/power": POWER,
 };
 
 // Every route, and the states each one has so far. Area tickets add their screens' states (empty, loading,
@@ -179,6 +182,7 @@ const SHOTS: Shot[] = [
   { name: "discover", hash: "#/discover" },
   { name: "mixes", hash: "#/mixes" },
   { name: "settings", hash: "#/settings" },
+  { name: "settings-low-power", hash: "#/settings", data: { "/api/power": ON_BATTERY } },
   { name: "settings-loading", hash: "#/settings", api: "loading" },
   { name: "settings-offline", hash: "#/settings", api: "offline", settle: 5000 }, // offline after 4 failed reconnects (~3.5 s)
   { name: "ui", hash: "#/ui" },

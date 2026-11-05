@@ -1,7 +1,7 @@
 """Beats and downbeats (#43): Beat This! on onnxruntime, a piecewise beatgrid, the tempo octave and the bar phase.
 
 1. **Detections**: `beatthis.run` gives frame-wise beat and downbeat logits (50 frames/s) and their peaks. final0
-   by default; small0 in low-power mode (the `models.low_power` setting) or while final0 isn't downloaded.
+   by default; small0 in low-power mode (seedbox2.power, or the `models.low_power` setting) or while final0 isn't downloaded.
 2. **Grid**: `grid.fit` turns the beat peaks into segments (one when the track is quantised).
 3. **Tempo octave**: the grid's level is beat_this's; x0.5, x1 and x2 are scored by a log-normal prior on the BPM
    (centre OCTAVE_CENTRE, OCTAVE_SIGMA octaves; no folding into a fixed range) plus the bar length the downbeat
@@ -278,7 +278,7 @@ def beats_job(payload: dict, ctx: Any) -> dict:
     if not sources:
         raise FileNotFoundError("none of the track's files is there any more")
     hints = bpm_hints(track.get("tags"))
-    low_power = read_settings(ctx._settings())["low_power"]
+    low_power = read_settings(ctx._settings())["low_power"] or getattr(ctx, "low_power", False)
     session, model = None, None
     for name in model_order(low_power):
         session = ctx.session_or_none(name)

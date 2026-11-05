@@ -17,6 +17,7 @@ import { useApp } from "@/store/app";
 import { followImports } from "@/store/imports";
 import { followModels } from "@/store/models";
 import { followJobs } from "@/store/jobs";
+import { followPower } from "@/store/power";
 import { loadOnboarding, useOnboarding } from "@/store/onboarding";
 
 function Page({ route }: { route: Route }) {
@@ -79,6 +80,7 @@ export function App() {
   useEffect(followImports, []);
   useEffect(followModels, []);
   useEffect(followJobs, []);
+  useEffect(followPower, []);
   useEffect(() => void loadOnboarding(), []);
   const firstRun = useOnboarding((s) => s.open);
   if (firstRun) return <Onboarding />;

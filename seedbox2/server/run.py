@@ -65,14 +65,15 @@ def start_server(
     start_jobs: bool = False,
     watch_folders: bool = False,
     download_models: bool = False,
+    power_mode: str | None = None,
 ) -> ServerHandle:
     """Start the API (and the built frontend) on a daemon thread; return once it accepts connections.
 
     `port=0` picks a free port (read it from handle.port / handle.url). `library_path`, `start_jobs`, `watch_folders`,
-    `download_models`: see create_app.
+    `download_models`, `power_mode`: see create_app.
     """
     app = create_app(static_dir, dev=dev, library_path=library_path, start_jobs=start_jobs,
-                     watch_folders=watch_folders, download_models=download_models)  # fmt: skip
+                     watch_folders=watch_folders, download_models=download_models, power_mode=power_mode)  # fmt: skip
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:

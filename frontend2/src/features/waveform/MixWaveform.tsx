@@ -20,6 +20,7 @@ import { type MixGeometry, mixGeometry } from "./mix";
 import { alpha, wavePalette } from "./palette";
 import { useWaveLook } from "./settings";
 import { useWave } from "./waveData";
+import { mayDraw } from "@/lib/frameCap";
 
 /** External playhead source (e.g. the audition): current mix time or null. */
 export interface MixClock {
@@ -196,7 +197,7 @@ export function MixWaveform({ a, b, aId, bId, aBpm, transition, clock, onSeek, l
   useEffect(() => {
     let raf = 0;
     const loop = () => {
-      raf = headsFn.current() ? requestAnimationFrame(loop) : 0;
+      raf = !mayDraw() || headsFn.current() ? requestAnimationFrame(loop) : 0;
     };
     const kick = () => {
       if (!raf) raf = requestAnimationFrame(loop);

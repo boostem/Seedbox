@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, Keyboard, Search } from "lucide-react";
 import { IconButton, Kbd, StatusDot, Tooltip } from "@/components/ui";
 import { AnalysisQueue } from "@/features/library/AnalysisQueue";
+import { PowerIndicator } from "@/features/system/PowerIndicator";
 import { comboLabel } from "@/lib/hotkeys";
 import { useRoute } from "@/lib/router";
 import { type ConnectionState, useApp } from "@/store/app";
@@ -36,6 +37,7 @@ export function TopBar() {
         <Kbd combo="Mod+K" subtle />
       </button>
       <div className="flex items-center justify-end gap-2">
+        <PowerIndicator />
         <AnalysisQueue />
         <Tooltip content={c.help}>
           <span className="text-xs text-fg-muted">
