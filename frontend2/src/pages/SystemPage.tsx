@@ -2,6 +2,7 @@ import { FolderOpen } from "lucide-react";
 import { api } from "@/api/client";
 import type { SystemFolders } from "@/api/types";
 import { IconButton, InfoRow, Page, PageBody, PageHeader, Panel, PanelHeader, Skeleton, StatusDot } from "@/components/ui";
+import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import { WatchFoldersPanel } from "@/features/import/WatchFoldersPanel";
 import { ModelsPanel } from "@/features/models/ModelsPanel";
 import { StemsPanel } from "@/features/models/StemsPanel";
@@ -77,6 +78,7 @@ export function SystemPage() {
         <StemsPanel />
         <MasterPanel />
         <PowerPanel />
+        <AssistantPanel />
         <WaveSettingsPanel className="max-w-3xl" />
         <FoldersPanel />
       </PageBody>

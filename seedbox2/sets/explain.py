@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 
@@ -16,10 +18,15 @@ from seedbox2.sets.cost import (
     shifted,
 )
 
+log = logging.getLogger(__name__)
+
 SAME_VIBE, VIBE_SHIFT = 0.35, 0.7  # of the set's own spread (`cost._vibe_matrix`)
 SHOW_TEMPO_PCT = 2.5  # a smaller change isn't worth a word
 ZERO_SCORE_COST = 6.0  # what the two tracks may cost each other before a transition scores 0
 GAP_SCORE = 55  # under this it's a gap (`bridge.py`): any clash left in the order; not a +2 move with a vibe shift and a genre change
+WORTH_NAMING = 1.0  # a term that costs this much is worth a sentence: about one uncomfortable move
+_TERM_WORDS = {"key": "key", "tempo": "tempo", "energy": "energy against the arc", "journey": "tempo against the journey",
+               "vibe": "change of sound", "genre": "change of genre", "vocals": "run of vocals"}  # fmt: skip
 
 
 def rating(energy: float | None) -> int | None:
@@ -123,11 +130,102 @@ def transition(p: Problem, order: Sequence[int], shifts: np.ndarray, at: int) ->
     score = score_of(mix_cost)
     return {
         "from": ta.hash, "to": tb.hash, "text": ", ".join(words), "flags": flags, "key_move": move,
+        "why": why(p, order, shifts, at, terms),
         "tempo_pct": round(float(p.tempo_pct[a, b]), 2) if p.tempo_known[a, b] else None,
         "energy_change": rb - ra if ra is not None and rb is not None else None,
         "cost": round(sum(terms.values()), 3), "terms": {k: round(v, 3) for k, v in terms.items()},
         "mix_cost": round(mix_cost, 3), "score": score, "gap": score < GAP_SCORE,
     }  # fmt: skip
+
+
+def _why_key(p: Problem, a: int, b: int, shifts: np.ndarray) -> str:
+    ka, kb = int(p.keys[a]), int(p.keys[b])
+    if ka == UNKNOWN_KEY or kb == UNKNOWN_KEY:
+        return "The key of one of these tracks isn't analysed yet, so the order couldn't weigh it."
+    pa, pb = shifted(ka, int(shifts[a])), shifted(kb, int(shifts[b]))
+    left, right = camelot_name(pa), camelot_name(pb)
+    move = key_move_name(pa, pb)
+    if move == "same key":
+        said = f"Both play in {left}, so the melodies sit together for the whole blend."
+    elif move == "relative":
+        said = f"{left} and {right} are relative keys: the same notes, with the mood turned from minor to major or back."
+    elif move == "diagonal":
+        said = f"{left} into {right} is a diagonal move on the wheel: it changes the colour, and it works over a short blend."
+    elif move == "clash":
+        said = f"{left} and {right} clash, so keep the overlap short or use a cut. It was the best the rest of the set allowed."
+    elif move.lstrip("+-").startswith("1"):
+        said = f"{left} into {right} is next door on the Camelot wheel, so the two harmonise."
+    else:
+        said = f"{left} into {right} is two steps round the Camelot wheel: a bigger lift, which still sits well over a short blend."
+    for name, shift in (("outgoing", int(shifts[a])), ("incoming", int(shifts[b]))):
+        if shift:
+            said += f" The {name} track plays {abs(shift)} semitone {'up' if shift > 0 else 'down'} to get there."
+    return said
+
+
+def _why_tempo(p: Problem, a: int, b: int) -> str:
+    if not p.tempo_known[a, b]:
+        return "The tempo of one of these tracks isn't analysed yet, so the order couldn't weigh it."
+    pct, factor = float(p.tempo_pct[a, b]), float(p.tempo_factor[a, b])
+    ba, bb = float(p.bpm[a]), float(p.bpm[b])
+    said = f"{ba:.0f} to {bb:.0f} BPM"
+    if factor in (0.5, 2.0):
+        said += ", which locks in at half or double time"
+    if pct > TEMPO_LIMIT_PCT:
+        return f"{said} is a big jump ({pct:.1f} %): more than a stretch can hide, so it will be heard."
+    if pct > TEMPO_PREFER_PCT:
+        return f"{said} is a wide step ({pct:.1f} %), which a stretch can still carry."
+    return f"{said} is close enough ({pct:.1f} %) that the change won't be heard."
+
+
+def _why_energy(p: Problem, at: int, ta_energy: float | None, tb_energy: float | None) -> str:
+    ra, rb = rating(ta_energy), rating(tb_energy)
+    if ra is None or rb is None:
+        return "The energy of one of these tracks isn't analysed yet, so the order couldn't weigh it."
+    span = p.level_hi - p.level_lo
+    target = rating(p.level_lo + span * float(p.arc_levels[at + 1]))
+    change = f"Energy holds at {ra}" if ra == rb else f"Energy goes {'up' if rb > ra else 'down'} from {ra} to {rb}"
+    if abs(rb - target) <= 1:
+        return f"{change}, which is where the arc wants this point in the set ({target})."
+    return f"{change}, while the arc wanted about {target} here: no track that fits better was free."
+
+
+def why(p: Problem, order: Sequence[int], shifts: np.ndarray, at: int, terms: dict[str, float]) -> list[str]:
+    """Why this track follows that one, in plain sentences, from the numbers the solver used. It needs no network, so it
+    works with the assistant off and can't invent anything."""
+    a, b = order[at], order[at + 1]
+    ta, tb = p.tracks[a], p.tracks[b]
+    out = [_why_key(p, a, b, shifts), _why_tempo(p, a, b)]
+    out.append(_why_energy(p, at, ta.energy, tb.energy))
+    if p.vibe_known[a, b]:
+        d = float(p.vibe[a, b])
+        out.append("For this set, the end of one and the start of the next sound alike." if d <= SAME_VIBE
+                   else "It's one of this set's bigger changes of sound." if d >= VIBE_SHIFT
+                   else "They sound related, without being the same thing.")  # fmt: skip
+    if p.genre_change[a, b]:
+        out.append(f"The genre tag changes, from {ta.genre} to {tb.genre}.")
+    if terms.get("vocals", 0.0) > 0:
+        out.append("This makes three vocal-heavy tracks in a row, which can tire a crowd.")
+    worst, cost = max(terms.items(), key=lambda kv: kv[1], default=("", 0.0))
+    if cost >= WORTH_NAMING:
+        out.append(f"The biggest compromise here is the {_TERM_WORDS.get(worst, worst)}.")
+    return out
+
+
+def plan_words(plan: Any, from_hash: str, to_hash: str) -> str | None:
+    """What the saved mix plan of this transition does, or None if it can't be read."""
+    from seedbox2.mix import convert
+
+    try:
+        p = convert.load(plan, from_track=from_hash, to_track=to_hash)
+    except (ValueError, KeyError, TypeError) as e:
+        log.info("skipping an unreadable plan for %s -> %s: %s", from_hash, to_hash, e)
+        return None
+    technique = p.technique.replace("_", " ")
+    said = f"The mix plan is a {p.bars}-bar {technique}" + (", with the keys locked." if p.key_lock else ".")
+    if p.edited:
+        said += " You edited it by hand."
+    return said
 
 
 def transitions(p: Problem, order: Sequence[int], shifts: np.ndarray) -> list[dict]:

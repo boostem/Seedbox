@@ -179,10 +179,11 @@ class OrderBody(BaseModel):
     tempo_start: float | None = None
     tempo_end: float | None = None
     pins: list[Pin] = []
+    note: str | None = Field(default=None, max_length=4000)  # the assistant's reasoning, kept with its set (#63)
 
     def request(self) -> OrderRequest:
         return OrderRequest(arc=self.arc, tempo_start=self.tempo_start, tempo_end=self.tempo_end,
-                            pins=[p.model_dump() for p in self.pins])  # fmt: skip
+                            pins=[p.model_dump() for p in self.pins], note=self.note)  # fmt: skip
 
 
 class ApplyOrderBody(OrderBody):
@@ -214,7 +215,8 @@ class BuildBridgeBody(ExplainBody):
 
 
 def _settings_out(request: OrderRequest) -> dict:
-    return {"arc": request.arc, "tempo_start": request.tempo_start, "tempo_end": request.tempo_end, "pins": request.pins}
+    out = {"arc": request.arc, "tempo_start": request.tempo_start, "tempo_end": request.tempo_end, "pins": request.pins}
+    return {**out, "note": request.note} if request.note else out
 
 
 @router.get("/{set_id}/order")
