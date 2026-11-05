@@ -283,6 +283,14 @@ class Library:
             "SELECT hash, duration FROM tracks t WHERE NOT EXISTS (SELECT 1 FROM artifacts a WHERE a.hash = t.hash AND "
             "a.kind = ?) ORDER BY added_at, hash", (kind,)))  # fmt: skip
 
+    def hashes_needing_analysis(self, analyser: str, version: str, *, artifact: str, requires: str) -> list[str]:
+        """The tracks with that artifact and the `requires` analysis but not this version of `analyser`."""
+        return [r[0] for r in self.db.read().execute(
+            "SELECT hash FROM tracks t WHERE EXISTS (SELECT 1 FROM artifacts a WHERE a.hash = t.hash AND a.kind = ?) "
+            "AND EXISTS (SELECT 1 FROM analyses r WHERE r.hash = t.hash AND r.analyser = ?) "
+            "AND NOT EXISTS (SELECT 1 FROM analyses v WHERE v.hash = t.hash AND v.analyser = ? AND v.version = ?) "
+            "ORDER BY added_at, hash", (artifact, requires, analyser, str(version)))]  # fmt: skip
+
     # --- crates and sets -------------------------------------------------------------------------------------------
 
     def sets_with(self, hash_: str) -> list[int]:

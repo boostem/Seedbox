@@ -31,7 +31,7 @@ Flags:
 - `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -218,6 +218,16 @@ only the 87.6 % of tracks with a confident key, the score is 0.716 (held-out hal
 as "?". The stems did not help: on the 53 tracks separated, bass + other scored 0.542 and the mix 0.609 on the same
 tracks (difference -0.068 ± 0.071, 95 %), which is too few tracks to call it worse, but it isn't the gain the plan
 expected. Our own corpus is empty so far, so it hasn't been scored.
+**Vocals** (#47, `seedbox2/analysis/vocals.py`): the `vocals` job (light pool) runs once a track has both stems and beats, and reads only the stems, so it needs no source file. It stores per-beat activity on the track's grid, phrases (start and end beats, kind `lead`, `rap`, `chop` or `backing`) and `acapella` and `instrumental` windows, served by `GET /api/analysis/{hash}/vocals`. `vocals.plan_input(analysis, data)` swaps Seedbox 1's `vocal_per_bar` and `has_vocals` for these before `musicreco.mixplan.generate`, so its clash checks read them; a track without stems keeps the heuristic. Nothing in the app calls it yet: Seedbox 2 has the plan schema (#51) but no planner of its own, so whichever ticket adds the planner should feed it `plan_input_for(lib, hash, analysis)`.
+
+Measured with `python -m seedbox2.eval analysis --analyser seedbox2-vocals --analyser seedbox1` (`fetch jamendo`, `fetch musdb18 --limit 12`). The likelihood's weights were fitted on Jamendo's validation split, so neither row below was seen in fitting. Frame F-measure, in points:
+
+| Tracks | `seedbox2-vocals` | `seedbox1` |
+|---|---|---|
+| Jamendo test split, 16 tracks, hand labels | 92.9 | 62.6 |
+| MUSDB18-HQ test split, 12 of 50 tracks, truth from the true vocal stem | 88.6 | 58.7 |
+
+The target is 90, so MUSDB18 misses it. Its median is 93.5, and the misses are vocals quiet in a dense mix: `PR - Oh No` scores 54 with precision 1.00 and recall 0.37. Moving the truth's level threshold from -35 to -20 dB only reaches 89.6. Comparing the stem with its own loud level raised MUSDB18 to 89.8, but on real instrumentals (each mix minus its true vocals) it called 10.5 % of the audio vocal instead of 3.4 % (worst track 24.7 % instead of 13.2 %), so it isn't used. Refitted on level alone, the validation split's frame F is unchanged at 93.2, so flatness and harmonicity add nothing measurable to activity. The phrase kinds have no labelled data behind them, only synthetic tests: on the 16 validation tracks they gave 155 `lead`, 6 `backing`, 1 `chop` and no `rap`, so treat them as unvalidated.
 
 **The library view** (#73, `frontend2/src/features/library/`, `seedbox2/library/view.py`): `#/library` is a
 virtualised table of every track (artwork, title, artist, BPM, Camelot-coloured key, energy 1-10, length, genre, an
