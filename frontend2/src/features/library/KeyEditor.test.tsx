@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { api } from "@/api/client";
 import type { KeyStatus } from "@/api/types";
 import { ui } from "@/store/ui";
@@ -12,6 +12,16 @@ const OURS: KeyStatus = {
   effective: { ...NAMES, from: "analysis" },
   hints: [{ key: "3B", from: "tunebat" }],
 };
+
+// jsdom has no showModal/close
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+    this.setAttribute("open", "");
+  };
+  HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+    this.removeAttribute("open");
+  };
+});
 
 afterEach(() => {
   cleanup();
