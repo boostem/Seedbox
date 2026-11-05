@@ -6,6 +6,8 @@
 - `GET /analysis/{hash}/key` (#45): `{analysis, effective, hints}` (`seedbox2.analysis.key.status`). Not computed yet: 202
   as above. `PUT /analysis/{hash}/key/override` with `{"key": "8A"}` (any notation) sets the user's key, `DELETE` goes
   back to ours; both answer with the status.
+- `GET /analysis/{hash}/vocals` (#47): per-beat vocal activity, phrases and windows (`seedbox2.analysis.vocals`). Not
+  computed yet: 202, with the queued job once the track has stems and beats, else `{"state": "waiting"}`.
 - `GET /analysis/stems`: the stems cache: its settings, what it holds and which model low-power mode would use.
 - `POST /analysis/stems/settings`: `{limit_gb, format, low_power}`; a lower limit evicts at once.
 - `GET /analysis/{hash}/energy` (#48): per-bar energy 0-1 and the track's 1-10. 202 while its job is queued.
@@ -27,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
-from seedbox2.analysis import beats, clap, energy, key, loudness, stems, vibe
+from seedbox2.analysis import beats, clap, energy, key, loudness, stems, vibe, vocals
 from seedbox2.library.service import SETTINGS_FILE, Settings
 from seedbox2.library.view import to_camelot
 from seedbox2.server.deps import LibraryDep, get_jobs, get_library
@@ -77,6 +79,17 @@ def clear_key_override(hash_: str, lib: LibraryDep) -> dict:
         raise HTTPException(404, "no such track")
     key.clear_override(lib, hash_)
     return key.status(lib, hash_)
+@router.get("/{hash_}/vocals", responses={200: {}, 202: {}, 404: {}}, response_model=None)
+def track_vocals(hash_: str, request: Request, lib: LibraryDep) -> dict | JSONResponse:
+    if lib.track(hash_) is None:
+        raise HTTPException(404, "no such track")
+    row = lib.analysis(hash_, vocals.ANALYSER, vocals.VERSION)
+    if row is not None:
+        return row["data"]
+    if stems.current(lib, hash_) is None or lib.analysis(hash_, beats.ANALYSER) is None:
+        return JSONResponse({"state": "waiting"}, status_code=202)
+    job = vocals.submit(get_jobs(request), hash_, front=True)
+    return JSONResponse({"state": job["state"], "job": job}, status_code=202)
 
 
 def _energy_row(hash_: str, analyser: str, request: Request, lib: Any) -> dict | JSONResponse:

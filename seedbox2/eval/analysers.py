@@ -4,7 +4,7 @@
 analysis ticket has to beat. `seedbox2` and `seedbox2-small` are Seedbox 2's beats (#43) with Beat This! final0 and
 small0 and the key (#45) of the mix (the models must be downloaded). `seedbox2-stems` is the same with the key of the
 harmonic stems, as the app does once a track has them: it separates every track, so it takes minutes per track. Key
-scores use `best_guess`, the key even when it isn't confident, so holding back doesn't flatter the number. A new
+scores use `best_guess`, the key even when it isn't confident, so holding back doesn't flatter the number. `seedbox2-vocals` is vocal activity from HTDemucs' vocal stem (#47). A new
 analyser registers itself here with `@analyser("name")`.
 """
 
@@ -125,3 +125,40 @@ def seedbox2_stems(path: Path) -> Estimate:
 @analyser("seedbox2-small")
 def seedbox2_beats_small(path: Path) -> Estimate:
     return _beat_this(path, "beat_this_small")
+
+
+@analyser("seedbox2-vocals")
+def seedbox2_vocals(path: Path) -> Estimate:
+    """Vocal activity (#47) on the beats grid. Separation takes a minute or so per track, so stems are kept in
+    `eval-stems` in the cache folder, by the file's path and size, with the grid."""
+    import hashlib  # noqa: PLC0415
+    import json  # noqa: PLC0415
+    import os  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+
+    from seedbox2.analysis import beats as sb2  # noqa: PLC0415
+    from seedbox2.analysis import stems, vocals  # noqa: PLC0415
+    from seedbox2.analysis.grid import Grid  # noqa: PLC0415
+    from seedbox2.analysis.waveform import stem_files  # noqa: PLC0415
+    from seedbox2.models import load_session  # noqa: PLC0415
+    from seedbox2.paths import folders  # noqa: PLC0415
+
+    key = hashlib.sha1(f"{path.resolve()}:{path.stat().st_size}".encode()).hexdigest()
+    folder = folders()["cache"] / "eval-stems" / key
+    if stem_files(folder) is None:
+        # written aside and moved: a killed run must not leave a folder that looks finished
+        partial = folder.with_name(f"{key}{stems.TMP_MARK}{os.getpid()}")
+        shutil.rmtree(partial, ignore_errors=True)
+        stems.separate(path, partial, load_session(stems.MODEL))
+        os.replace(partial, folder)
+    saved = folder / "grid.json"
+    if saved.is_file():
+        grid = Grid(json.loads(saved.read_text()))
+    else:
+        try:
+            grid = Grid(sb2.analyse(path, load_session("beat_this"), model="beat_this")["segments"])
+        except sb2.NoBeats:
+            grid = Grid.constant(0.0, 120.0)  # vocals don't need a beat to be there, only something to count them on
+        saved.write_text(json.dumps(grid.to_json()))
+    data = vocals.analyse(folder, grid, stems_model=stems.MODEL)
+    return Estimate(duration_s=data["duration_s"], vocals=vocals.spans_s(data))

@@ -41,7 +41,7 @@ def start_jobs(app: Any) -> Supervisor:
             if state.jobs is None:
                 if state.library is None:
                     state.library = Library.open(Path(state.library_path) if state.library_path else default_path())
-                from seedbox2.analysis import energy, key, stems, vibe
+                from seedbox2.analysis import energy, key, stems, vibe, vocals
 
                 lib, events = state.library, state.events
                 jobs = Supervisor(lib, events)
@@ -49,6 +49,7 @@ def start_jobs(app: Any) -> Supervisor:
                 jobs.add_listener(lambda row: key.on_job_finished(jobs, lib, row))
                 jobs.add_listener(lambda row: energy.on_job_finished(jobs, lib, row))
                 jobs.add_listener(lambda row: vibe.on_job_finished(jobs, lib, row))
+                jobs.add_listener(lambda row: vocals.on_job_finished(jobs, lib, row))
                 monitor = power(app)
                 monitor.attach(jobs)  # before it starts: jobs left from the last run obey the limits too
                 monitor.start()
@@ -60,8 +61,8 @@ def start_jobs(app: Any) -> Supervisor:
 
 def _queue_missing_stems(app: Any) -> None:
     """The stems of tracks imported before the model was there, or left out when the cache was full, and the keys,
-    energy and embeddings of tracks imported before those analyses."""
-    from seedbox2.analysis import energy, key, stems, vibe
+    energy, embeddings and vocals of tracks imported before those analyses."""
+    from seedbox2.analysis import energy, key, stems, vibe, vocals
     from seedbox2.library.service import SETTINGS_FILE, Settings
 
     state = app.state
@@ -78,6 +79,10 @@ def _queue_missing_stems(app: Any) -> None:
         vibe.queue_missing(state.jobs, state.library)
     except Exception:
         log.exception("couldn't queue the missing energy and embeddings")
+    try:
+        vocals.queue_missing(state.jobs, state.library)
+    except Exception:
+        log.exception("couldn't queue the missing vocals")
 
 
 JobsDep = Annotated[Supervisor, Depends(get_jobs)]

@@ -6,22 +6,32 @@
 | `giantsteps-key` | key | the previews in `audio/` |
 | `harmonix` | beats, downbeats, sections, tempo | not distributed: put your own copies in `audio/<id>.<ext>` |
 | `gtzan` | beats, downbeats, tempo (Marchand & Peeters) | the 1,000 30-second GTZAN excerpts, from one 1.2 GB archive |
+| `jamendo` | sung spans by hand (Ramona et al.): its held-out test split | 16 Creative Commons tracks, in one 327 MB archive |
+| `musdb18` | sung spans from the true vocal stem (the mix minus its instrumental) | MUSDB18-HQ test tracks; `fetch --limit N` takes N of the 50 out of the 22 GB archive |
 | `corpus` | anything in the annotation JSON (`annotate.py`) | `<name>.<ext>` next to `<name>.json` |
 
-`python -m seedbox2.eval fetch` clones the public annotation repositories and downloads the GiantSteps previews.
+`python -m seedbox2.eval fetch` clones the public annotation repositories, downloads the GiantSteps previews and the
+Zenodo archives.
 """
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import hashlib
+import io
+import json
 import os
 import shutil
 import subprocess
 import urllib.request
+import wave
+import zipfile
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import numpy as np
 
 AUDIO_EXTS = (".mp3", ".wav", ".flac", ".m4a", ".aiff", ".aif", ".ogg", ".opus")
 
@@ -143,6 +153,68 @@ def load_gtzan(root: Path) -> Iterator[Reference]:
                         extra={"genre": genre})
 
 
+def read_lab(path: Path, voice: str = "sing") -> list[tuple[float, float]]:
+    """The `voice` spans of a `<start> <end> <label>` file."""
+    out = []
+    for line in _read_text(path).splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[2] == voice:
+            out.append((float(parts[0]), float(parts[1])))
+    return out
+
+
+def load_jamendo(root: Path) -> Iterator[Reference]:
+    """The `test` file list only: `seedbox2.analysis.vocals.WEIGHTS` was fitted on the others."""
+    base = root / "jamendo" if (root / "jamendo").is_dir() else root
+    for name in _read_text(base / "filelists" / "test").splitlines():
+        audio, lab = base / "audio" / name.strip(), base / "labels" / (Path(name.strip()).stem + ".lab")
+        if audio.is_file() and lab.is_file():
+            yield Reference("jamendo", audio.stem, audio, vocals=read_lab(lab))
+
+
+STEM_FLOOR_DB = -35.0  # a frame is sung when the vocal stem is within this of its own loud level
+STEM_SILENCE_DB = -60.0
+STEM_FILL_S = 0.3  # gaps this short are breaths, as hand labels treat them
+STEM_FRAME_S = 0.05
+
+
+def stem_spans(vocal: "np.ndarray", sr: int) -> list[tuple[float, float]]:
+    """The sung spans of a true vocal stem (mono), by level: nothing else is in it to mistake for a voice."""
+    hop = int(sr * STEM_FRAME_S)
+    n = vocal.size // hop
+    if n == 0:
+        return []
+    db = 10 * np.log10(np.mean(vocal[: n * hop].reshape(n, hop).astype(np.float64) ** 2, axis=1) + 1e-12)
+    loud = float(np.percentile(db, 95))
+    on = db >= max(loud + STEM_FLOOR_DB, STEM_SILENCE_DB)
+    spans: list[list[float]] = []
+    for i in np.flatnonzero(on):
+        t = float(i) * STEM_FRAME_S
+        if spans and t - spans[-1][1] <= STEM_FILL_S:
+            spans[-1][1] = t + STEM_FRAME_S
+        else:
+            spans.append([t, t + STEM_FRAME_S])
+    return [(round(a, 3), round(b, 3)) for a, b in spans]
+
+
+def load_musdb18(root: Path) -> Iterator[Reference]:
+    """`test/<track>/{mixture,vocals}.wav`, as in MUSDB18-HQ. The spans are cached next to the audio."""
+    for folder in sorted((root / "test").glob("*")):
+        audio, stem = folder / "mixture.wav", folder / "vocals.wav"
+        if not (audio.is_file() and stem.is_file()):
+            continue
+        cache = folder / "vocals.spans.json"
+        if cache.is_file():
+            spans = [tuple(s) for s in json.loads(cache.read_text())]
+        else:
+            with contextlib.closing(wave.open(str(stem))) as w:
+                sr, channels, frames = w.getframerate(), w.getnchannels(), w.getnframes()
+                pcm = np.frombuffer(w.readframes(frames), np.int16).reshape(-1, channels)
+            spans = stem_spans(pcm.mean(axis=1) / 32768.0, sr)
+            cache.write_text(json.dumps(spans))
+        yield Reference("musdb18", folder.name, audio, vocals=spans)
+
+
 def load_corpus(root: Path) -> Iterator[Reference]:
     from .annotate import read_annotation  # noqa: PLC0415 (annotate imports this module)
 
@@ -164,6 +236,10 @@ DATASETS: dict[str, Dataset] = {d.name: d for d in (
     Dataset("gtzan", "SEEDBOX2_GTZAN", "https://github.com/TempoBeatDownbeat/gtzan_tempo_beat",
             load_gtzan, "1,000 30 s excerpts of 10 genres, beats and downbeats (Tzanetakis 2002; Marchand & Peeters "
             "2015); not in Beat This!'s training data"),
+    Dataset("jamendo", "SEEDBOX2_JAMENDO", None, load_jamendo,
+            "93 Creative Commons tracks with hand-labelled singing (Ramona et al. 2008); scores its 16-track test split"),
+    Dataset("musdb18", "SEEDBOX2_MUSDB18", None, load_musdb18,
+            "MUSDB18-HQ test tracks; sung spans from the true vocal stem (Rafii et al. 2019)"),
     Dataset("corpus", "SEEDBOX2_CORPUS", None, load_corpus, "our own tracks, annotated with `annotate`"),
 )}
 
@@ -262,12 +338,94 @@ def _fetch_gtzan(folder: Path, log: Callable[[str], None]) -> None:
     log(f"gtzan: {len(list(audio.glob('*.wav')))} excerpts")
 
 
+JAMENDO_URL = "https://zenodo.org/api/records/2585988/files/jamando.zip/content"
+MUSDB18_URL = "https://zenodo.org/api/records/3338373/files/musdb18hq.zip/content"
+
+
+def _fetch_jamendo(folder: Path, log: Callable[[str], None]) -> None:
+    if (folder / "jamendo" / "filelists" / "test").is_file():
+        log("jamendo: already there")
+        return
+    folder.mkdir(parents=True, exist_ok=True)
+    archive = folder / "jamendo.zip.part"
+    log(f"jamendo: downloading {JAMENDO_URL}")
+    with urllib.request.urlopen(JAMENDO_URL, timeout=120) as r, archive.open("wb") as out:
+        shutil.copyfileobj(r, out, 1 << 20)
+    with zipfile.ZipFile(archive) as z:
+        for m in z.infolist():
+            if m.is_dir() or Path(m.filename).name.startswith(".") or "__MACOSX" in m.filename:
+                continue
+            target = (folder / m.filename).resolve()
+            if folder.resolve() not in target.parents:  # a hostile archive doesn't get to write outside the folder
+                raise ValueError(f"unsafe path in the archive: {m.filename}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with z.open(m) as src, target.open("wb") as dst:
+                shutil.copyfileobj(src, dst)
+    archive.unlink()
+    log(f"jamendo: {len(list((folder / 'jamendo' / 'labels').glob('*.lab')))} labelled tracks")
+
+
+class _RemoteFile(io.RawIOBase):
+    """A file on a server that answers HTTP Range requests: zipfile reads one member without the rest of the archive."""
+
+    def __init__(self, url: str) -> None:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"Range": "bytes=0-0"}), timeout=60) as r:
+            self.url, self.size, self.pos = r.geturl(), int(r.headers["Content-Range"].split("/")[1]), 0
+
+    def seekable(self) -> bool:
+        return True
+
+    def readable(self) -> bool:
+        return True
+
+    def tell(self) -> int:
+        return self.pos
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        self.pos = offset if whence == 0 else self.pos + offset if whence == 1 else self.size + offset
+        return self.pos
+
+    def readinto(self, b: bytearray) -> int:
+        n = min(len(b), self.size - self.pos)
+        if n <= 0:
+            return 0
+        req = urllib.request.Request(self.url, headers={"Range": f"bytes={self.pos}-{self.pos + n - 1}"})
+        with urllib.request.urlopen(req, timeout=120) as r:
+            data = r.read()
+        b[: len(data)] = data
+        self.pos += len(data)
+        return len(data)
+
+
+def _fetch_musdb18(folder: Path, log: Callable[[str], None], limit: int | None) -> None:
+    """`limit` test tracks spread over the alphabet (all 50 without it): their mix and vocals, about 150 MB a track."""
+    with zipfile.ZipFile(io.BufferedReader(_RemoteFile(MUSDB18_URL), 1 << 22)) as z:
+        names = sorted({n.split("/")[1] for n in z.namelist() if n.startswith("test/") and n.endswith("/mixture.wav")})
+        step = max(1, len(names) // limit) if limit else 1
+        for track in names[::step][:limit]:
+            out = folder / "test" / Path(track).name
+            out.mkdir(parents=True, exist_ok=True)
+            for name in ("mixture.wav", "vocals.wav"):
+                if not (out / name).is_file():
+                    part = out / f"{name}.part"
+                    with z.open(f"test/{track}/{name}") as src, part.open("wb") as dst:
+                        shutil.copyfileobj(src, dst, 1 << 22)
+                    part.rename(out / name)
+            log(f"musdb18: {track}")
+
+
 _GIANTSTEPS_AUDIO = ("https://www.cp.jku.at/datasets/giantsteps/backup/", "https://geo-samples.beatport.com/lofi/")
 
 
 def fetch(name: str, folder: Path, limit: int | None = None, log: Callable[[str], None] = print) -> None:
     """Clone a dataset's annotations into `folder` and, for GiantSteps, download (the first `limit`) previews."""
     ds = DATASETS[name]
+    if name == "jamendo":
+        _fetch_jamendo(folder, log)
+        return
+    if name == "musdb18":
+        _fetch_musdb18(folder, log, limit)
+        return
     if ds.repo is None:
         raise ValueError(f"{name} is not a public dataset")
     if not (folder / ".git").is_dir():
