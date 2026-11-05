@@ -109,7 +109,6 @@ outside `index.css`. Utilities: `num` (tabular numerals — use on every BPM/tim
 | `Skeleton`, `WaveSkeleton` | what stands in for content until it loads: size it like what it replaces (`still`: no pulse, for what only waits); `features/waveform`'s `WavePlaceholder` for a waveform view |
 | `CoverArt` | `src` (Spotify URL or `/api/covers/<folder>/<id>` embedded art — both handled), `size` px, `camelot` (tinted fallback), `fill`, `rounded` — lazy, picks the right Spotify size |
 | `StarRating` | `rating` 1-10 (→ stars like POPM) or `stars` 0-5 |
-| `PeaksWaveform` | `peaks` (PreviewStatus.peaks), `progress` 0-1, `onSeek(f)`, `height`, `color`, `playedColor`, `loading` — preview clips only |
 | `CamelotWheel` | `size`, `counts` {code: n}, `active`, `path` (set order), `onSelect`, `center` |
 | Layout | `Page` › `PageHeader` (`title`, `subtitle`, `leading`, `actions`, children = toolbar row) › `PageBody` (scrolls; `padded`) · `Panel` + `PanelHeader` · `InfoRow` |
 | Forms | `Input` (`icon`, `suffix`, `size` sm\|md\|lg, `invalid`), `Select`, `Field` (`label`, `hint`, `error`, `aside`) |

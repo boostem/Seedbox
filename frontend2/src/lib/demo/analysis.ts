@@ -1,5 +1,6 @@
 /** A synthetic TrackAnalysis (128 BPM, 64 bars) for the design-system page: shows the waveform code without a backend. */
-import type { CuePoint, Section, SectionKind, TrackAnalysis } from "@/api/types";
+import type { CuePoint, Section, SectionKind, TrackAnalysis, Waveform } from "@/api/types";
+import { prepareBands, type WaveData } from "@/features/waveform/prepare";
 
 const BPM = 128;
 const BAR_S = (60 / BPM) * 4;
@@ -71,4 +72,12 @@ export function demoAnalysis(): TrackAnalysis {
     cues,
     waveform: { points_per_second: PPS, low, mid, high },
   };
+}
+
+/** A 20 s preview clip of the demo track, from its first drop. */
+export function demoClip(): WaveData | null {
+  const { waveform: w } = demoAnalysis();
+  const from = Math.round(24 * BAR_S * PPS);
+  const cut = (v: ArrayLike<number>) => Array.prototype.slice.call(v, from, from + 20 * PPS) as number[];
+  return prepareBands({ ...w, low: cut(w.low), mid: cut(w.mid), high: cut(w.high) } as Waveform, 20);
 }
