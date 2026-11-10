@@ -340,6 +340,29 @@ On the 22 golden pairs with audio on the owner's machine (`golden compare RUN:se
 isn't enough with the lows killed), and pairs whose levels differ a lot. A cut isn't ridden. These numbers are without
 stems, which the corpus doesn't have cached; metrics don't hear, so this still needs the blind test (`#/listen`).
 
+**Stem-aware transitions** (#53, `seedbox2/mix/stemplan.py`): `plan(generated, a, b)` rewrites a generated plan's blend
+on the stem lanes, from what is known of the two tracks (`Track`: stems or not, Camelot key, the vocal stem's phrases and
+acapella/instrumental windows, phrase starts, per-stem activity; `track_from_analysis` and `track_from_audio` build one):
+
+- **Bass**: one hand-off on a phrase boundary of B inside the blend, the one nearest to where the generator brought B's
+  lows in. A's bass stem goes to 0 over the quarter beat before it and B's comes up over the quarter beat after: silence,
+  not an EQ kill. B's lows open on it at the latest and, with stems, A's carry to it. A deck without stems plays the
+  bass lane on its lows (the EQ fallback); between two decks without stems the generator's EQ swap stays.
+- **Vocals**: where both would sing, one vocal stem is muted for the overlap (B's before the hand-off, A's from it, or
+  the other one when that deck has no stems), with a beat's fade. Seedbox 1's -18 dB mid duck is taken out of decks with
+  stems; between two decks without stems it stays.
+- **Drums**: B's drums come in first under a 250 Hz high-pass up to the hand-off and A's go out last under it, so hats
+  layer and the kicks never sound together. Where a deck's lows are killed anyway the filter is left as planned.
+- **Mashup moment**: with compatible keys (same, ±1, relative, after `key_shift`), the acapella deck's stems, and the
+  windows lined up (B moved by whole 8-bar phrases if that does it), 8 or 16 bars of B's acapella over A's instrumental
+  before the hand-off, or A's acapella over B's instrumental after it.
+
+The rules are checks too (`check`, on the plan as it plays): `bass_overlap_db` (the bass both decks play at once against
+the larger, at most -20 dB), `vocal_overlap_s` (at most 0.5 s) and `kick_double_s` (at most 0.25 s). The planner applies
+them as `forces`, listed in its report, and `enforce` puts them back after `automation.adapt` and every measured gain
+pass, so `offline.render_adapted` ends with them holding; its plan's `stems` has the report and the final checks.
+`timeline.plan_pair` stores the stem-aware plan, so a set's transitions use the stems once they are cached.
+
 ## Ordering a set
 
 **Set ordering** (#60, `seedbox2/sets/`, `#/sets`): puts a set's tracks in order from our own analysis. Tag and tunebat

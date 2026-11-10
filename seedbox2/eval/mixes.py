@@ -16,8 +16,8 @@ pairs.toml (paths relative to the file; audio stays local; the golden corpus, #8
     bars = 16
 
 Engines: `seedbox1` plans with musicreco.mixplan and renders with musicreco.mixrender. `seedbox2` starts from the same
-plan with the automation fitted to the audio (#56, seedbox2/mix/automation.py) and plays the tracks' stems when they
-have them; its own planning and stretching land with #52 and #53.
+plan, makes it stem-aware (#53, seedbox2/mix/stemplan.py: bass and vocal hand-offs, no doubled kicks, mashup moments),
+fits the automation to the audio (#56, seedbox2/mix/automation.py) and plays the tracks' stems when they have them.
 """
 
 from __future__ import annotations
@@ -95,7 +95,7 @@ def render_seedbox2(pair: Pair) -> Render:
 
     raw, keys = _seedbox1_plan(pair)
     r, plan = offline.render_adapted(raw, pair.a, pair.b, offline.cached_stems(pair.hash_a),
-                                     offline.cached_stems(pair.hash_b), SR)  # fmt: skip
+                                     offline.cached_stems(pair.hash_b), SR, keys=(keys["A"], keys["B"]))  # fmt: skip
     return Render.from_mixrender(r, plan, keys)
 
 

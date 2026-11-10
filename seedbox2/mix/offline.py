@@ -2,7 +2,8 @@
 Seedbox 2's track gain and master chain (#58) in place of its overlap trim and leveller.
 
 Seedbox 2's own stretching lands with #52; until then a v3 plan is rendered by turning it back into what mixrender
-reads. `render_adapted` is the whole path from a generated plan to audio: fit the automation to the tracks, render.
+reads. `render_adapted` is the whole path from a generated plan to audio: make it stem-aware (`stemplan`), fit the
+automation to the tracks, render.
 `export` is that audio in a file, with a tracklist holding what the render measures.
 """
 
@@ -17,9 +18,9 @@ from musicreco import mixrender
 
 from ..analysis import loudness, waveform
 from ..analysis import stems as stem_cache
-from . import automation, convert
+from . import automation, convert, stemplan
 from . import master as master_chain
-from .plan import STEM_LANES, Deck, MixPlan, fold_stem_lanes
+from .plan import STEM_LANES, Deck, MixPlan, deck_grid, fold_stem_lanes
 
 Stems = dict[str, Path]
 MEASURED_PASSES = 3
@@ -103,15 +104,27 @@ def _measured(r: dict, plan: dict) -> tuple[np.ndarray, np.ndarray, float] | Non
     return np.asarray(r["clock"].beat(t)), dev, float(np.abs(dev).max())
 
 
-def render_adapted(raw: dict, path_a: Path, path_b: Path, stems_a: Stems | None = None, stems_b: Stems | None = None,
-                   sr: int = mixrender.SR, master: master_chain.Master | None = None) -> tuple[dict, dict]:  # fmt: skip
-    """A generated Seedbox 1 plan with its automation fitted to the tracks, rendered and corrected from what the render
-    measures, up to MEASURED_PASSES times; a pass that makes it worse is dropped. (the render, the plan in Seedbox 1's
-    format, with `adaptive` holding the report)."""
-    plan = convert.from_seedbox1(raw)
+def tracks_for(plan: MixPlan, audio_a: automation.DeckAudio, audio_b: automation.DeckAudio,
+               keys: tuple[str | None, str | None] = (None, None)) -> tuple[stemplan.Track, stemplan.Track]:  # fmt: skip
+    """What the stem planner knows of both tracks from their decoded stems (vocal phrases, levels) and Camelot keys."""
+    return (stemplan.track_from_audio(audio_a.stems, audio_a.sr, deck_grid(plan.a), camelot=keys[0]),
+            stemplan.track_from_audio(audio_b.stems, audio_b.sr, deck_grid(plan.b), camelot=keys[1]))  # fmt: skip
+
+
+def render_adapted(raw: dict | MixPlan, path_a: Path, path_b: Path, stems_a: Stems | None = None, stems_b: Stems | None = None,
+                   sr: int = mixrender.SR, master: master_chain.Master | None = None, *,
+                   keys: tuple[str | None, str | None] = (None, None),
+                   tracks: tuple[stemplan.Track, stemplan.Track] | None = None) -> tuple[dict, dict]:  # fmt: skip
+    """A generated Seedbox 1 plan (or one converted already) made stem-aware (`stemplan`, #53), its automation fitted to the tracks, rendered and
+    corrected from what the render measures, up to MEASURED_PASSES times; a pass that makes it worse is dropped. The
+    stem rules are put back after every change. (the render, the plan in Seedbox 1's format, with `adaptive` holding
+    the report and `stems` the stem planner's)."""
+    plan = raw if isinstance(raw, MixPlan) else convert.from_seedbox1(raw)
     audio_a, audio_b = deck_audio(plan, path_a, path_b, stems_a, stems_b, sr)
+    track_a, track_b = tracks or tracks_for(plan, audio_a, audio_b, keys)
+    plan, stem_report = stemplan.plan(plan, track_a, track_b)
     adapted = automation.adapt(plan, audio_a, audio_b)
-    best_plan, report = adapted.plan, adapted.report
+    best_plan, report = stemplan.enforce(adapted.plan, stem_report), adapted.report
     best = render(best_plan, path_a, path_b, audio_a, audio_b, sr, master)
     if "cuts_db" in report:  # there is a blend to ride
         worst = None
@@ -123,13 +136,15 @@ def render_adapted(raw: dict, path_a: Path, path_b: Path, stems_a: Stems | None 
             next_plan = automation.ride_measured(best_plan, beats, dev)
             if next_plan is None:
                 break
+            next_plan = stemplan.enforce(next_plan, stem_report)
             r = render(next_plan, path_a, path_b, audio_a, audio_b, sr, master)
             again = _measured(r, to_seedbox1(next_plan))
             if again is None or again[2] >= worst:
                 break
             best, best_plan, worst = r, next_plan, again[2]
         report = {**report, "measured_lu": None if worst is None else round(worst, 2)}
-    return best, {**to_seedbox1(best_plan), "adaptive": report}
+    stem_report = {**stem_report, "checks": stemplan.check(best_plan, track_a, track_b)}
+    return best, {**to_seedbox1(best_plan), "adaptive": report, "stems": stem_report}
 
 
 def export(plan: MixPlan, path_a: Path, path_b: Path, out_path: Path, *, names: tuple[str, str] | None = None,
