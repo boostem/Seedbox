@@ -1,3 +1,4 @@
+import type { EngineScenario } from "@/audio/engine/bench";
 import { useEffect, useMemo } from "react";
 import { player, usePlayer } from "@/audio/player";
 import { Page, PageBody, PageHeader, Panel, PanelHeader } from "@/components/ui";
@@ -26,7 +27,7 @@ export interface BenchHooks {
   /** What draws the waveforms: "webgl2 (<GPU>)" or "canvas2d". */
   gpu: () => string;
   /** The audio engine's benchmark: `python -m seedbox2.bench engine`. */
-  engine: (seconds?: number, offTempo?: boolean) => Promise<unknown>;
+  engine: (seconds?: number, scenario?: EngineScenario) => Promise<unknown>;
   /** A real engine on this server, for tests/test_seedbox2_engine_browser.py to drive. */
   liveEngine: () => Promise<unknown>;
 }
@@ -78,7 +79,7 @@ export function BenchPage() {
         return traceJitter(headTrace);
       },
       gpu: waveRendererInfo,
-      engine: async (seconds, offTempo) => (await import("@/audio/engine/bench")).engineBench(seconds, offTempo),
+      engine: async (seconds, scenario) => (await import("@/audio/engine/bench")).engineBench(seconds, scenario),
       liveEngine: async () => new (await import("@/audio/engine")).LiveEngine(),
     };
     return () => {

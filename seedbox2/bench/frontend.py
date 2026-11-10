@@ -370,7 +370,8 @@ def engine_ok(result: dict) -> bool:
 
 def run_engine(dist: Path = DIST, seconds: float = 30.0, chrome: str | None = None, log=print) -> dict:
     """The real AudioWorklet in an OfflineAudioContext, flat out: wall time over audio time is the share of one core it
-    takes. `on_tempo` copies its stems; `off_tempo` also resamples each (varispeed), the most it does."""
+    takes. `on_tempo` copies its stems, `off_tempo` also resamples them (varispeed), and `key_lock` stretches each deck, the
+    most it does, as `key_lock_low_power` does on low-power mode's cheaper setting."""
     chrome = chrome or find_chrome()
     if chrome is None:
         return {"skipped": "no Chrome, Chromium or Edge found (set $CHROME)"}
@@ -392,8 +393,8 @@ def run_engine(dist: Path = DIST, seconds: float = 30.0, chrome: str | None = No
                     cdp.call("Page.navigate", url=f"{server.url.rstrip('/')}/#/bench")
                     _wait(lambda: cdp.eval("!!window.__seedboxBench?.ready"), 30, "the #/bench page")
                     scenarios_ = {}
-                    for name, off in (("on_tempo", "false"), ("off_tempo", "true")):
-                        scenarios_[name] = cdp.eval(f"window.__seedboxBench.engine({seconds}, {off})", timeout=seconds * 20 + 60)
+                    for name in ("on_tempo", "off_tempo", "key_lock", "key_lock_low_power"):
+                        scenarios_[name] = cdp.eval(f"window.__seedboxBench.engine({seconds}, '{name}')", timeout=seconds * 20 + 60)
             finally:
                 _stop(proc)
                 errors.close()
@@ -401,5 +402,6 @@ def run_engine(dist: Path = DIST, seconds: float = 30.0, chrome: str | None = No
         server.stop()
     for name, r in scenarios_.items():
         log(f"engine  {name}: {r['cpu_percent']:.1f}% of one core ({r['seconds']:g} s of audio in {r['wall_s']:.2f} s), "
-            f"worklet vs core {r['worklet_vs_core_max']:.1e}")
+            f"worklet vs core {r['worklet_vs_core_max']:.1e}, slowest block {r['block_max_ms']:.2f} ms (2.9 ms of audio), "
+            f"p99 {r['block_p99_ms']:.2f} ms, a seek {r['seek_ms']:.2f} ms")
     return {"browser": agent, "budget_percent": ENGINE_CPU_BUDGET, "scenarios": scenarios_}

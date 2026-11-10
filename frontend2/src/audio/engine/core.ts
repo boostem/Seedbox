@@ -17,6 +17,7 @@ import type { DeckSource } from "./deck";
 import { Glue, LATENCY, Limiter, openLoopMakeupDb } from "./master";
 import { beatAtFile, deckTime } from "./position";
 import { AudioStream } from "./stream";
+import { LOW_POWER_PROFILE, NORMAL_PROFILE } from "./stretcher";
 
 export type DeckId = "a" | "b";
 
@@ -52,7 +53,7 @@ function structureOf(plan: MixPlan, audio: Record<DeckId, DeckAudio>): string {
       on(l.filter, 0), up(l.filter_res), up(l.echo_send), up(l.reverb_send),
     ];
   };
-  return JSON.stringify([plan.window, plan.tempo, deck("a"), deck("b")]);
+  return JSON.stringify([plan.window, plan.tempo, plan.key_lock, deck("a"), deck("b")]);
 }
 
 type Transport = "stopped" | "playing" | "draining";
@@ -63,6 +64,8 @@ export class EngineCore {
   private decks: DeckVoice[] = [];
   private voices: Record<DeckId, DeckVoice | null> = { a: null, b: null };
   private structure = "";
+  private audio: Record<DeckId, DeckAudio> | null = null;
+  private lowPower = false;
   private total = 0;
   private readonly dryL = new Float64Array(BLOCK);
   private readonly dryR = new Float64Array(BLOCK);
@@ -107,6 +110,17 @@ export class EngineCore {
   /** The master chain's target. `makeupDb`: what a render measured for it, instead of the open-loop make-up. */
   setMaster(targetLufs: number, makeupDb?: number | null): void {
     this.makeup = Math.pow(10, (makeupDb ?? openLoopMakeupDb(targetLufs)) / 20);
+  }
+
+  /**
+   * Low-power mode's cheaper stretcher. If one is running, it's a change of graph like any other: the new one fades in.
+   */
+  setLowPower(on: boolean): void {
+    if (on === this.lowPower) return;
+    this.lowPower = on;
+    if (!this.plan || !this.audio || !this.decks.some((d) => d.usesStretcher)) return;
+    this.structure = "";
+    this.setPlan(this.plan, this.audio);
   }
 
   /** A source's audio: the same stream stays when a new plan uses the same track. */
@@ -160,6 +174,7 @@ export class EngineCore {
   }
 
   private retarget(plan: MixPlan, audio: Record<DeckId, DeckAudio>): void {
+    this.audio = audio;
     for (const id of ["a", "b"] as const) this.voices[id]?.retarget(plan[id], this.sourcesOf(plan, audio, id), this.q);
     this.plan = plan;
     this.editLeft = EDIT_FADE;
@@ -180,9 +195,13 @@ export class EngineCore {
     const clamp = (b: number): number => Math.max(0, Math.min(total, pyRound(clock.time(Math.max(b, w0)) * SR)));
     const q = clamp(beat);
     for (const id of ["a", "b"] as const) {
-      const voice = DeckVoice.create(plan[id], this.sourcesOf(plan, audio, id), clock, w0, w1, total, audio[id].trimDb);
+      const profile = this.lowPower ? LOW_POWER_PROFILE : NORMAL_PROFILE;
+      const voice = DeckVoice.create(plan[id], this.sourcesOf(plan, audio, id), clock, w0, w1, total, audio[id].trimDb, plan.key_lock, profile);
       voices[id] = voice;
-      if (voice) decks.push(voice);
+      if (voice) {
+        decks.push(voice);
+        if (this.scrubbing) voice.relocate(false, true);
+      }
     }
     if (fade) {
       for (const id of ["a", "b"] as const) {
@@ -195,8 +214,11 @@ export class EngineCore {
       this.oldDecks = this.decks;
       this.oldQ = this.q;
       this.editLeft = EDIT_FADE;
+    } else {
+      for (const d of this.decks) d.dispose();
     }
     this.plan = plan;
+    this.audio = audio;
     this.clock = clock;
     this.decks = decks;
     this.voices = voices;
@@ -221,6 +243,7 @@ export class EngineCore {
   /** A live edit has played out, or the playhead jumped (under a closed fade): what comes next can start. */
   private endEdit(): void {
     this.editLeft = 0;
+    for (const d of this.oldDecks) d.dispose();
     this.oldDecks = [];
     for (const d of this.decks) d.settle();
     const next = this.queued;
@@ -371,12 +394,12 @@ export class EngineCore {
     this.loopedOnce = false;
   }
 
-  /** Moves the graph, under a closed fade. The limiter keeps its lookahead: that's the fade, on its way out. */
-  private jump(q: number, clearTails: boolean): void {
+  /** Moves the graph, under a closed fade. The limiter keeps its lookahead while playing: that's the fade, on its way out. */
+  private jump(q: number, clearTails: boolean, clearMaster = clearTails): void {
     this.q = q;
-    for (const d of this.decks) d.relocate(clearTails);
+    for (const d of this.decks) d.relocate(clearTails, this.scrubbing);
     if (this.editLeft > 0) this.endEdit();
-    if (clearTails) {
+    if (clearMaster) {
       this.limiter.clear();
       this.glue.reset();
     }
@@ -471,6 +494,7 @@ export class EngineCore {
     fxR.fill(0, 0, m);
     const q = this.q;
     for (const d of this.decks) if (q + m > d.qa) d.render(q, m, dryL, dryR, fxL, fxR);
+    if (this.oldDecks.length) this.mixOldGraph(m);
     let env = this.env;
     let step = this.envStep;
     let closed = false;
@@ -513,7 +537,7 @@ export class EngineCore {
     if (this.pendingSeek !== null) {
       const to = this.pendingSeek;
       this.pendingSeek = null;
-      this.jump(to, true);
+      this.jump(to, true, false);
       this.envStep = 1 / DECLICK;
     } else if (this.pendingPause) {
       this.transport = "draining";

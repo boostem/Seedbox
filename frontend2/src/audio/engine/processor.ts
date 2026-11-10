@@ -1,6 +1,7 @@
 /** The AudioWorklet: the engine core on the audio thread, driven by messages from `index.ts`. */
 import { EngineCore } from "./core";
 import type { EngineMessage } from "./messages";
+import { compileStretcher } from "./stretcher";
 
 declare const sampleRate: number;
 declare const currentFrame: number;
@@ -18,6 +19,7 @@ class EngineProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     if (sampleRate !== 44100) throw new Error(`the engine runs at 44100 Hz, not ${sampleRate}`);
+    compileStretcher();
     this.port.onmessage = (e: MessageEvent<EngineMessage>) => this.handle(e.data);
   }
 
@@ -56,6 +58,9 @@ class EngineProcessor extends AudioWorkletProcessor {
         break;
       case "master":
         core.setMaster(m.targetLufs, m.makeupDb);
+        break;
+      case "lowPower":
+        core.setLowPower(m.on);
         break;
       case "ping":
         this.port.postMessage({ type: "pong", id: m.id });

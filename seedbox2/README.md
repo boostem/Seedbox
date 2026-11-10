@@ -394,8 +394,7 @@ target arc, the tempo and the Camelot path.
   gone and the tempo has settled on the incoming one's, with the track they share going on from its sample. Unlike
   now-playing's fixed chain it plays from any second of the set and copes with plans still to come: a next plan that isn't
   ready holds the music at the last of this one, and it picks up when it is. Reordering stops the music. A seek before Play
-  only moves the playhead: the AudioContext waits for Play. `key_shift` doesn't sound until #66 reaches the live engine, so
-  a semitone fix in the order isn't heard yet.
+  only moves the playhead: the AudioContext waits for Play.
 
 **A track for a gap** (#64, `seedbox2/sets/bridge.py`, `#/sets`): every transition has a `score` out of 100, from what its two
 tracks cost each other (key, tempo, vibe, genre, the energy step; not how they fit the arc or journey). Under 55 it is a
@@ -572,8 +571,6 @@ cache's eviction, plays the full track with its stem lanes folded into its EQ (`
 `validate(has_stems=...)`).
 
 What it doesn't do yet:
-- **Key lock and `key_shift` (#66):** off its own tempo a deck plays varispeed, so its pitch moves with the tempo, as a
-  render without key lock does.
 - **The renderer's master (#58):** its leveller and limiter look ahead without limit. Live, the leveller is the same law
   reacting about a second late, and the limiter has 25 ms of latency and works on sample peaks. They only act on loud
   blends; below them, the two engines null.
@@ -581,6 +578,23 @@ What it doesn't do yet:
 - **Screens:** `#/mixes` (#67) and the now-playing view (#77) play through it; #79 comes next, and `audio/player.ts` stays for the library's single tracks.
 
 `python -m seedbox2.bench engine` measures it in headless Chrome (below).
+
+**Key lock and `key_shift`** (#66, `stretcher.ts`, `stretched.ts`): the renderer's engine, Signalsmith Stretch, as the official npm package's WebAssembly, run inside the engine's own worklet rather than through the package's AudioWorklet node, so that it stays on the one sample clock. `scripts/vendor-stretch.ts` copies the WebAssembly out of the pinned package, and a test holds the copy to it. The rules are the renderer's: with `key_lock` a deck off its own tempo stretches and keeps its pitch plus `key_shift`; without it the pitch follows the tempo (plain varispeed, or the stretcher when there's a `key_shift` too). On its own tempo with no shift a deck is still a copy, and a deck stretched anywhere goes through the stretcher for its whole length.
+
+- **Timing:** each block feeds the stretcher up to where the plan's time map will be when that block's sound comes out, so the ratio follows the tempo lane as a real ramp, with no pieces or seams. Rounding is taken back on the next block, so nothing adds up: over 64 bars of a ramp from 124 to 128 BPM the worst beat is 0.46 ms from the master grid and the drift, first bars to last, is 0.01 ms (`stretcher.test.ts`). The renderer's stretch and this land within 0.2 ms of each other (`test_key_lock_sounds_like_the_renderers_stretch`).
+- **Latency:** a plan is known in advance, so the source is read ahead by the stretcher's own latency and nothing comes out late: stretching adds no output latency. The price is a jump (a seek, a loop's wrap): the stretcher starts again from a seek with one block and one interval of output worked out unheard, all in one audio block. Loop wraps and seeks do that under their closed fades. It reads the source from about 0.15 s before where it lands, which isn't always loaded yet.
+- **What isn't the renderer's:** the renderer runs a stretcher per stem, and drums get shorter blocks. Live there's one per deck, with the stems mixed before it, each under its gain at the moment that sample will be heard; four per deck would use up the budget. An edit to a stem's gain is heard about 0.15 s later for that reason, and a kick is a little softer than in a render. A scrub's 40 ms bursts use the varispeed read, so they stay as cheap as they were, off pitch.
+- **Effects** read back what the stretcher has already put out, from a history as long as the deck's longest effect needs.
+- **Low-power mode** uses a cheaper setting: 100 ms blocks every 45 ms, where the normal setting is 120 ms every 30 ms. `store/power.ts` sets it, and coming on during playback it's a change of graph like any other, faded over 5 ms.
+
+| `python -m seedbox2.bench engine`, 2 decks x 4 stems, every stage on | One core | Slowest block (2.9 ms of audio) | Slowest around a seek |
+|---|---|---|---|
+| On tempo (a copy) | 2.0% | 0.7 ms | 0.2 ms |
+| Varispeed | 2.1% | 0.3 ms | 0.5 ms |
+| Key lock, both decks stretched | 4.2% | 1.5 ms | 4.1 ms |
+| Key lock, low-power mode | 3.2% | 1.3 ms | 2.4 ms |
+
+Measured on a Ryzen 5 9600X desktop on mains in headless Chromium. **Not yet measured on the reference laptops**, against the 15% budget. A seek is the number to watch there: starting two stretchers takes longer than a block's 2.9 ms even here, so it leans on the output buffer. A stretcher adds 1.2 MB of memory, and taking a new one costs about 3 ms, on the audio thread, when a plan needs more than the pool has.
 
 **Editing while it plays** (#67). `schedule(plan)` can come at any time. If only lanes' keyframes moved, the running voices fade each changed lane to its new values over 5 ms (`EDIT_FADE`) and keep their filters and tails, and it costs next to nothing, so a drag can send one per pointer event. Any other change (tempo, ranges, FX, an isolator or a send switching on) builds a new graph, settles its filters unheard and fades to it over the same 5 ms, handing over echo and reverb tails where the sends match. A plan that arrives during a fade waits and only the newest is kept; the position and the loop region carry over in beats. After the fade the output nulls against a fresh run of the new plan (`engine.test.ts`).
 
@@ -598,7 +612,7 @@ Every edit goes straight to `schedule`, so it's heard as the pointer moves. A dr
 
 **The checks** (`checks.ts`) are bass overlap, vocal overlap, key and tempo stretch, and loudness dip and bump, estimated from the plan and the waveforms after every edit, because nothing has been rendered. They use `mixmetrics.checks`' limits, but they're estimates: the levels come from waveform peaks rather than measured loudness, so an exported render's `mixmetrics` still has the last word. Vocal overlap needs both tracks' stems. A 128-bar overlap takes about 5 ms to check in Node, and a fix about 10 ms.
 
-Each Fix button is one undoable edit: bass and vocals hand over on one bar in the middle of where they clash (a person's lanes are pinned as usual), loudness rides the faders and then the mids and highs that aren't killed, and key and tempo shifts B by up to 2 semitones and meets the two tempos halfway. The live engine doesn't play `key_shift` or `key_lock` until #66, so those two parts of the fix aren't audible live yet.
+Each Fix button is one undoable edit: bass and vocals hand over on one bar in the middle of where they clash (a person's lanes are pinned as usual), loudness rides the faders and then the mids and highs that aren't killed, and key and tempo shifts B by up to 2 semitones and meets the two tempos halfway.
 
 **The server renders for export only** (#70, under "Exporting a set"). Nothing under `/api` renders audio to listen to: `tests/test_seedbox2_library.py` holds that, and playing or auditioning a plan is the live engine's job. The listening page (`#/listen`) plays files rendered offline, and `python -m seedbox2.eval` renders for its reports.
 
@@ -733,7 +747,7 @@ Verified licences of the candidates (2026-10-29), for the model list (#42) and i
 | MERT, MuQ | Apache-2.0, MIT | CC BY-NC 4.0 |
 | madmom | BSD-2 | CC BY-NC-SA 4.0 |
 | Essentia | AGPL-3.0 | CC BY-NC-SA 4.0 (proprietary licence on request) |
-| Signalsmith Stretch, onnxruntime | MIT | |
+| Signalsmith Stretch (`python-stretch`, and its npm WebAssembly in the live engine), onnxruntime | MIT | |
 | pedalboard (bundles JUCE, Rubber Band, FFTW) | GPLv3 | |
 | Rubber Band R3 | GPL-2.0-or-later or paid commercial licence | |
 | libKeyFinder | GPL-3.0-or-later | |

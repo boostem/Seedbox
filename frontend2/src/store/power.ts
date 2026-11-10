@@ -1,12 +1,13 @@
 /**
  * Low-power mode (#85): the latest GET /api/power, kept current by the `power` event. It sets the waveforms' frame cap
- * and tells the analysis queue what is paused; the top bar and Settings read it to say so.
+ * and the stretcher's profile, and tells the analysis queue what is paused; the top bar and Settings read it to say so.
  */
 import { create } from "zustand";
 import { api } from "@/api/client";
 import { onServerEvent } from "@/api/events";
 import type { PowerMode, PowerStatus } from "@/api/types";
 import { setFrameCap } from "@/lib/frameCap";
+import { setLowPower } from "@/audio/engine/power";
 import { useApp } from "@/store/app";
 import { useJobs } from "@/store/jobs";
 
@@ -15,6 +16,7 @@ export const usePower = create<{ status: PowerStatus | null }>()(() => ({ status
 export function applyPower(status: PowerStatus): void {
   usePower.setState({ status });
   setFrameCap(status.limits.fps);
+  setLowPower(status.low_power);
   const pausedPools = [...(status.limits.stems_paused ? ["heavy"] : []), ...(status.limits.analysis_paused ? ["light"] : [])];
   useJobs.setState((s) => ({ pausedPools, workers: { ...s.workers, light: status.limits.light_workers } }));
 }

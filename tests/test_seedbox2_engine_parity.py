@@ -17,7 +17,7 @@ from scipy.io import wavfile
 
 from musicreco import mixrender
 from musicreco.paths import deno_path
-from seedbox2.mix import convert, master, plan as v3
+from seedbox2.mix import convert, master, plan as v3, stretch
 
 ROOT = Path(__file__).resolve().parents[1]
 SR = mixrender.SR
@@ -257,6 +257,66 @@ def test_varispeed_nulls_against_a_render_without_key_lock(tracks):
     residual = _residual_db(ref["mix"], got)
     print(f"varispeed: {residual:.1f} dB")
     assert residual < -30.0
+
+
+def _click_track(seconds: float = 34.0, gap_s: float = 0.5) -> np.ndarray:
+    """A click on every beat of a track at BPM, (2, n) float32."""
+    out = np.zeros(int(seconds * SR), np.float32)
+    shape = np.exp(-np.arange(64) / 12) * (1 - 2 * (np.arange(64) % 2))
+    for beat in range(int((seconds - gap_s - 1) * BPM / 60)):
+        at = round((gap_s + beat * SPB) * SR)
+        out[at : at + 64] = shape
+    return np.stack([out, out])
+
+
+def _beat_errors_ms(x: np.ndarray, spb_samples: float, beats: range) -> np.ndarray:
+    """How far each beat's centre of energy is from the master grid: a stretcher spreads a click out, but evenly."""
+    reach = SR // 20
+    out = []
+    for beat in beats:
+        expected = beat * spb_samples
+        at = np.arange(int(expected) - reach, int(expected) + reach)
+        energy = x[0, at].astype(np.float64) ** 2
+        out.append(float((energy * at).sum() / energy.sum() - expected))
+    return np.array(out) / SR * 1e3
+
+
+def _band_levels_db(x: np.ndarray) -> np.ndarray:
+    """A signal's level below 200 Hz, up to 2.5 kHz and above."""
+    power = np.abs(np.fft.rfft(x[0].astype(np.float64))) ** 2
+    hz = np.fft.rfftfreq(x.shape[1], 1 / SR)
+    bands = (hz < 200, (hz >= 200) & (hz < 2500), hz >= 2500)
+    return np.array([10 * np.log10(power[b].sum() + 1e-12) for b in bands])
+
+
+@pytest.mark.parametrize("key_shift", [0, 1, -1])
+def test_key_lock_sounds_like_the_renderers_stretch(tracks, key_shift):
+    """Both run Signalsmith Stretch but neither can null: its phases start at random, and its pieces differ. So what has
+    to agree is what's heard: how much of the sound is in each band, and where the beats land."""
+    a = _deck("a", 40.0, 60.0, beat0_s=8.0)
+    b = _deck("b", 0.0, 32.0)
+    plan2 = _plan(a, b, w0=0.0, w1=32.0, bpm=BPM * 1.03)
+    plan3 = convert.from_seedbox1(plan2).model_dump()
+    plan3["b"]["key_shift"] = key_shift
+    plan3["b"]["lanes"]["volume"] = [_kf(0.0, 0.25, "hold")]
+    got, info = _engine(tracks, plan3, {"A": 0.0, "B": 0.0}, f"keylock{key_shift}")
+    assert info["missing"] == 0
+    offline = stretch.render_deck(v3.MixPlan.model_validate(plan3), "b", _mix(tracks["b"]), SR) * 0.25
+
+    n = min(got.shape[1], offline.shape[1]) - SR
+    gap = _band_levels_db(got[:, SR // 2 : n]) - _band_levels_db(offline[:, SR // 2 : n])
+    print(f"key shift {key_shift}: bands {gap.round(2)} dB")
+    assert np.abs(gap).max() < 2.5
+
+    clicks = _click_track()
+    heard, _ = _engine(tracks, plan3, {"A": 0.0, "B": 0.0}, f"keylock-clicks{key_shift}", swap={"b": clicks})
+    rendered = stretch.render_deck(v3.MixPlan.model_validate(plan3), "b", clicks, SR) * 0.25
+    spb = SPB / 1.03 * SR
+    live_ms = _beat_errors_ms(heard, spb, range(2, 30))
+    render_ms = _beat_errors_ms(rendered, spb, range(2, 30))
+    print(f"key shift {key_shift}: live {np.abs(live_ms).max():.2f} ms, render {np.abs(render_ms).max():.2f} ms off the grid")
+    assert np.abs(live_ms).max() < 1.0
+    assert abs(live_ms.mean() - render_ms.mean()) < 0.2
 
 
 def test_stems_at_unity_null_against_the_full_track(tracks):

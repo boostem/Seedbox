@@ -14,6 +14,7 @@ export type EngineMessage =
   | { type: "scrub"; beat: number }
   | { type: "endScrub" }
   | { type: "master"; targetLufs: number; makeupDb?: number | null }
+  | { type: "lowPower"; on: boolean }
   | { type: "ping"; id: number };
 
 export type EngineReport =
