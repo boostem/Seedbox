@@ -338,6 +338,7 @@ def test_the_engine_runs_the_stem_planner(tmp_path, monkeypatch):
     (pair,) = mixes.synthetic_pairs(tmp_path)
     r = mixes.render_seedbox2(pair)
     assert r.plan["stems"]["checks"]["ok"]
+    assert v3.validate(r.plan["plan_v3"]).b.stem_lanes is not None  # the stem lanes the render played
 
 
 def test_a_track_from_its_stems_finds_the_vocal_and_the_levels():

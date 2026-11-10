@@ -118,7 +118,7 @@ def render_adapted(raw: dict | MixPlan, path_a: Path, path_b: Path, stems_a: Ste
     """A generated Seedbox 1 plan (or one converted already) made stem-aware (`stemplan`, #53), its automation fitted to the tracks, rendered and
     corrected from what the render measures, up to MEASURED_PASSES times; a pass that makes it worse is dropped. The
     stem rules are put back after every change. (the render, the plan in Seedbox 1's format, with `adaptive` holding
-    the report and `stems` the stem planner's)."""
+    the report, `stems` the stem planner's and `plan_v3` the plan as rendered, stem lanes and all)."""
     plan = raw if isinstance(raw, MixPlan) else convert.from_seedbox1(raw)
     audio_a, audio_b = deck_audio(plan, path_a, path_b, stems_a, stems_b, sr)
     track_a, track_b = tracks or tracks_for(plan, audio_a, audio_b, keys)
@@ -144,7 +144,7 @@ def render_adapted(raw: dict | MixPlan, path_a: Path, path_b: Path, stems_a: Ste
             best, best_plan, worst = r, next_plan, again[2]
         report = {**report, "measured_lu": None if worst is None else round(worst, 2)}
     stem_report = {**stem_report, "checks": stemplan.check(best_plan, track_a, track_b)}
-    return best, {**to_seedbox1(best_plan), "adaptive": report, "stems": stem_report}
+    return best, {**to_seedbox1(best_plan), "adaptive": report, "stems": stem_report, "plan_v3": best_plan.model_dump()}
 
 
 def export(plan: MixPlan, path_a: Path, path_b: Path, out_path: Path, *, names: tuple[str, str] | None = None,
