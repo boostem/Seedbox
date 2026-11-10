@@ -41,7 +41,7 @@ def start_jobs(app: Any) -> Supervisor:
             if state.jobs is None:
                 if state.library is None:
                     state.library = Library.open(Path(state.library_path) if state.library_path else default_path())
-                from seedbox2.analysis import energy, key, stems, vibe, vocals
+                from seedbox2.analysis import energy, key, sections, stems, vibe, vocals
 
                 lib, events = state.library, state.events
                 jobs = Supervisor(lib, events)
@@ -50,6 +50,7 @@ def start_jobs(app: Any) -> Supervisor:
                 jobs.add_listener(lambda row: energy.on_job_finished(jobs, lib, row))
                 jobs.add_listener(lambda row: vibe.on_job_finished(jobs, lib, row))
                 jobs.add_listener(lambda row: vocals.on_job_finished(jobs, lib, row))
+                jobs.add_listener(lambda row: sections.on_job_finished(jobs, lib, row))
                 monitor = power(app)
                 monitor.attach(jobs)  # before it starts: jobs left from the last run obey the limits too
                 monitor.start()

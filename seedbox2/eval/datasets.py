@@ -33,7 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
-AUDIO_EXTS = (".mp3", ".wav", ".flac", ".m4a", ".aiff", ".aif", ".ogg", ".opus")
+AUDIO_EXTS = (".mp3", ".wav", ".flac", ".m4a", ".aiff", ".aif", ".ogg", ".opus", ".webm")
 
 
 @dataclass
