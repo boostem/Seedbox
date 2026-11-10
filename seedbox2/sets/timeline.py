@@ -4,8 +4,10 @@
 from the pair's saved plan. A pair without a plan comes back `pending` and goes to the `set_plan` job, so dragging a track
 never waits for planning; the `job.done` event says when to ask again.
 
-`set_plan` plans one pair on its own, with Seedbox 1's generator on our analysis, and saves it. #61 plans a whole set with
-lookahead and #53 with stems; #56's `adapt` isn't run here either. A track's vocals are the stem's when it has them
+`set_plan` plans one pair on its own, with Seedbox 1's generator on our analysis, made stem-aware by
+`seedbox2.mix.stemplan` (#53: bass and vocal hand-offs on the stem lanes, no doubled kicks, mashup moments), and saves it.
+A track whose stems aren't cached yet plays those lanes on its EQ. #61 plans a whole set with lookahead; #56's `adapt`
+isn't run here. A track's vocals are the stem's when it has them
 (`vocals.plan_input_for`). A saved plan is left alone: a person's edit, an import or an
 earlier job's result always wins.
 """
@@ -16,11 +18,12 @@ from typing import Any
 
 import numpy as np
 
-from seedbox2.analysis import beats, energy, loudness, vibe, vocals
+from seedbox2.analysis import beats, energy, loudness, sections, vibe, vocals
+from seedbox2.analysis import stems as stem_cache
 from seedbox2.analysis.grid import Grid
 from seedbox2.jobs import register
 from seedbox2.mix import convert
-from seedbox2.mix import master
+from seedbox2.mix import master, stemplan
 from seedbox2.mix.plan import MixPlan, deck_time
 from seedbox2.sets.features import load_features
 
@@ -165,7 +168,7 @@ def plan_pair(lib: Any, from_hash: str, to_hash: str) -> MixPlan:
     from musicreco.models import Track
 
     features = load_features(lib, [from_hash, to_hash])
-    analyses, decks = [], []
+    analyses, decks, known = [], [], []
     for h in (from_hash, to_hash):
         row = lib.track(h)
         if row is None:
@@ -176,12 +179,17 @@ def plan_pair(lib: Any, from_hash: str, to_hash: str) -> MixPlan:
         an = vocals.plan_input_for(lib, h, an)
         f = features[h]
         analyses.append(an)
+        section_row = lib.analysis(h, sections.ANALYSER, sections.VERSION)
+        known.append(stemplan.track_from_analysis(an, has_stems=stem_cache.current(lib, h) is not None,
+                                                  camelot=f.camelot or None,
+                                                  sections=section_row["data"] if section_row else None))  # fmt: skip
         decks.append(Track(id=h, name=row.get("title") or h, artists=[row["artist"]] if row.get("artist") else [], album="",
                            release_date="", duration_ms=int(float(row["duration"]) * 1000), popularity=0, key="",
                            camelot=f.camelot or "", bpm=an["bpm"], energy=f.energy or 0.0, danceability=0.0,
                            cover_url=None))  # fmt: skip
     raw = mixplan.generate(decks[0], analyses[0], decks[1], analyses[1], "")
-    return convert.load(raw, from_track=from_hash, to_track=to_hash)
+    plan, _ = stemplan.plan(convert.load(raw, from_track=from_hash, to_track=to_hash), known[0], known[1])
+    return plan
 
 
 @register(JOB, pool="light")
