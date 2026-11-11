@@ -55,6 +55,55 @@ export interface TunebatDownload {
   error: string | null;
 }
 
+// ---- A crate from tunebat: GET /api/tunebat/crates/{seed}, POST .../{seed}/download, GET /api/tunebat/crates/downloads ----
+
+export interface TunebatCrateTrack extends TunebatTrack {
+  key: string;
+  energy: number;
+}
+
+export interface TunebatRec {
+  track: TunebatCrateTrack;
+  /** 0-100, musicreco's mixing score with the seed: what the list is sorted by. */
+  score: number;
+  move: Move;
+  chips: string[];
+  /** Seedbox 1's pre-tick rule: a compatible key and the tempo within the tolerance (half and double time count). */
+  related: boolean;
+  reason: string;
+  in_library: boolean;
+}
+
+export interface TunebatCrate {
+  seed: TunebatCrateTrack & { in_library: boolean };
+  /** The crate's folder in the music folder, and its name once imported. */
+  folder: string;
+  tolerance: number;
+  recs: TunebatRec[];
+}
+
+export interface TunebatCrateItem {
+  id: string;
+  name: string;
+  artists: string[];
+  /** What it is doing now: "queued", "checking library", "searching", "downloading", … then its status. */
+  text: string;
+  status: "downloaded" | "copied" | "exists" | "skipped" | "failed" | null;
+  reason: string | null;
+}
+
+/** A `tunebat.crate` event, and the answer to POST /api/tunebat/crates/{seed}/download. */
+export interface TunebatCrateJob {
+  id: string;
+  seed_id: string;
+  seed: string;
+  folder: string;
+  state: "queued" | "running" | "finishing" | "done" | "cancelled" | "failed";
+  error: string | null;
+  path?: string;
+  items: TunebatCrateItem[];
+}
+
 // ---- Models: GET /api/models, POST /api/models/{name}/download|cancel, DELETE /api/models/{name} (#42) ----
 
 export type ModelState = "installed" | "missing" | "downloading" | "failed";

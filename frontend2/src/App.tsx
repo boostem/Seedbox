@@ -1,4 +1,3 @@
-import { Compass } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { useServerEvents } from "@/api/events";
 import { AppShell } from "@/components/shell/AppShell";
@@ -6,9 +5,9 @@ import { Button, EmptyState } from "@/components/ui";
 import { Onboarding } from "@/features/onboarding/Onboarding";
 import { cn } from "@/lib/cn";
 import { navigate, type Route, useRoute } from "@/lib/router";
-import { AreaPage } from "@/pages/AreaPage";
 import { BenchPage } from "@/pages/BenchPage";
 import { CratesPage } from "@/pages/CratesPage";
+import { DiscoverPage } from "@/pages/DiscoverPage";
 import { HomePage } from "@/pages/HomePage";
 import { LibraryPage } from "@/pages/LibraryPage";
 import { ListenPage } from "@/pages/ListenPage";
@@ -37,7 +36,7 @@ function Page({ route }: { route: Route }) {
     case "sets":
       return <SetsPage />;
     case "discover":
-      return <AreaPage title="Discover" icon={Compass} description="Tracks that fit a gap in a set, by key, energy and vibe (#48, #64)." />;
+      return <DiscoverPage />;
     case "mixes":
       return <MixesPage />;
     case "settings":

@@ -5,7 +5,7 @@
 import { toast } from "@/store/toasts";
 import type { MixPlan } from "./mixplan.generated";
 import type { JobRow, SetExportStatus } from "./types";
-import type { ArcTemplate, AssistantDraft, AssistantDryRun, AssistantScope, AssistantStatus, CrateLink, LongSetResult, SetSourceRef, LibraryBridges, OnlineBridges, MasterStatus, MasterTarget, SetSession, SetOrderResult, SetOrderSettings, SetTimelineData, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
+import type { ArcTemplate, AssistantDraft, AssistantDryRun, AssistantScope, AssistantStatus, CrateLink, LongSetResult, SetSourceRef, LibraryBridges, OnlineBridges, MasterStatus, MasterTarget, SetSession, SetOrderResult, SetOrderSettings, SetTimelineData, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatCrate, TunebatCrateJob, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -116,6 +116,12 @@ export const api = {
     search: (q: string, opts?: RequestOptions) => get<{ total: number; items: TunebatTrack[] }>(`/api/tunebat/search?q=${encodeURIComponent(q)}`, opts),
     /** Fetch a search result into the music folder. Progress comes as `tunebat.download` events. */
     download: (id: string, opts?: RequestOptions) => post<TunebatDownload>("/api/tunebat/download", { id }, opts),
+    /** A seed and every track tunebat recommends from it, best first. */
+    crate: (seedId: string, opts?: RequestOptions) => get<TunebatCrate>(`/api/tunebat/crates/${encodeURIComponent(seedId)}`, opts),
+    /** Download these tracks of an opened crate into its folder, then import it. Progress comes as `tunebat.crate` events. */
+    downloadCrate: (seedId: string, ids: string[], opts?: RequestOptions) => post<TunebatCrateJob>(`/api/tunebat/crates/${encodeURIComponent(seedId)}/download`, { ids }, opts),
+    crateDownloads: (opts?: RequestOptions) => get<TunebatCrateJob[]>("/api/tunebat/crates/downloads", opts),
+    cancelCrateDownload: (jobId: string, opts?: RequestOptions) => post<TunebatCrateJob>(`/api/tunebat/crates/downloads/${encodeURIComponent(jobId)}/cancel`, undefined, opts),
   },
   models: {
     status: (opts?: RequestOptions) => get<ModelsStatus>("/api/models", opts),
