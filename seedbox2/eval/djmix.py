@@ -65,6 +65,8 @@ MIN_MEAN = 0.45  # mean similarity over the run
 UNIQUE = 1.25  # the run's score over the best one elsewhere in the mix (more than half the track away)
 MIN_OVERLAP = 8  # half beats: a shorter overlap is a cut, not a blend
 WINDOW_S = 600.0  # a track with a tracklist timestamp is looked for this far around it
+# download errors that are rate limits, not dead links: not noted as failed, so the next run tries again
+TRANSIENT = ("confirm you’re not a bot", "confirm you're not a bot", "HTTP Error 403", "HTTP Error 429", "timed out")
 
 
 def default_root() -> Path:
@@ -207,7 +209,8 @@ def fetch(root: Path, mixes: list[dict], workers: int = 6, parallel_mixes: int =
             try:
                 _ytdlp(url, base, audio_format)
             except Exception as e:
-                failed.add(base.name, str(e))
+                if not any(m in str(e) for m in TRANSIENT):  # rate limits: the next run tries again
+                    failed.add(base.name, str(e))
 
     def one_mix(i_mix: tuple[int, dict]) -> None:
         i, mix = i_mix
