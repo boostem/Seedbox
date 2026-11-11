@@ -78,7 +78,7 @@ class TunebatTry:
         self._last_call = 0.0
         self._tracks: dict[str, Any] = {}
         self._states: dict[str, str] = {}
-        self._recommended: dict[str, list[Any]] = {}  # a seed's id: it asks once per run, a track's list hardly changes
+        self._details: dict[str, Any] = {}  # a seed's id: it asks once per run, a track's list hardly changes
 
     def _call(self, method: str, *args: Any) -> Any:
         """One client call. The caller holds the lock, which keeps them one at a time, MIN_INTERVAL_S apart."""
@@ -117,12 +117,25 @@ class TunebatTry:
                 if found is None:
                     return None, []
                 track_id = found.id
-            items = self._recommended.get(track_id)
-            if items is None:
-                items = self._call("get_track", track_id).recommended
-                self._recommended[track_id] = items
-                self._tracks.update((t.id, t) for t in items)
+            items = self._detail(track_id).recommended
         return track_id, items
+
+    def _detail(self, track_id: str) -> Any:
+        """The caller holds the lock."""
+        detail = self._details.get(track_id)
+        if detail is None:
+            detail = self._call("get_track", track_id)
+            self._details[track_id] = detail
+            if (seed := getattr(detail, "seed", None)) is not None:
+                self._tracks[seed.id] = seed
+            self._tracks.update((t.id, t) for t in detail.recommended)
+        return detail
+
+    def detail(self, track_id: str) -> Any:
+        """The track and what tunebat recommends from it (`musicreco.models.TrackDetail`), which `download()` then
+        knows. TunebatUnavailable when that can't be done."""
+        with self._lock:
+            return self._detail(track_id)
 
     def download(self, track_id: str) -> dict:
         """Start fetching a track from the last searches. Asking again while it runs or once it is done does nothing."""

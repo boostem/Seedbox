@@ -60,6 +60,7 @@ def create_app(static_dir: Path | None = None, *, dev: bool = False, heartbeat_s
     app.state.watch_folders = watch_folders
     app.state.models = None
     app.state.tunebat = None
+    app.state.tunebat_crates = None
     app.state.models_dir = Path(models_dir) if models_dir is not None else None
     app.state.download_models = download_models
     app.state.power = None
@@ -103,6 +104,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     if app.state.models is not None:
         app.state.models.close()
         app.state.models = None
+    if app.state.tunebat_crates is not None:
+        app.state.tunebat_crates.close()
+        app.state.tunebat_crates = None
     if app.state.local_music is not None:
         app.state.local_music.close()
         app.state.local_music = None

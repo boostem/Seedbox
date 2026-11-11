@@ -218,3 +218,19 @@ def get_tunebat(request: Request) -> Any:
 
 
 TunebatDep = Annotated[Any, Depends(get_tunebat)]
+
+
+def get_tunebat_crates(request: Request) -> Any:
+    """Seedbox 1's search → crate → download flow (`TunebatCrates`), made on first use."""
+    from seedbox2.library.tunebat_crate import TunebatCrates
+
+    tunebat = get_tunebat(request)
+    state = request.app.state
+    if state.tunebat_crates is None:
+        with _open_lock:
+            if state.tunebat_crates is None:
+                state.tunebat_crates = TunebatCrates(tunebat, local_music(request.app), state.events.publish)
+    return state.tunebat_crates
+
+
+TunebatCratesDep = Annotated[Any, Depends(get_tunebat_crates)]

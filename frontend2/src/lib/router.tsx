@@ -1,5 +1,5 @@
 /**
- * Tiny hash router. Routes: #/ (home), #/library, #/crates, #/sets, #/discover, #/mixes, #/settings (#/system, its old
+ * Tiny hash router. Routes: #/ (home), #/library, #/crates, #/sets, #/discover (?q= searches tunebat), #/mixes, #/settings (#/system, its old
  * name, still works), #/ui (design tokens and the waveform), #/bench (the waveform alone, for
  * `python -m seedbox2.bench frontend`), #/listen (the blind listening test, not linked from anywhere), #/now-playing (?set=ID, the full-screen decks; ?demo=1 on
  * synthetic data).

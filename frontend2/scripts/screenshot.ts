@@ -269,6 +269,33 @@ const LONG_SET = {
   },
 };
 
+const TB = (id: string, name: string, artist: string, bpm: number, camelot: string, duration = 412) => ({
+  id, name, artists: [artist], album: name, duration, bpm, camelot, key: "", energy: 0.7, cover_url: null,
+});
+const TB_SEED = TB("seed", "Night Bus", "Kerrin", 124, "10A");
+const TB_REC = (id: string, name: string, artist: string, bpm: number, camelot: string, score: number, move: string, related: boolean, in_library = false) => ({
+  track: TB(id, name, artist, bpm, camelot), score, move, chips: [], related, reason: "", in_library,
+});
+const TB_CRATE = {
+  seed: { ...TB_SEED, in_library: false },
+  folder: "Kerrin - Night Bus",
+  tolerance: 0.1,
+  recs: [
+    TB_REC("r1", "Undertow", "Halcyon Drive", 125, "10A", 96, "same", true),
+    TB_REC("r2", "Pale Fire", "Saskia Lind", 124, "11A", 91, "+1", true),
+    TB_REC("r3", "Slow Ferry", "Kerrin", 126, "10B", 88, "relative", true, true),
+    TB_REC("r4", "Glass Tide", "Oda Mae", 122, "9A", 84, "-1", true),
+    TB_REC("r5", "Long Way Home", "Oda Mae", 127, "4B", 38, "clash", false),
+    TB_REC("r6", "Morning Light", "Halcyon Drive", 98, "10A", 31, "same", false),
+  ],
+};
+const TB_SEARCH = { total: 3, items: [TB_SEED, TB("s2", "Night Bus (Extended Mix)", "Kerrin", 124, "10A", 452), TB("s3", "Night Buses", "Ferro", 118, "3B", 301)] };
+const TB_JOB = {
+  id: "j1", seed_id: "seed", seed: "Kerrin - Night Bus", folder: "Kerrin - Night Bus", state: "running", error: null,
+  items: [["seed", "downloaded"], ["r1", "downloaded"], ["r2", null], ["r4", null]].map(([id, status]) => ({ id, name: id, artists: [], text: status ?? "downloading", status, reason: null })),
+};
+const DISCOVER = { "/api/tunebat/search": TB_SEARCH, "/api/tunebat/crates/seed": TB_CRATE };
+
 const SHOTS: Shot[] = [
   { name: "home", hash: "#/" },
   { name: "home-loading", hash: "#/", api: "loading" },
@@ -296,6 +323,9 @@ const SHOTS: Shot[] = [
   { name: "sets-loading", hash: "#/sets", api: "loading" },
   { name: "sets-load-failed", hash: "#/sets", fail: ["/api/sets/1/order"] },
   { name: "discover", hash: "#/discover" },
+  { name: "discover-results", hash: "#/discover?q=night%20bus", data: DISCOVER },
+  { name: "discover-crate", hash: "#/discover?q=night%20bus", data: DISCOVER, clicks: ["Open"] },
+  { name: "discover-downloading", hash: "#/discover?q=night%20bus", data: DISCOVER, posts: { "/api/tunebat/crates/seed/download": TB_JOB }, clicks: ["Open", "Download 4 tracks"] },
   { name: "mixes", hash: "#/mixes" },
   { name: "settings", hash: "#/settings" },
   { name: "settings-low-power", hash: "#/settings", data: { "/api/power": ON_BATTERY } },

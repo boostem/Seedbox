@@ -32,7 +32,7 @@ Flags:
   (in-process and in a spawned worker), and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_seedbox2_packaging.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_setexport.py tests/test_seedbox2_bridge.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_sections.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py tests/test_seedbox2_longset.py tests/test_seedbox2_now_playing.py tests/test_seedbox2_assistant.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_seedbox2_packaging.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_setexport.py tests/test_seedbox2_bridge.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_sections.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_tunebat_crate.py tests/test_seedbox2_sets.py tests/test_seedbox2_longset.py tests/test_seedbox2_now_playing.py tests/test_seedbox2_assistant.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -218,6 +218,19 @@ every playlist becomes a crate named by its folder path, and Rekordbox's cues an
 Seedbox 1 importer, so tunebat downloads into the music folder land in the library with their crate. Every new
 track queues the job types registered `per_track=True`: the light ones at library priority, the heavy ones (stems)
 at background priority. Progress is the `library.import` event.
+
+**Crates from tunebat** (`seedbox2/library/tunebat_crate.py`, `#/discover`): Seedbox 1's search → crate → download.
+Search tunebat (a song, an artist or a Spotify link; `#/discover?q=…` starts with a search) and open a result. It
+comes with every track tunebat recommends from it, best first by musicreco's mixing score. The ones that pass Seedbox 1's
+pre-tick rule (a compatible key and the tempo within the tolerance of Seedbox 1's settings, half and double time
+count) are marked "Mixes" and start ticked with the seed. The others start unticked, unless "Tick every recommendation"
+is on (kept in the browser's storage). Tracks the library already has (same title and artist, or the tunebat id
+Seedbox 1's import kept) start unticked. The download is musicreco's batch, as in Seedbox 1: YouTube, tags, loudness,
+`tracks.csv` and `crate.json`, in the music folder's `<Artists - Title>` folder. The importer then takes the folder in
+as a crate and a set. One download runs at a time. Tunebat calls go through the first run's client: one at a time,
+1.2 s apart. API: `GET /api/tunebat/crates/{seed_id}`, `POST /api/tunebat/crates/{seed_id}/download` `{ids}` (202,
+progress as `tunebat.crate` events with the whole download), `GET /api/tunebat/crates/downloads` and
+`POST /api/tunebat/crates/downloads/{id}/cancel`.
 
 **Models** (#42, `seedbox2/models/`): every model runs through onnxruntime (no torch in the app). The weights aren't
 bundled: `registry.py` lists each model with a version, a URL pinned to an upstream revision, its SHA-256, size,
