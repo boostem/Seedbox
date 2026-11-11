@@ -1,0 +1,30 @@
+# Trance, techno and house: A rides a resonant high-pass up into a big reverb as B opens from a low-pass.
+technique = "filter wash"
+label = "Filter wash"
+kind = "filter"
+hint = "A climbs a resonant high-pass into a big reverb while B opens up from a low-pass."
+base = "filter sweep"
+weight = 1.0
+
+[when]
+genres = ["trance", "techno", "house"]
+replaces = ["filter sweep", "long blend", "phrase blend", "bass swap"]
+tempo_gap = [0.0, 0.04]
+
+[boost]
+trance = 3.5
+techno = 3.0
+house = 2.0
+
+[lanes.a]
+volume = [["0.75", 1.0, "ease"], ["end", 0.0]]
+filter = [["0.4", 0.0, "ease"], ["end", 0.85]]
+filter_res = [["0.4", 0.0, "ease"], ["end", 0.5]]
+reverb_send = [["0.4", 0.0, "ease"], ["end", 0.8], ["end+4b", 0.0]]
+
+[lanes.b]
+volume = [["start", 0.0, "ease"], ["0.3", 1.0]]
+filter = [["start", -0.5, "ease"], ["swap", 0.0]]
+
+[sends.a]
+reverb_size = 0.95

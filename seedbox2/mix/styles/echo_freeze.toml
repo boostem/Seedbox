@@ -1,0 +1,31 @@
+# A's last half beat is caught in an echo held at high feedback (a freeze) while B comes in on the 1: a cut for
+# genres that cut, and for tempo gaps too wide to blend.
+technique = "echo freeze"
+label = "Echo freeze"
+kind = "echo"
+hint = "A's last half beat freezes in an echo that rings on over B's first bars."
+base = "quick cut"
+weight = 2.0
+loops = false
+
+[when]
+replaces = ["echo out", "quick cut", "reverb wash"]
+
+[boost]
+hip_hop = 4.0
+trap = 4.0
+dubstep = 3.0
+
+[lanes.a]
+volume = [["cut-0.5b", 1.0, "hold"], ["cut", 0.0]]
+filter = [["start", 0.0]]
+filter_res = [["start", 0.0]]
+echo_send = [["cut-1b", 0.0, "hold"], ["cut-0.5b", 1.0, "hold"], ["cut", 0.0]]
+echo_feedback = [["cut-0.5b", 0.92, "hold"], ["cut+8b", 0.92, "ease"], ["cut+16b", 0.3]]
+reverb_send = [["start", 0.0]]
+
+[lanes.b]
+volume = [["cut", 1.0]]
+
+[sends.a]
+echo_beats = 0.5

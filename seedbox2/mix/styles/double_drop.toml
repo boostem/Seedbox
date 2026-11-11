@@ -1,0 +1,36 @@
+# Vande Veire & De Bie 2018 (DnB auto-DJ): with high energy on both sides, both drops land together. B's build runs
+# under A's, B's lows killed; on the drop A's bass goes out and B's comes in, and A's drop plays on under B's for 8 bars.
+technique = "double drop"
+label = "Double drop"
+kind = "swap"
+hint = "Both drops land together; B's bass takes over on the drop and A fades out of its own."
+base = "slam"  # lines A's build end up with B's first drop on beat 0
+weight = 5.0
+loops = false
+
+[when]
+genres = ["drum_and_bass", "dubstep"]
+bpm = [135, 185]
+energy_a = [0.55, 1.0]
+energy_b = [0.55, 1.0]
+tempo_gap = [0.0, 0.02]
+needs = ["drops"]
+
+[length]
+span = [-8, 16]  # B's last 8 bars of build, then 16 bars of both drops
+swap = 0.333     # beat 0: the drop
+
+[lanes.a]
+volume = [["cut+8bar", 1.0, "ease"], ["end", 0.0]]
+eq_low = [["cut-0.25b", 0.0], ["cut", -30.0]]
+filter = [["start", 0.0]]
+filter_res = [["start", 0.0]]
+echo_send = [["start", 0.0]]
+reverb_send = [["start", 0.0]]
+
+[lanes.b]
+volume = [["start", 0.0, "ease"], ["start+4bar", 1.0]]
+eq_low = [["start", -30.0, "hold"], ["cut", 0.0]]
+eq_high = [["start", -6.0, "ease"], ["cut", 0.0]]
+filter = [["start", 0.0]]
+filter_res = [["start", 0.0]]

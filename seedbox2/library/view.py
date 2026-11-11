@@ -129,7 +129,8 @@ def _hint_energy(tags: dict) -> float | None:
     return None
 
 
-def _hint_genre(tags: dict) -> str:
+def hint_genre(tags: dict) -> str:
+    """The genre a track's tags give (its file's, or Seedbox 1's import's), "" without one."""
     for d in _hint_sources(tags):
         g = d.get("genre")
         if isinstance(g, str) and g.strip():
@@ -186,7 +187,7 @@ def describe(track: dict, *, analyses: dict[str, dict] | None = None, artifacts:
             row[f"{k}_from"] = None
     if row["key"] is None and row["key_from"] == "tags":
         row["key_from"] = None
-    row["genre"] = _hint_genre(tags)
+    row["genre"] = hint_genre(tags)
     row["text"] = _text(tags)
     row["artwork"] = bool(tags.get("artwork") or (tags.get("tunebat") or {}).get("cover_url"))
     row["format"] = str((tags.get("file") or {}).get("format") or "")

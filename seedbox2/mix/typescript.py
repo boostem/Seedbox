@@ -1,6 +1,6 @@
-"""Generates `frontend2/src/api/mixplan.generated.ts` from the plan's JSON Schema, so the frontend's types can't drift
+"""Generates `frontend2/src/api/mixplan.generated.ts` from the plan's JSON Schema and the transition styles, so the frontend's types can't drift
 from what the backend validates (tests/test_seedbox2_mix_plan.py fails when the file is stale). Run after changing
-`plan.py`:
+`plan.py` or a style's file:
 
     .venv/bin/python -m seedbox2.mix.typescript
 """
@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import plan
+from . import plan, styles
 
 OUTPUT = Path(__file__).resolve().parents[2] / "frontend2" / "src" / "api" / "mixplan.generated.ts"
 _CONSTANTS = {
@@ -18,6 +18,9 @@ _CONSTANTS = {
     "LANE_RANGES": plan.LANE_RANGES, "LANE_DEFAULTS": plan.LANE_DEFAULTS, "TEMPO_RANGE": plan.TEMPO_RANGE,
     "KEY_SHIFT_MAX": plan.KEY_SHIFT_MAX, "LOOP_DIVISIONS": plan.LOOP_DIVISIONS,
     "STEM_EQ_FALLBACK": plan.STEM_EQ_FALLBACK,
+    # the transition styles (#57, seedbox2/mix/styles/*.toml): one technique list for the planner, renderer, API and UI
+    "TECHNIQUES": styles.TECHNIQUES, "TECHNIQUE_KINDS": {t: styles.kind_of(t) for t in styles.TECHNIQUES},
+    "TECHNIQUE_LABELS": {s.technique: s.label for s in styles.all_styles()},
 }  # fmt: skip
 
 

@@ -6,6 +6,9 @@
 - `GET /analysis/{hash}/key` (#45): `{analysis, effective, hints}` (`seedbox2.analysis.key.status`). Not computed yet: 202
   as above. `PUT /analysis/{hash}/key/override` with `{"key": "8A"}` (any notation) sets the user's key, `DELETE` goes
   back to ours; both answer with the status.
+- `GET /analysis/{hash}/genre` (#57): `{effective, tag, tag_genre, clap, families}` (`seedbox2.mix.genre.status`): the
+  genre family the transition styles use, from the user's choice, the tag or CLAP zero-shot. `PUT .../genre/override`
+  with `{"genre": "house"}` sets the user's, `DELETE` goes back to ours.
 - `GET /analysis/{hash}/vocals` (#47): per-beat vocal activity, phrases and windows (`seedbox2.analysis.vocals`). Not
   computed yet: 202, with the queued job once the track has stems and beats, else `{"state": "waiting"}`.
 - `GET /analysis/{hash}/sections` (#46): the track's `sections` analysis (`seedbox2.analysis.sections`): sections,
@@ -33,6 +36,7 @@ from starlette.responses import JSONResponse
 
 from seedbox2.analysis import beats, clap, energy, key, loudness, sections, stems, vibe, vocals
 from seedbox2.library.service import SETTINGS_FILE, Settings
+from seedbox2.mix import genre
 from seedbox2.library.view import to_camelot
 from seedbox2.server.deps import LibraryDep, get_jobs, get_library, vibe_index
 
@@ -81,6 +85,38 @@ def clear_key_override(hash_: str, lib: LibraryDep) -> dict:
         raise HTTPException(404, "no such track")
     key.clear_override(lib, hash_)
     return key.status(lib, hash_)
+
+
+@router.get("/{hash_}/genre")
+def track_genre(hash_: str, lib: LibraryDep) -> dict:
+    if lib.track(hash_) is None:
+        raise HTTPException(404, "no such track")
+    return genre.status(lib, hash_)
+
+
+class GenreOverride(BaseModel):
+    genre: str
+
+
+@router.put("/{hash_}/genre/override")
+def set_genre_override(hash_: str, body: GenreOverride, lib: LibraryDep) -> dict:
+    if lib.track(hash_) is None:
+        raise HTTPException(404, "no such track")
+    try:
+        genre.set_override(lib, hash_, body.genre)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return genre.status(lib, hash_)
+
+
+@router.delete("/{hash_}/genre/override")
+def clear_genre_override(hash_: str, lib: LibraryDep) -> dict:
+    if lib.track(hash_) is None:
+        raise HTTPException(404, "no such track")
+    genre.clear_override(lib, hash_)
+    return genre.status(lib, hash_)
+
+
 @router.get("/{hash_}/vocals", responses={200: {}, 202: {}, 404: {}}, response_model=None)
 def track_vocals(hash_: str, request: Request, lib: LibraryDep) -> dict | JSONResponse:
     if lib.track(hash_) is None:

@@ -1,0 +1,15 @@
+# A port of Seedbox 1's "long blend": musicreco.mixplan writes its lanes, this file says when it is chosen.
+technique = "long blend"
+label = "Long blend"
+kind = "blend"
+hint = "Both tracks play together for 16-32 bars; the bass changes hands on a phrase."
+base = "long blend"
+weight = 1.0
+
+[when]
+tempo_gap = [0.0, 0.02]
+
+[boost]  # house, techno and trance mix in long blends with a bass swap
+house = 1.5
+techno = 1.5
+trance = 1.0

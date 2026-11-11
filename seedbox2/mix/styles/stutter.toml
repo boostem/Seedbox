@@ -1,0 +1,7 @@
+# A port of Seedbox 1's "stutter": musicreco.mixplan writes its lanes, this file says when it is chosen.
+technique = "stutter"
+label = "Stutter"
+kind = "cut"
+hint = "A stutters its last slice into the cut."
+base = "stutter"
+weight = 0.5

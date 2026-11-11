@@ -1,0 +1,115 @@
+{
+ "technique": "drop swap",
+ "bars": 4,
+ "window": [
+  -64.0,
+  64.0
+ ],
+ "a": {
+  "play": [
+   -352.0,
+   2.0
+  ],
+  "lanes": {
+   "volume": [
+    [
+     -64.0,
+     1.0,
+     "hold"
+    ],
+    [
+     -4.0,
+     1.0,
+     "hold"
+    ],
+    [
+     0.0,
+     0.0,
+     "hold"
+    ]
+   ],
+   "filter": [
+    [
+     -64.0,
+     0.0,
+     "hold"
+    ],
+    [
+     -8.0,
+     0.0,
+     "ease"
+    ],
+    [
+     0.0,
+     0.35,
+     "hold"
+    ]
+   ],
+   "filter_res": [
+    [
+     -64.0,
+     0.0,
+     "hold"
+    ],
+    [
+     -8.0,
+     0.0,
+     "ease"
+    ],
+    [
+     0.0,
+     0.6,
+     "hold"
+    ]
+   ],
+   "reverb_send": [
+    [
+     -64.0,
+     0.0,
+     "hold"
+    ],
+    [
+     -1.0,
+     0.0,
+     "linear"
+    ],
+    [
+     0.0,
+     0.6,
+     "hold"
+    ],
+    [
+     1.0,
+     0.6,
+     "linear"
+    ],
+    [
+     2.0,
+     0.0,
+     "hold"
+    ]
+   ]
+  },
+  "stems": null,
+  "sends": {
+   "echo_beats": 0.75,
+   "reverb_size": 0.75
+  },
+  "fx": [],
+  "loops": []
+ },
+ "b": {
+  "play": [
+   0.0,
+   385.0335
+  ],
+  "lanes": {},
+  "stems": null,
+  "sends": {
+   "echo_beats": 0.75,
+   "reverb_size": 0.75
+  },
+  "fx": [],
+  "loops": []
+ }
+}

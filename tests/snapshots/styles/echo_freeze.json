@@ -1,0 +1,83 @@
+{
+ "technique": "echo freeze",
+ "bars": 4,
+ "window": [
+  -64.0,
+  64.0
+ ],
+ "a": {
+  "play": [
+   -512.0001,
+   1.0333
+  ],
+  "lanes": {
+   "volume": [
+    [
+     -0.5,
+     1.0,
+     "hold"
+    ],
+    [
+     0.0,
+     0.0,
+     "linear"
+    ]
+   ],
+   "echo_send": [
+    [
+     -1.0,
+     0.0,
+     "hold"
+    ],
+    [
+     -0.5,
+     1.0,
+     "hold"
+    ],
+    [
+     0.0,
+     0.0,
+     "linear"
+    ]
+   ],
+   "echo_feedback": [
+    [
+     -0.5,
+     0.92,
+     "hold"
+    ],
+    [
+     8.0,
+     0.92,
+     "ease"
+    ],
+    [
+     16.0,
+     0.3,
+     "linear"
+    ]
+   ]
+  },
+  "stems": null,
+  "sends": {
+   "echo_beats": 0.5,
+   "reverb_size": 0.75
+  },
+  "fx": [],
+  "loops": []
+ },
+ "b": {
+  "play": [
+   0.0,
+   513.0335
+  ],
+  "lanes": {},
+  "stems": null,
+  "sends": {
+   "echo_beats": 0.75,
+   "reverb_size": 0.75
+  },
+  "fx": [],
+  "loops": []
+ }
+}

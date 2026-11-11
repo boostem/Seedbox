@@ -1,0 +1,13 @@
+# A port of Seedbox 1's "quick cut": musicreco.mixplan writes its lanes, this file says when it is chosen.
+technique = "quick cut"
+label = "Quick cut"
+kind = "cut"
+hint = "A runs into a cut on the downbeat, with its echo over the top."
+base = "quick cut"
+weight = 1.0
+
+[boost]  # hip-hop and pop mix in short phrase-aligned cuts
+hip_hop = 2.5
+trap = 2.0
+pop = 1.0
+rnb = 1.0

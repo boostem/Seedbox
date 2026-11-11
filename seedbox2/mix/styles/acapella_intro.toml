@@ -1,0 +1,33 @@
+# With B's stems, B's vocal comes in alone over A's instrumental; B's beat follows on the phrase where the bass
+# changes hands.
+technique = "acapella intro"
+label = "Acapella intro"
+kind = "blend"
+hint = "B's vocal alone over A's beat first; B's drums and bass follow on the phrase."
+base = "long blend"
+weight = 5.0
+
+[when]
+genres = ["hip_hop", "pop", "rnb", "house", "uk_garage", "disco"]
+vocals = ["b"]
+tempo_gap = [0.0, 0.04]
+needs = ["b_stems"]
+
+[length]
+bars = 16
+swap = 0.5
+
+[lanes.a]
+volume = [["swap", 1.0, "ease"], ["end", 0.0]]
+eq_low = [["swap-0.25b", 0.0], ["swap", -30.0]]
+
+[lanes.b]
+volume = [["start", 0.0, "ease"], ["start+1bar", 1.0]]
+eq_low = [["start", 0.0]]
+eq_mid = [["start", 0.0]]
+
+[stems.b]
+gain_vocals = [["start", 1.0]]
+gain_drums = [["start", 0.0, "hold"], ["swap-4b", 0.0, "ease"], ["swap", 1.0]]
+gain_bass = [["start", 0.0, "hold"], ["swap", 1.0]]
+gain_other = [["start", 0.0, "hold"], ["swap-1bar", 0.0, "ease"], ["swap", 1.0]]

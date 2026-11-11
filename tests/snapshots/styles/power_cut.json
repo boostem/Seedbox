@@ -1,0 +1,92 @@
+{
+ "technique": "power cut",
+ "bars": 4,
+ "window": [
+  -64.0,
+  64.0
+ ],
+ "a": {
+  "play": [
+   -415.9998,
+   2.0
+  ],
+  "lanes": {
+   "volume": [
+    [
+     -16.0,
+     1.0,
+     "hold"
+    ],
+    [
+     -1.0,
+     0.0,
+     "linear"
+    ]
+   ],
+   "eq_low": [
+    [
+     -64.0,
+     0.0,
+     "hold"
+    ],
+    [
+     -8.0,
+     0.0,
+     "hold"
+    ],
+    [
+     -4.0,
+     -30.0,
+     "hold"
+    ]
+   ],
+   "echo_feedback": [
+    [
+     -64.0,
+     0.7,
+     "hold"
+    ]
+   ]
+  },
+  "stems": null,
+  "sends": {
+   "echo_beats": 0.75,
+   "reverb_size": 0.75
+  },
+  "fx": [
+   {
+    "start_beat": -3.0,
+    "end_beat": -1.0,
+    "type": "brake"
+   }
+  ],
+  "loops": []
+ },
+ "b": {
+  "play": [
+   -4.0,
+   449.4508
+  ],
+  "lanes": {
+   "volume": [
+    [
+     -16.0,
+     0.0,
+     "hold"
+    ],
+    [
+     0.0,
+     1.0,
+     "linear"
+    ]
+   ]
+  },
+  "stems": null,
+  "sends": {
+   "echo_beats": 0.75,
+   "reverb_size": 0.75
+  },
+  "fx": [],
+  "loops": []
+ }
+}

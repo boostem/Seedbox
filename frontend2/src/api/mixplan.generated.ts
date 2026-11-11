@@ -9,6 +9,9 @@ export const TEMPO_RANGE = [40.0, 300.0] as const;
 export const KEY_SHIFT_MAX = 2 as const;
 export const LOOP_DIVISIONS = [0.5, 0.25, 0.125, 0.0625] as const;
 export const STEM_EQ_FALLBACK = {"gain_bass": "eq_low", "gain_vocals": "eq_mid", "gain_drums": "eq_high"} as const;
+export const TECHNIQUES = ["long blend", "phrase blend", "bass swap", "drop swap", "quick cut", "echo out", "filter sweep", "loop roll", "slam", "reverb wash", "spinback", "brake", "stutter", "acapella intro", "chorus swap", "double drop", "rolling blend", "echo freeze", "filter wash", "power cut"] as const;
+export const TECHNIQUE_KINDS = {"long blend": "blend", "phrase blend": "blend", "bass swap": "swap", "drop swap": "cut", "quick cut": "cut", "echo out": "echo", "filter sweep": "filter", "loop roll": "blend", "slam": "cut", "reverb wash": "echo", "spinback": "cut", "brake": "cut", "stutter": "cut", "acapella intro": "blend", "chorus swap": "cut", "double drop": "swap", "rolling blend": "blend", "echo freeze": "echo", "filter wash": "filter", "power cut": "cut"} as const;
+export const TECHNIQUE_LABELS = {"acapella intro": "Acapella intro", "chorus swap": "Chorus swap", "double drop": "Double drop", "rolling blend": "Rolling blend", "echo freeze": "Echo freeze", "bass swap": "Bass swap", "drop swap": "Drop swap", "echo out": "Echo out", "filter sweep": "Filter sweep", "filter wash": "Filter wash", "long blend": "Long blend", "loop roll": "Loop roll", "phrase blend": "Phrase blend", "power cut": "Power cut", "quick cut": "Quick cut", "reverb wash": "Reverb wash", "slam": "Slam", "brake": "Brake", "spinback": "Spinback", "stutter": "Stutter"} as const;
 
 /** One track in the mix. The master position maps to file time through `grid`, sorted and continuous; its first segment also holds before its start, the last one after it. Times outside the file are silence. */
 export interface Deck {

@@ -1,0 +1,27 @@
+# Hip-hop and pop: from A's chorus straight into B's on the phrase, A's last word thrown into an echo.
+technique = "chorus swap"
+label = "Chorus swap"
+kind = "cut"
+hint = "A's chorus runs to the end of its phrase and B's chorus starts on the 1; A's last word echoes over it."
+base = "drop swap"  # A's last drop (its chorus) to B's first
+weight = 5.0
+loops = false
+
+[when]
+genres = ["hip_hop", "pop", "rnb", "trap"]
+vocals = ["both"]
+
+[lanes.a]
+volume = [["cut-0.5b", 1.0], ["cut", 0.0]]
+filter = [["start", 0.0]]
+filter_res = [["start", 0.0]]
+echo_send = [["cut-1b", 0.0], ["cut-0.5b", 0.8, "hold"], ["cut+0.5b", 0.0]]
+reverb_send = [["cut-1b", 0.0], ["cut", 0.25], ["cut+4b", 0.0]]
+
+[lanes.b]
+volume = [["cut", 1.0]]
+eq_low = [["cut", 0.0]]
+filter = [["start", 0.0]]
+
+[sends.a]
+echo_beats = 0.5

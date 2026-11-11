@@ -1,0 +1,7 @@
+# A port of Seedbox 1's "slam": musicreco.mixplan writes its lanes, this file says when it is chosen.
+technique = "slam"
+label = "Slam"
+kind = "cut"
+hint = "A's build cuts on the 1 of B's drop."
+base = "slam"
+weight = 1.0

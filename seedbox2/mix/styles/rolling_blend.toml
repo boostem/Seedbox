@@ -1,0 +1,29 @@
+# Vande Veire & De Bie's rolling transition: a long DnB blend that keeps the energy rolling. B rides in under A with
+# its highs and lows down, the bass changes hands halfway on the phrase, then A's top end thins out and it fades.
+technique = "rolling blend"
+label = "Rolling blend"
+kind = "blend"
+hint = "A long, even blend: B rolls in under A, the bass swaps halfway, A thins out and goes."
+base = "long blend"
+weight = 4.0
+
+[when]
+genres = ["drum_and_bass"]
+bpm = [160, 185]
+tempo_gap = [0.0, 0.03]
+replaces = ["long blend", "phrase blend", "bass swap", "loop roll"]
+
+[length]
+bars = 32
+swap = 0.5
+
+[lanes.a]
+volume = [["0.75", 1.0, "ease"], ["end", 0.0]]
+eq_low = [["swap-0.25b", 0.0], ["swap", -30.0]]
+eq_high = [["swap", 0.0, "ease"], ["end", -12.0]]
+eq_mid = [["swap", 0.0, "ease"], ["end", -6.0]]
+
+[lanes.b]
+volume = [["start", 0.0, "ease"], ["0.25", 1.0]]
+eq_low = [["start", -30.0, "hold"], ["swap", 0.0]]
+eq_high = [["start", -12.0, "ease"], ["swap", 0.0]]

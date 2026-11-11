@@ -1,0 +1,35 @@
+# The power cut on the drop: A brakes like a deck switched off, a beat of silence, then B's drop at full.
+technique = "power cut"
+label = "Power cut"
+kind = "cut"
+hint = "A powers down, a beat of silence, and B's drop slams in on the 1."
+base = "slam"
+weight = 1.0
+loops = false
+
+[when]
+replaces = ["slam"]
+
+[boost]
+drum_and_bass = 3.0
+dubstep = 3.0
+trap = 3.0
+hip_hop = 2.0
+
+[lanes.a]
+volume = [["start", 1.0, "hold"], ["cut-1b", 0.0]]
+filter = [["start", 0.0]]
+filter_res = [["start", 0.0]]
+echo_send = [["start", 0.0]]
+reverb_send = [["start", 0.0]]
+
+[lanes.b]
+volume = [["start", 0.0, "hold"], ["cut", 1.0]]
+eq_low = [["cut", 0.0]]
+filter = [["start", 0.0]]
+filter_res = [["start", 0.0]]
+
+[[fx.a]]
+type = "brake"
+start = "cut-3b"
+end = "cut-1b"

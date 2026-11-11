@@ -33,8 +33,11 @@ describe("grid", () => {
 
 describe("palette helpers", () => {
   it("colours a transition by its style", () => {
+    // the kinds come from seedbox2/mix/styles/*.toml (a drop swap is a cut there); an unknown technique is guessed
     expect(["long blend", "phrase_blend", "bass swap", "drop swap", "filter sweep", "echo out", "blend → echo out", "quick cut", "something new"].map(styleOf))
-      .toEqual(["blend", "blend", "swap", "swap", "filter", "echo", "echo", "cut", "blend"]);
+      .toEqual(["blend", "blend", "swap", "cut", "filter", "echo", "echo", "cut", "blend"]);
+    expect(["double drop", "rolling blend", "chorus swap", "acapella intro", "echo freeze", "filter wash", "power cut", "slam"].map(styleOf))
+      .toEqual(["swap", "blend", "cut", "blend", "echo", "filter", "cut", "cut"]);
     expect([0, 7, 8].map(slotLetter)).toEqual(["A", "H", "A"]);
   });
 });

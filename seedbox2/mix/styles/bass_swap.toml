@@ -1,0 +1,15 @@
+# A port of Seedbox 1's "bass swap": musicreco.mixplan writes its lanes, this file says when it is chosen.
+technique = "bass swap"
+label = "Bass swap"
+kind = "swap"
+hint = "B comes in without its lows; the bass trades places, then A fades."
+base = "bass swap"
+weight = 1.0
+
+[when]
+tempo_gap = [0.0, 0.06]
+
+[boost]
+house = 1.0
+techno = 1.0
+uk_garage = 1.0

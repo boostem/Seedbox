@@ -1,0 +1,57 @@
+# The genre families the transition styles name (seedbox2/mix/genre.py). `tags`: words that put a genre tag in the
+# family (whole words, the longest match wins). `prompts`: what CLAP compares the audio with ("this is {} music").
+
+[drum_and_bass]
+label = "Drum and bass"
+tags = ["drum and bass", "drum n bass", "dnb", "d and b", "jungle", "liquid funk", "neurofunk", "jump up"]
+prompts = ["drum and bass", "jungle"]
+
+[dubstep]
+label = "Dubstep"
+tags = ["dubstep", "riddim", "brostep", "bass music"]
+prompts = ["dubstep"]
+
+[trap]
+label = "Trap"
+tags = ["trap", "drill"]
+prompts = ["trap", "drill"]
+
+[hip_hop]
+label = "Hip-hop"
+tags = ["hip hop", "hiphop", "rap", "boom bap", "grime"]
+prompts = ["hip hop", "rap"]
+
+[house]
+label = "House"
+tags = ["house", "deep house", "tech house", "progressive house", "electro house", "afro house", "nu disco"]
+prompts = ["house", "deep house", "tech house"]
+
+[techno]
+label = "Techno"
+tags = ["techno", "minimal techno", "hard techno", "acid techno"]
+prompts = ["techno"]
+
+[trance]
+label = "Trance"
+tags = ["trance", "psytrance", "psy trance", "uplifting", "goa"]
+prompts = ["trance", "psytrance"]
+
+[uk_garage]
+label = "UK garage"
+tags = ["uk garage", "ukg", "2 step", "speed garage", "bassline"]
+prompts = ["uk garage"]
+
+[pop]
+label = "Pop"
+tags = ["pop", "dance pop", "electropop", "synthpop", "k pop", "indie pop"]
+prompts = ["pop", "dance pop"]
+
+[rnb]
+label = "R&B"
+tags = ["r and b", "rnb", "soul", "neo soul"]
+prompts = ["r&b", "soul"]
+
+[disco]
+label = "Disco and funk"
+tags = ["disco", "funk", "boogie"]
+prompts = ["disco", "funk"]

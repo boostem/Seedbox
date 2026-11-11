@@ -1,0 +1,117 @@
+{
+ "technique": "stutter",
+ "bars": 4,
+ "window": [
+  -64.0,
+  64.0
+ ],
+ "a": {
+  "play": [
+   -512.0001,
+   1.0333
+  ],
+  "lanes": {
+   "volume": [
+    [
+     -64.0,
+     1.0,
+     "hold"
+    ],
+    [
+     -4.0,
+     1.0,
+     "hold"
+    ],
+    [
+     0.0,
+     0.0,
+     "hold"
+    ]
+   ],
+   "filter": [
+    [
+     -64.0,
+     0.0,
+     "hold"
+    ],
+    [
+     -4.0,
+     0.0,
+     "ease"
+    ],
+    [
+     0.0,
+     0.3,
+     "hold"
+    ]
+   ],
+   "echo_send": [
+    [
+     -64.0,
+     0.0,
+     "hold"
+    ],
+    [
+     -1.0,
+     0.0,
+     "linear"
+    ],
+    [
+     0.0,
+     0.6,
+     "hold"
+    ],
+    [
+     1.0,
+     0.6,
+     "linear"
+    ],
+    [
+     2.0,
+     0.0,
+     "hold"
+    ]
+   ]
+  },
+  "stems": null,
+  "sends": {
+   "echo_beats": 0.75,
+   "reverb_size": 0.75
+  },
+  "fx": [
+   {
+    "start_beat": -4.0,
+    "end_beat": -2.0,
+    "type": "stutter",
+    "div": 0.5
+   },
+   {
+    "start_beat": -2.0,
+    "end_beat": -1.0,
+    "type": "stutter",
+    "div": 0.25
+   },
+   {
+    "start_beat": -1.0,
+    "end_beat": 0.0,
+    "type": "stutter",
+    "div": 0.125
+   }
+  ],
+  "loops": []
+ },
+ "b": {
+  "play": [
+   0.0,
+   513.0335
+  ],
+  "lanes": {},
+  "stems": null,
+  "sends": {
+   "echo_beats": 0.75,
+   "reverb_size": 0.75
+  },
+  "fx": [],
+  "loops": []
+ }
+}

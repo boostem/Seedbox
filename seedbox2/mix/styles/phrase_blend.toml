@@ -1,0 +1,7 @@
+# A port of Seedbox 1's "phrase blend": musicreco.mixplan writes its lanes, this file says when it is chosen.
+technique = "phrase blend"
+label = "Phrase blend"
+kind = "blend"
+hint = "An 8-16 bar blend on the phrase, the bass swapped in the middle."
+base = "phrase blend"
+weight = 1.0

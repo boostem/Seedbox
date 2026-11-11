@@ -78,6 +78,10 @@ def _queue_missing_stems(app: Any) -> None:
     try:
         energy.queue_missing(state.jobs, state.library)
         vibe.queue_missing(state.jobs, state.library)
+        if vibe.audio_ready():
+            from seedbox2.mix import genre
+
+            genre.warm(state.jobs)  # the genre prompts' text vectors, for CLAP's zero-shot genre (#57)
     except Exception:
         log.exception("couldn't queue the missing energy and embeddings")
     try:

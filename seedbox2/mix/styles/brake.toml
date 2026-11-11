@@ -1,0 +1,7 @@
+# A port of Seedbox 1's "brake": musicreco.mixplan writes its lanes, this file says when it is chosen.
+technique = "brake"
+label = "Brake"
+kind = "cut"
+hint = "A slows to a stop like a turntable switched off; B comes in on the 1."
+base = "brake"
+weight = 0.5
