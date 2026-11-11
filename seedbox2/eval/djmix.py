@@ -255,12 +255,13 @@ def open_library(root: Path) -> Any:
     return Library.open(root / "library.sqlite3")
 
 
-def analyse(root: Path, mixes: list[dict], heavy_workers: int = 1, say: Callable[[str], None] = print) -> dict[str, str]:
-    """Import the mixes' downloaded tracks into ROOT's library, run every per-track analysis and wait for them.
-    Returns {youtube id: library hash}."""
-    from seedbox2.analysis import energy, key, sections, stems, vibe, vocals
+def analyse(root: Path, mixes: list[dict], heavy_workers: int = 1, light_workers: int | None = None,
+            say: Callable[[str], None] = print) -> dict[str, str]:  # fmt: skip
+    """Import the mixes' downloaded tracks into ROOT's library, run the analyses the cue model reads (beats, energy,
+    stems, vocals, sections; not keys, CLAP embeddings or waveforms) and wait for them. Returns {youtube id: hash}."""
+    from seedbox2.analysis import energy, sections, vocals
     from seedbox2.jobs.supervisor import Supervisor
-    from seedbox2.library.importer import Importer, queue_analysis
+    from seedbox2.library.importer import Importer
 
     use_root(root)
     lib = open_library(root)
@@ -272,17 +273,15 @@ def analyse(root: Path, mixes: list[dict], heavy_workers: int = 1, say: Callable
     todo = [h for h in hashes.values() if lib.analysis(h, "vocals") is None or lib.analysis(h, "sections") is None]
     if not todo:
         return hashes
-    jobs = Supervisor(lib, None, heavy_workers=heavy_workers)
-    jobs.add_listener(lambda row: stems.on_job_finished(jobs, lib, None, row))
-    for mod in (key, energy, vibe, vocals, sections):
+    jobs = Supervisor(lib, None, heavy_workers=heavy_workers, light_workers=light_workers)
+    for mod in (energy, vocals, sections):  # beats -> energy; beats + stems -> vocals, sections
         jobs.add_listener(lambda row, mod=mod: mod.on_job_finished(jobs, lib, row))
     jobs.start()
     try:
-        fresh = [h for h in todo if lib.analysis(h, "beats") is None]
-        queue_analysis(jobs, fresh)  # everything, for tracks never analysed
-        for h in todo:  # the rest only need what's missing: a cached stems job queues vocals and sections again
-            if h not in fresh:
-                jobs.submit("stems", {"hash": h}, priority="background")
+        for h in todo:  # only what's missing: a cached stems job queues vocals and sections again
+            if lib.analysis(h, "beats") is None:
+                jobs.submit("beats", {"hash": h}, priority="library")
+            jobs.submit("stems", {"hash": h}, priority="background")
         t0 = time.monotonic()
         last = 0.0
         while active := [j for j in jobs.jobs() if j["state"] in ("queued", "running")]:
@@ -530,6 +529,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--mixes", type=int, default=30, help="how many mixes (default 30)")
     ap.add_argument("--genre", action="append", help=f"mixesdb genre (repeatable; default: {', '.join(DEFAULT_GENRES)})")
     ap.add_argument("--heavy-workers", type=int, default=1, help="stem separations at once (default 1)")
+    ap.add_argument("--light-workers", type=int, default=None, help="other analyses at once (default: the app's)")
     ap.add_argument("--out", type=Path, help="transitions file (default ROOT/transitions.jsonl)")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
@@ -544,7 +544,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.step in ("build", "fetch"):
         fetch(root, mixes)
     if args.step in ("build", "analyse"):
-        hashes = analyse(root, mixes, args.heavy_workers)
+        hashes = analyse(root, mixes, args.heavy_workers, args.light_workers)
     else:
         use_root(root)
         lib = open_library(root)
