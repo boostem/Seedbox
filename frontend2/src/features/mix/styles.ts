@@ -1,13 +1,14 @@
 /**
  * The Simple view's styles: a recipe, a length and two amounts write every lane of a plan, in the browser, so a change is
- * heard at once. Nothing generates plans on the server yet (#53); #57 brings styles as data per genre, and this table
- * is what it replaces. Each recipe follows Seedbox 1's technique of that name (`musicreco/mixplan.py`).
+ * heard at once. The server plans in the styles of `seedbox2/mix/styles/*.toml` (#57); a plan from any of them opens
+ * here on the recipe of its style's kind. Each recipe follows Seedbox 1's technique of that name (`musicreco/mixplan.py`).
  *
  * Beat 0 is where B comes in, as everywhere in a plan: a blend runs from there, unless A's file would run out before it
  * ends, and a cut's lead-in comes before it.
  */
-import { LANE_DEFAULTS, LANES } from "@/api/mixplan.generated";
+import { LANE_DEFAULTS, LANES, TECHNIQUE_KINDS } from "@/api/mixplan.generated";
 import type { Deck, Keyframe, Lanes, MixPlan, StemLanes } from "@/api/mixplan.generated";
+import type { StyleKind } from "@/features/waveform/palette";
 import { laneValue } from "@/features/waveform/stems";
 import { type DeckId, flatStemLanes } from "./lanes";
 
@@ -40,15 +41,13 @@ export const STYLES: Style[] = [
   { id: "quick_cut", label: "Quick cut", hint: "A runs into a cut on the downbeat, with its echo over the top.", technique: "quick cut", bars: 1, bIn: 0, aOutFrom: 1, swap: 1, filter: 0, echo: 0.6, reverb: 0.2, cut: true },
 ];
 
-const STYLE_OF_TECHNIQUE: Record<string, StyleId> = {
-  "long blend": "long_blend",
-  "phrase blend": "long_blend",
-  "bass swap": "bass_swap",
-  "filter sweep": "filter_sweep",
-  "echo out": "echo_out",
-  "reverb wash": "echo_out",
-  "quick cut": "quick_cut",
-  "drop swap": "quick_cut",
+/** The recipe a plan's technique starts from: the one of its style's kind (`seedbox2/mix/styles/*.toml`). */
+const RECIPE_OF_KIND: Record<StyleKind, StyleId> = {
+  blend: "long_blend",
+  swap: "bass_swap",
+  filter: "filter_sweep",
+  echo: "echo_out",
+  cut: "quick_cut",
 };
 
 /** The lengths on the Simple view's slider, in bars. */
@@ -71,7 +70,8 @@ const DEFAULT_FX = 0.5;
 export function settingsOf(plan: MixPlan): SimpleSettings {
   const made = WHAT_MADE.get(plan);
   if (made) return made;
-  const style = STYLE_OF_TECHNIQUE[plan.technique] ?? "long_blend";
+  const kind = (TECHNIQUE_KINDS as Record<string, StyleKind>)[plan.technique.toLowerCase().replace(/_/g, " ")];
+  const style = kind ? RECIPE_OF_KIND[kind] : "long_blend";
   const recipe = STYLES.find((s) => s.id === style)!;
   const peak = (id: DeckId, name: "echo_send" | "reverb_send") => Math.max(...plan[id].lanes[name].map((k) => k.value));
   const sent = Math.max(peak("a", "echo_send"), peak("a", "reverb_send"));

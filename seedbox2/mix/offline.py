@@ -18,7 +18,7 @@ from musicreco import mixrender
 
 from ..analysis import loudness, waveform
 from ..analysis import stems as stem_cache
-from . import automation, convert, stemplan
+from . import automation, convert, stemplan, styles
 from . import master as master_chain
 from .plan import STEM_LANES, Deck, MixPlan, deck_grid, fold_stem_lanes
 
@@ -46,7 +46,8 @@ def _deck(deck: Deck) -> dict:
 def to_seedbox1(plan: MixPlan) -> dict:
     """What mixrender reads. Stem lanes aren't in it: pass them to `render_audio` as `deck_stems`."""
     return {
-        "version": 2, "folder": "", "from_id": plan.a.track_id, "to_id": plan.b.track_id, "technique": plan.technique,
+        "version": 2, "folder": "", "from_id": plan.a.track_id, "to_id": plan.b.track_id,
+        "technique": styles.render_technique(plan.technique),
         "bars": plan.bars, "key_lock": plan.key_lock, "window": plan.window.model_dump(),
         "tempo": [k.model_dump() for k in plan.tempo], "a": _deck(plan.a), "b": _deck(plan.b),
         "markers": [m.model_dump() for m in plan.markers], "notes": plan.notes, "edited": plan.edited,

@@ -1,0 +1,11 @@
+# A port of Seedbox 1's "echo out": musicreco.mixplan writes its lanes, this file says when it is chosen.
+technique = "echo out"
+label = "Echo out"
+kind = "echo"
+hint = "A's last beats are thrown into an echo that rings over B."
+base = "echo out"
+weight = 1.0
+
+[boost]
+hip_hop = 1.5
+pop = 1.0

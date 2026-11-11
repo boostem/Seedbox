@@ -4,7 +4,8 @@
 from the pair's saved plan. A pair without a plan comes back `pending` and goes to the `set_plan` job, so dragging a track
 never waits for planning; the `job.done` event says when to ask again.
 
-`set_plan` plans one pair on its own, with Seedbox 1's generator on our analysis, made stem-aware by
+`set_plan` plans one pair on its own, in the transition style its genres, tempo, energy and vocals call for (#57,
+`seedbox2.mix.styles`) over Seedbox 1's generator on our analysis, made stem-aware by
 `seedbox2.mix.stemplan` (#53: bass and vocal hand-offs on the stem lanes, no doubled kicks, mashup moments), and saves it.
 A track whose stems aren't cached yet plays those lanes on its EQ. #61 plans a whole set with lookahead; #56's `adapt`
 isn't run here. A track's vocals are the stem's when it has them
@@ -23,7 +24,7 @@ from seedbox2.analysis import stems as stem_cache
 from seedbox2.analysis.grid import Grid
 from seedbox2.jobs import register
 from seedbox2.mix import convert
-from seedbox2.mix import master, stemplan
+from seedbox2.mix import genre, master, stemplan, styles
 from seedbox2.mix.plan import MixPlan, deck_time
 from seedbox2.sets.features import load_features
 
@@ -187,8 +188,16 @@ def plan_pair(lib: Any, from_hash: str, to_hash: str) -> MixPlan:
                            release_date="", duration_ms=int(float(row["duration"]) * 1000), popularity=0, key="",
                            camelot=f.camelot or "", bpm=an["bpm"], energy=f.energy or 0.0, danceability=0.0,
                            cover_url=None))  # fmt: skip
-    raw = mixplan.generate(decks[0], analyses[0], decks[1], analyses[1], "")
-    plan, _ = stemplan.plan(convert.load(raw, from_track=from_hash, to_track=to_hash), known[0], known[1])
+    ctx = styles.context(analyses[0], analyses[1], genre_a=genre.effective(lib, from_hash)["genre"],
+                         genre_b=genre.effective(lib, to_hash)["genre"], energy_a=features[from_hash].energy,
+                         energy_b=features[to_hash].energy, a_stems=known[0].has_stems, b_stems=known[1].has_stems,
+                         b_acapella=bool(known[1].acapella))  # fmt: skip
+
+    def generate(technique: str | None, bars: int | None) -> dict:
+        return mixplan.generate(decks[0], analyses[0], decks[1], analyses[1], "", technique=technique, bars=bars)
+
+    styled, _ = styles.plan(ctx, generate, lambda raw: convert.load(raw, from_track=from_hash, to_track=to_hash))
+    plan, _ = stemplan.plan(styled, known[0], known[1])
     return plan
 
 

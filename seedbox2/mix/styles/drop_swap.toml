@@ -1,0 +1,7 @@
+# A port of Seedbox 1's "drop swap": musicreco.mixplan writes its lanes, this file says when it is chosen.
+technique = "drop swap"
+label = "Drop swap"
+kind = "cut"
+hint = "A cuts out of its last drop straight into B's first."
+base = "drop swap"
+weight = 1.0

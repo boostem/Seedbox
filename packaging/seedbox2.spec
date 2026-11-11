@@ -57,6 +57,7 @@ hiddenimports = [
 datas = [
     (str(web_dist), "web"),
     (str(PROJECT / "packaging" / "seedbox2-third-party.txt"), "licenses"),
+    (str(PROJECT / "seedbox2" / "mix" / "styles" / "*.toml"), "seedbox2/mix/styles"),  # the transition styles (#57)
     *collect_data_files("webview", includes=["js/**/*.js", "lib/**/*"]),
     *collect_data_files("yt_dlp_ejs", includes=["**/*.js"]),
     *collect_data_files("cloudscraper"),

@@ -1,4 +1,5 @@
 /** Canvas colours for waveforms, resolved once from the design tokens (CSS vars don't work in fillStyle). */
+import { TECHNIQUE_KINDS } from "@/api/mixplan.generated";
 import type { Edge, SectionKind } from "@/api/types";
 import { cssVar } from "@/lib/theme";
 
@@ -126,9 +127,14 @@ export function cueColor(label: string, p: WavePalette = wavePalette(), slot?: n
 /** A hot cue slot's letter: 0 → "A". */
 export const slotLetter = (slot: number): string => String.fromCharCode(65 + (slot % CUE_SLOTS));
 
-/** The style a plan's technique ("long blend", "bass_swap", "filter sweep", "echo out", "quick cut", …) belongs to. */
+/**
+ * The style a plan's technique ("long blend", "bass_swap", "double drop", …) belongs to: its `kind` in
+ * `seedbox2/mix/styles/*.toml`, and for a technique no style names (an edited plan's own) a guess from its words.
+ */
 export function styleOf(technique: string | null | undefined): StyleKind {
-  const t = (technique ?? "").toLowerCase();
+  const t = (technique ?? "").toLowerCase().replace(/_/g, " ");
+  const known = (TECHNIQUE_KINDS as Record<string, StyleKind>)[t];
+  if (known) return known;
   if (t.includes("echo")) return "echo";
   if (t.includes("cut")) return "cut";
   if (t.includes("filter")) return "filter";

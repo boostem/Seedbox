@@ -1,0 +1,7 @@
+# A port of Seedbox 1's "filter sweep": musicreco.mixplan writes its lanes, this file says when it is chosen.
+technique = "filter sweep"
+label = "Filter sweep"
+kind = "filter"
+hint = "B opens up from a low-pass while A rides a high-pass out."
+base = "filter sweep"
+weight = 1.0

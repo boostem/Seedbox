@@ -1,0 +1,7 @@
+# A port of Seedbox 1's "loop roll": musicreco.mixplan writes its lanes, this file says when it is chosen.
+technique = "loop roll"
+label = "Loop roll"
+kind = "blend"
+hint = "A rolls its last bars in ever shorter loops into B's downbeat."
+base = "loop roll"
+weight = 1.0

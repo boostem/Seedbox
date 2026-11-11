@@ -1,0 +1,83 @@
+{
+ "technique": "chorus swap",
+ "bars": 4,
+ "window": [
+  -64.0,
+  64.0
+ ],
+ "a": {
+  "play": [
+   -352.0,
+   4.0
+  ],
+  "lanes": {
+   "volume": [
+    [
+     -0.5,
+     1.0,
+     "linear"
+    ],
+    [
+     0.0,
+     0.0,
+     "linear"
+    ]
+   ],
+   "echo_send": [
+    [
+     -1.0,
+     0.0,
+     "linear"
+    ],
+    [
+     -0.5,
+     0.8,
+     "hold"
+    ],
+    [
+     0.5,
+     0.0,
+     "linear"
+    ]
+   ],
+   "reverb_send": [
+    [
+     -1.0,
+     0.0,
+     "linear"
+    ],
+    [
+     0.0,
+     0.25,
+     "linear"
+    ],
+    [
+     4.0,
+     0.0,
+     "linear"
+    ]
+   ]
+  },
+  "stems": null,
+  "sends": {
+   "echo_beats": 0.5,
+   "reverb_size": 0.75
+  },
+  "fx": [],
+  "loops": []
+ },
+ "b": {
+  "play": [
+   0.0,
+   385.0335
+  ],
+  "lanes": {},
+  "stems": null,
+  "sends": {
+   "echo_beats": 0.75,
+   "reverb_size": 0.75
+  },
+  "fx": [],
+  "loops": []
+ }
+}

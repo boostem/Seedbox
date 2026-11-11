@@ -1,0 +1,105 @@
+{
+ "technique": "double drop",
+ "bars": 24,
+ "window": [
+  -64.0,
+  72.0
+ ],
+ "a": {
+  "play": [
+   -415.9998,
+   64.0
+  ],
+  "lanes": {
+   "volume": [
+    [
+     32.0,
+     1.0,
+     "ease"
+    ],
+    [
+     64.0,
+     0.0,
+     "linear"
+    ]
+   ],
+   "eq_low": [
+    [
+     -0.25,
+     0.0,
+     "linear"
+    ],
+    [
+     0.0,
+     -30.0,
+     "linear"
+    ]
+   ],
+   "echo_feedback": [
+    [
+     -64.0,
+     0.7,
+     "hold"
+    ]
+   ]
+  },
+  "stems": null,
+  "sends": {
+   "echo_beats": 0.75,
+   "reverb_size": 0.75
+  },
+  "fx": [],
+  "loops": []
+ },
+ "b": {
+  "play": [
+   -32.0,
+   449.4508
+  ],
+  "lanes": {
+   "volume": [
+    [
+     -32.0,
+     0.0,
+     "ease"
+    ],
+    [
+     -16.0,
+     1.0,
+     "linear"
+    ]
+   ],
+   "eq_low": [
+    [
+     -32.0,
+     -30.0,
+     "hold"
+    ],
+    [
+     0.0,
+     0.0,
+     "linear"
+    ]
+   ],
+   "eq_high": [
+    [
+     -32.0,
+     -6.0,
+     "ease"
+    ],
+    [
+     0.0,
+     0.0,
+     "linear"
+    ]
+   ]
+  },
+  "stems": null,
+  "sends": {
+   "echo_beats": 0.75,
+   "reverb_size": 0.75
+  },
+  "fx": [],
+  "loops": []
+ }
+}

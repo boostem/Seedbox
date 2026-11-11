@@ -1,0 +1,7 @@
+# A port of Seedbox 1's "spinback": musicreco.mixplan writes its lanes, this file says when it is chosen.
+technique = "spinback"
+label = "Spinback"
+kind = "cut"
+hint = "A is spun back off the record and B drops in."
+base = "spinback"
+weight = 0.5

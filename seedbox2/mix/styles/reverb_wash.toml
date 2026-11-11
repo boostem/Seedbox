@@ -1,0 +1,7 @@
+# A port of Seedbox 1's "reverb wash": musicreco.mixplan writes its lanes, this file says when it is chosen.
+technique = "reverb wash"
+label = "Reverb wash"
+kind = "echo"
+hint = "A washes out in a big reverb as B comes in on the cut."
+base = "reverb wash"
+weight = 1.0

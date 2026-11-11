@@ -1,4 +1,4 @@
-"""/mixes: mix plans (#38 stores them). The live engine in the browser plays and auditions them (#65, #67), so nothing
+"""/mixes: mix plans (#38 stores them), and the transition styles (#57, `GET /mixes/styles`). The live engine in the browser plays and auditions them (#65, #67), so nothing
 here renders audio to listen to: the server renders for export only (#70)."""
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from seedbox2.library.service import SETTINGS_FILE, Settings
-from seedbox2.mix import convert
+from seedbox2.mix import convert, genre, styles
 from seedbox2.mix import plan as v3
 from seedbox2.mix import master as master_chain
 from seedbox2.server.deps import LibraryDep
@@ -35,6 +35,14 @@ def master(lib: LibraryDep) -> dict:
 @router.post("/master")
 def set_master(body: MasterSettings, lib: LibraryDep) -> dict:
     return master_chain.set_target(_settings(lib), body.target)
+
+
+@router.get("/styles")
+def transition_styles() -> dict:
+    """The transition styles (#57): every technique a plan may name, with its colour kind, when it applies, and the
+    genre families those conditions name."""
+    return {"techniques": list(styles.TECHNIQUES), "styles": [s.to_json() for s in styles.all_styles()],
+            "genres": [{"id": f.id, "label": f.label} for f in genre.families()]}  # fmt: skip
 
 
 @router.get("/plans")

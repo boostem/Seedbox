@@ -32,7 +32,7 @@ Flags:
   (in-process and in a spawned worker), and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_seedbox2_packaging.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_setexport.py tests/test_seedbox2_bridge.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_sections.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_tunebat_crate.py tests/test_seedbox2_sets.py tests/test_seedbox2_longset.py tests/test_seedbox2_now_playing.py tests/test_seedbox2_assistant.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_seedbox2_packaging.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_setexport.py tests/test_seedbox2_bridge.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_sections.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_tunebat_crate.py tests/test_seedbox2_sets.py tests/test_seedbox2_longset.py tests/test_seedbox2_now_playing.py tests/test_seedbox2_assistant.py tests/test_seedbox2_styles.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -439,6 +439,37 @@ holders. So Seedbox ships no data and no audio, and only trains locally. Two way
 you are allowed to download with the `djmix` package and convert its cue points, or log your own mixes (each track's
 time at the transition), which also fits the model to your taste. A model trained that way is derived data. Whether one
 trained on djmix audio may ship in the app is a question for the dataset's authors before it does.
+
+**Transition styles as data** (#57, `seedbox2/mix/styles/*.toml`, `seedbox2/mix/styles/__init__.py`, `seedbox2/mix/genre.py`):
+how a pair is mixed depends on its genre. Each style is one TOML file (the format is in the package's docstring):
+
+- **When it applies:** genre families of A and B, A's BPM (or twice it), each track's energy, who sings at the
+  transition (none, A's end, B's start, both), the tempo gap, which of the generator's picks it may stand in for
+  (`replaces`), and needs (`drops` on the cut, `b_stems`). Styles that apply are ranked by `weight`, a per-genre `boost`,
+  and `AUTO_BONUS` for the generator's own pick; the best one that fits the planned window wins.
+- **What it writes:** a style names the Seedbox 1 technique that places its window (`base`: cue points, tempo map, loops)
+  and replaces lanes inside the transition with templates (`start`, `end`, `swap`, `cut`, shares of the span, plus beats
+  or bars), stem lanes, send settings, deck effects, and optionally its own span around beat 0. `stemplan` runs after,
+  so the bass, vocal and kick rules still hold.
+- **The styles:** the 13 Seedbox 1 techniques as ports (the generator's lanes unchanged; with no genre known the plan is
+  exactly the generator's, a test checks it), plus double drop (DnB/dubstep: B's drop on A's, A's bass out on it, A plays
+  on 8 bars), rolling blend (32-bar DnB blend), chorus swap (hip-hop/pop/R&B, both sung: A's chorus to B's on the 1),
+  acapella intro (B's vocal stem alone over A, then B's beat on the phrase), echo freeze (A's last half beat held in a
+  0.92-feedback echo), filter wash (resonant high-pass into a big reverb) and power cut (A brakes, a beat of silence,
+  B's drop). House/techno lean to long blends and bass swaps, hip-hop to cuts and echoes, through the boosts.
+- **One technique list:** `styles.TECHNIQUES` (Seedbox 1's 13 first, in order). The planner (`timeline.plan_pair`)
+  picks from it, the renderer gets each new technique's base (`render_technique`), `GET /api/mixes/styles` serves it with
+  the conditions and families, and `python -m seedbox2.mix.typescript` writes it to `mixplan.generated.ts`
+  (`TECHNIQUES`, `TECHNIQUE_KINDS`, `TECHNIQUE_LABELS`), which `styleOf` and the Simple view read. After changing a
+  style file, rerun that, and `SEEDBOX_UPDATE_SNAPSHOTS=1 .venv/bin/python -m pytest tests/test_seedbox2_styles.py`
+  for its snapshot (`tests/snapshots/styles/`).
+- **Genre:** families in `styles/genres.toml`. The user's choice (`PUT /api/analysis/{hash}/genre/override`) wins, then
+  the genre tag (whole-word match, longest word wins: "Tech House" is house), then CLAP zero-shot over each family's
+  prompts at p >= 0.4. The prompts' text vectors come from `clap_text` jobs queued at server start; until they're there
+  CLAP gives no genre. `GET /api/analysis/{hash}/genre` shows all three.
+- **Not measured yet:** the weights, boosts and conditions are a prior from the literature (Vande Veire & De Bie 2018,
+  common DJ practice), not fitted to mixes or blind-tested, and the CLAP threshold isn't checked against labelled
+  genres (text alone found 43 % on the golden tracks). The snapshots are synthetic pairs.
 
 ## Ordering a set
 
