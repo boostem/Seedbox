@@ -9,7 +9,8 @@ export { MixWaveform, type MixClock, type MixWaveformProps } from "./MixWaveform
 export { mixGeometry, type MixGeometry } from "./mix";
 export { decodeWaveBinary, prepareWave, type WaveData } from "./prepare";
 export { loadWave, prepareWaveAsync, useStemWave, useTrackWave, useWave } from "./waveData";
-export { cueColor, edgeColor, edgeWords, SECTION_LABEL, sectionColor, wavePalette } from "./palette";
+export { cueColor, edgeColor, edgeWords, SECTION_LABEL, sectionColor, slotLetter, styleColor, styleOf, wavePalette } from "./palette";
+export { barAt, barTime, beatAt, beatTime, phraseLevel, phraseStarts } from "./grid";
 export { barBeat, drawWave, drawWave2d, fmtPrecise, mergeCues, setupCanvas, type WaveOptions, type WaveRegion } from "./draw";
 export { beatPhase, fmtBarsBeats, type BeatPhase } from "./phase";
 export { type WaveFollow, WAVE_FOLLOWS, type WaveMode, WAVE_MODES, useWaveMode, useWaveSettings, waveSettings } from "./settings";

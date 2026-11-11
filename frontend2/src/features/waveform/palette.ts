@@ -30,9 +30,18 @@ export interface WavePalette {
   section: Record<SectionKind, string>;
   phrase: string;
   cueMix: string;
+  /** hot cue slots A-H */
+  cueSlots: string[];
+  /** transition styles: the overlap region's colour by the plan's technique */
+  style: Record<StyleKind, string>;
   stem: { drums: string; bass: string; vocals: string; other: string };
   font: string;
 }
+
+export type StyleKind = "blend" | "swap" | "filter" | "echo" | "cut";
+
+/** How many hot cue slots have a colour (A-H). */
+export const CUE_SLOTS = 8;
 
 let cached: WavePalette | null = null;
 
@@ -73,6 +82,8 @@ export function wavePalette(): WavePalette {
     },
     phrase: v("phrase"),
     cueMix: v("cue-mix"),
+    cueSlots: Array.from({ length: CUE_SLOTS }, (_, i) => v(`cue-${i + 1}`)),
+    style: { blend: v("style-blend"), swap: v("style-swap"), filter: v("style-filter"), echo: v("style-echo"), cut: v("style-cut") },
     stem: { drums: v("stem-drums"), bass: v("stem-bass"), vocals: v("stem-vocals"), other: v("stem-other") },
     font: cssVar("--font-sans") || "-apple-system, BlinkMacSystemFont, sans-serif",
   };
@@ -102,13 +113,32 @@ export function edgeWords(e: Edge): string {
   return e.drums_only ? "drums only" : e.has_vocals ? "vocals" : "music";
 }
 
-/** Cue colour by label ("mix in (16-bar intro)", "drop 2", "breakdown", "first downbeat", "mix out …"): mix cues
- * have their own colour, the others take the colour of the section they start. */
-export function cueColor(label: string, p: WavePalette = wavePalette()): string {
+/** Cue colour: a hot cue's slot colour; else by label ("mix in (16-bar intro)", "drop 2", "breakdown", "first
+ * downbeat", "mix out …"): mix cues have their own colour, the others take the colour of the section they start. */
+export function cueColor(label: string, p: WavePalette = wavePalette(), slot?: number | null): string {
+  if (slot != null && slot >= 0) return p.cueSlots[slot % CUE_SLOTS];
   const l = label.toLowerCase();
   if (l.startsWith("mix")) return p.cueMix;
   for (const kind of ["drop", "breakdown", "build", "intro", "outro"] as const) if (l.startsWith(kind)) return p.section[kind];
   return p.fgMuted;
+}
+
+/** A hot cue slot's letter: 0 → "A". */
+export const slotLetter = (slot: number): string => String.fromCharCode(65 + (slot % CUE_SLOTS));
+
+/** The style a plan's technique ("long blend", "bass_swap", "filter sweep", "echo out", "quick cut", …) belongs to. */
+export function styleOf(technique: string | null | undefined): StyleKind {
+  const t = (technique ?? "").toLowerCase();
+  if (t.includes("echo")) return "echo";
+  if (t.includes("cut")) return "cut";
+  if (t.includes("filter")) return "filter";
+  if (t.includes("swap")) return "swap";
+  return "blend";
+}
+
+/** The overlap region's colour for a plan's technique. A music colour: it says how the tracks mix, not how well. */
+export function styleColor(technique: string | null | undefined, p: WavePalette = wavePalette()): string {
+  return p.style[styleOf(technique)];
 }
 
 /** "#rrggbb" / "rgb()" / "hsl()" + alpha → canvas colour string. */

@@ -158,8 +158,9 @@ screen.
 | Group | Tokens | Notes |
 |---|---|---|
 | Sections | `section-intro` / `section-outro` teal, `section-build` violet, `section-drop` rose, `section-breakdown` sky, `section-body` grey | bands under the waveform; intro and outro share a colour (they are where mixes happen) |
-| Phrases | `phrase` | the phrase lines (every 8 bars) and their numbers; bar lines are `fg` at low alpha |
-| Cues | `cue-mix` lime | mix-in and mix-out cues; every other cue takes its section's colour (`cueColor`) |
+| Phrases | `phrase` | the phrase lines and their bar numbers, heavier for a 16- and a 32-bar phrase than an 8; bar lines are `fg` at low alpha. Phrase bands behind the waveform take their section's colour |
+| Cues | `cue-mix` lime; `cue-1` … `cue-8` coral, orange, yellow, green, teal, blue, violet, pink | mix-in and mix-out cues; a hot cue takes its slot's colour (A-H) with its letter on it; every other cue takes its section's colour (`cueColor`) |
+| Transition styles | `style-blend` sky, `style-swap` blue, `style-filter` lavender, `style-echo` orchid, `style-cut` coral | the overlap region of a plan on a deck and in the transition editor, by its technique (`styleColor`) |
 | Stems | `stem-drums` yellow, `stem-bass` blue, `stem-vocals` magenta, `stem-other` green | stem lanes, and intro/outro brackets by what plays in them (drums only, vocals, music) |
 | Waveform | `wave-low` blue, `wave-mid` amber, `wave-high` white, `wave-played`, `playhead` | Rekordbox-style 3 bands |
 | RGB waveform | `wave-rgb-low` red, `wave-rgb-mid` green, `wave-rgb-high` blue | the RGB mode (Settings): each column mixes them by its band balance |

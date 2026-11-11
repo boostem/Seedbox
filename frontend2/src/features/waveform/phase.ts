@@ -1,5 +1,6 @@
 /** Where a track time falls in the beat grid: the beat-phase ruler and the bar counter to the next phrase. */
 import type { TrackAnalysis } from "@/api/types";
+import { barAt, type GridSource, hasGrid } from "./grid";
 
 export interface BeatPhase {
   /** bar index from the first downbeat (negative before it) */
@@ -14,7 +15,7 @@ export interface BeatPhase {
   phraseLevel: number | null;
 }
 
-type Grid = Pick<TrackAnalysis, "first_downbeat_s" | "bar_s" | "bar_count" | "phrase_offset" | "phrases">;
+type Grid = GridSource & Pick<TrackAnalysis, "bar_count" | "phrase_offset" | "phrases">;
 
 /** The first phrase start after bar position `rel`: `phrases` when analysed, or the 8-bar grid. */
 function nextPhrase(an: Grid, rel: number): { bar: number; level: number | null } | null {
@@ -36,8 +37,8 @@ function nextPhrase(an: Grid, rel: number): { bar: number; level: number | null 
 
 /** The grid position of file time `t`, or null without a grid. */
 export function beatPhase(an: Grid, t: number): BeatPhase | null {
-  if (!(an.bar_s > 0)) return null;
-  const rel = (t - an.first_downbeat_s) / an.bar_s;
+  if (!hasGrid(an)) return null;
+  const rel = barAt(an, t);
   const bar = Math.floor(rel);
   const beats = (rel - bar) * 4;
   const beat = Math.min(3, Math.floor(beats));

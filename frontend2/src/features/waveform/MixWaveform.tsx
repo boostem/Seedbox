@@ -17,7 +17,7 @@ import { cn } from "@/lib/cn";
 import { barBeat, drawCues, drawEdges, drawGrid, drawSections, drawTimeRuler, drawWave, fmtPrecise, setupCanvas, shade, toFile, toMix, type View, xOf } from "./draw";
 import { useFrame, useWaveformKeys, useViewCtl, useViewFact, useWidthRef } from "./hooks";
 import { type MixGeometry, mixGeometry } from "./mix";
-import { alpha, wavePalette } from "./palette";
+import { alpha, styleColor, wavePalette } from "./palette";
 import { useWaveLook } from "./settings";
 import { useWave } from "./waveData";
 import { mayDraw } from "@/lib/frameCap";
@@ -347,8 +347,9 @@ function paint(ctx: CanvasRenderingContext2D, dpr: number, g: MixGeometry, view:
   // overlap column (behind the waves)
   const xo0 = xOf(view, g.out);
   const xo1 = xOf(view, g.outEnd);
+  const styleCol = styleColor(t.plan_technique ?? t.technique, p);
   if (g.bars > 0) {
-    ctx.fillStyle = alpha(p.accent, 0.1);
+    ctx.fillStyle = alpha(styleCol, 0.12);
     ctx.fillRect(xo0, RULE_T, xo1 - xo0, H - RULE_T - RULE_B);
   }
 
@@ -381,7 +382,7 @@ function paint(ctx: CanvasRenderingContext2D, dpr: number, g: MixGeometry, view:
   ctx.textBaseline = "middle";
   // overlap band in the ruler
   if (g.bars > 0) {
-    ctx.fillStyle = alpha(p.accent, 0.28);
+    ctx.fillStyle = alpha(styleCol, 0.32);
     ctx.fillRect(xo0, yMid + 1, xo1 - xo0, MID - 2);
   }
   // vocal clash bars

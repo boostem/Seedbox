@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from scipy.io import wavfile
 
 from musicreco import mixplan as sb1
-from seedbox2.analysis import beats, energy
+from seedbox2.analysis import beats, energy, sections
 from seedbox2.bench import frontend
 from seedbox2.library import Library
 from seedbox2.mix import plan as v3
@@ -48,6 +48,8 @@ def test_session_has_the_tracks_in_order_with_what_is_known_and_each_pairs_plan(
     a, b, c = "a" * 40, "b" * 40, "c" * 40
     lib.put_analysis(a, beats.ANALYSER, beats.VERSION, {"bpm": 126.0, "first_downbeat_s": 0.25, "beats_per_bar": 4, "segments": []})
     lib.put_analysis(a, energy.LOUDNESS_ANALYSER, energy.VERSION, {"integrated_lufs": -9.5})
+    lib.put_analysis(b, sections.ANALYSER, sections.VERSION, {"sections": [], "phrases": [
+        {"bar": 0, "start_s": 0.5, "length": 32, "novelty": 0.9}, {"bar": 32, "start_s": 61.0, "length": 8, "novelty": 0.4}]})
     lib.put_plan(a, b, _plan(a, b), user_edited=False)
 
     s = set_session(set_id, lib)
@@ -55,9 +57,11 @@ def test_session_has_the_tracks_in_order_with_what_is_known_and_each_pairs_plan(
     assert s["name"] == "Friday"
     assert [t["title"] for t in s["tracks"]] == ["One", "Two", "Three"]
     one, two = s["tracks"][:2]
-    assert one["grid"] == {"bpm": 126.0, "first_downbeat_s": 0.25, "beats_per_bar": 4}
+    assert one["grid"] == {"bpm": 126.0, "first_downbeat_s": 0.25, "beats_per_bar": 4, "segments": []}
+    assert one["phrases"] == []
     assert one["integrated_lufs"] == -9.5 and one["duration"] == 240.0
     assert two["grid"] is None and two["integrated_lufs"] is None and two["sections"] == []
+    assert two["phrases"] == [{"start_s": 0.5, "level": 32}, {"start_s": 61.0, "level": 8}]
     assert two["key"]["camelot"] is None
     assert len(s["plans"]) == 2
     assert s["plans"][0]["version"] == v3.PLAN_VERSION and s["plans"][0]["a"]["track_id"] == a

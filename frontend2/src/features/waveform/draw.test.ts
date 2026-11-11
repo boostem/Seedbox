@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cueLabelRows, placeCueLabel } from "./draw";
+import { CUE_ROWS, cueLabelRows, cueRowsFor, mergeCues, placeCueLabel } from "./draw";
 
 describe("cue label rows", () => {
   it("keeps cue labels off an INTRO label at the same x", () => {
@@ -15,7 +15,7 @@ describe("cue label rows", () => {
   });
 
   it("drops a label when both rows are taken", () => {
-    const rows = cueLabelRows([], 0);
+    const rows = cueLabelRows([], 0, 2);
     expect(placeCueLabel(rows, 0, 100)).toBe(0);
     expect(placeCueLabel(rows, 50, 150)).toBe(1);
     expect(placeCueLabel(rows, 90, 200)).toBe(-1);
@@ -23,6 +23,30 @@ describe("cue label rows", () => {
   });
 
   it("ignores boxes below the label rows", () => {
-    expect(cueLabelRows([{ x0: 0, x1: 100, y0: 40, y1: 52 }], 0)).toEqual([[], []]);
+    expect(cueLabelRows([{ x0: 0, x1: 100, y0: 52, y1: 60 }], 0)).toEqual([[], [], []]);
+  });
+
+  it("stacks overlapping labels in as many rows as the band has room for", () => {
+    expect(cueRowsFor(132)).toBe(CUE_ROWS);
+    expect(cueRowsFor(50)).toBe(2);
+    expect(cueRowsFor(10)).toBe(1);
+    const rows = cueLabelRows([], 0);
+    expect([0, 20, 40, 60].map((x) => placeCueLabel(rows, x, x + 80))).toEqual([0, 1, 2, -1]);
+  });
+});
+
+describe("mergeCues", () => {
+  it("merges the analysis' cues at one moment but keeps hot cues apart, with their slots", () => {
+    const merged = mergeCues([
+      { bar: 0, time_s: 0, label: "first downbeat" },
+      { bar: 0, time_s: 0, label: "mix in (16-bar intro)" },
+      { bar: 0, time_s: 0, label: "start", slot: 0 },
+      { bar: 8, time_s: 15, label: "vocal", slot: 2 },
+    ]);
+    expect(merged).toEqual([
+      { bar: 0, time_s: 0, label: "mix in (16-bar intro)" },
+      { bar: 0, time_s: 0, label: "start", slot: 0 },
+      { bar: 8, time_s: 15, label: "vocal", slot: 2 },
+    ]);
   });
 });

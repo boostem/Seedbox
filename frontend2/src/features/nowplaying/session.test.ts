@@ -111,6 +111,7 @@ describe("the transition", () => {
     expect([a.start_s, a.end_s]).toEqual([50, 66]);
     expect([b.start_s, b.end_s]).toEqual([8, 24]);
     expect(a.label).toBe("Bass swap");
+    expect(a.technique).toBe("bass swap"); // the overlap takes its style's colour
   });
 });
 
@@ -206,6 +207,15 @@ describe("the analysis a deck draws", () => {
     const an = deckAnalysis(track("x"), deck("x", 3, 0.75, 0, 64));
     expect(an.bpm).toBe(120);
     expect(an.first_downbeat_s).toBeCloseTo(((0.75 - 1.5) % 2 + 2) % 2);
+    expect(an.grid).toEqual(deck("x", 3, 0.75, 0, 64).grid); // its bar lines follow the plan's grid
+  });
+
+  it("draws the track's piecewise grid and numbers its phrases on it", () => {
+    const segments = [{ start_beat: 0, start_s: 0.5, bpm: 120 }, { start_beat: 32, start_s: 16.5, bpm: 60 }];
+    const an = deckAnalysis({ ...track("x", 120), grid: { bpm: 120, first_downbeat_s: 0.5, beats_per_bar: 4, segments }, phrases: [{ start_s: 0.5, level: 32 }, { start_s: 16.5, level: 8 }, { start_s: 48.5, level: 16 }] }, plan().a);
+    expect(an.grid).toEqual(segments);
+    // bar 8 is at the tempo change; the 60 BPM bars after it are 4 s long
+    expect(an.phrases).toEqual([{ bar: 0, level: 32 }, { bar: 8, level: 8 }, { bar: 16, level: 16 }]);
   });
 });
 

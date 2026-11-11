@@ -108,10 +108,27 @@ that to the view as `source`. As `currentTime` moves in steps of the output buff
 `python -m seedbox2.bench frontend` (scenario `play_centred`, headless Chrome on SwiftShader, 10 s, on a 12-thread desktop under other load, not yet the reference laptops): 59.6 fps,
 frame time spread 1.36 ms, no long tasks, no React commits; the raw clock's unevenness 8.98 ms a frame, the playhead's 0.41 ms.
 
+**Waveform overlays** (#82, `draw.ts` and `grid.ts` in `frontend2/src/features/waveform/`): what `TrackWaveform` draws
+around the waveform, on 2D canvases under and over the WebGL layer that repaint only when the view, the data or the
+look changes (a centred deck: when it scrolls a device pixel), never for the playhead, which has its own layer.
+
+- **Beatgrid:** beat, bar and phrase lines with bar numbers. Lines follow the piecewise grid (`TrackAnalysis.grid`, the
+  segments of `seedbox2/analysis/grid.py`; the now-playing session sends them as `grid.segments`) and fall back to
+  `first_downbeat_s` + `bar_s`. A phrase line weighs more for the phrase it opens: 8 bars thin, 16 brighter, 32 two
+  pixels (`PHRASE_LINE`), from `phrases[]` when analysed (the session sends `phrases` from the sections analysis) or the
+  8-bar grid. Zoomed out, shorter phrases drop before longer ones, and bar numbers stay on the phrase starts that fit.
+- **Phrase bands:** each phrase tinted by its section (intro, build, drop, breakdown, outro: the music colours),
+  every other one a little stronger to count by. On by default.
+- **Cues:** a hot cue (`CuePoint.slot`, 0-7) takes its slot's colour (`cue-1`…`cue-8`) with its letter; the analysis'
+  cues keep their section or mix colour and merge when they coincide. Labels that would overlap stack in up to three
+  rows, as Mixxx 2.4 does, keeping clear of the intro and outro labels.
+- **Transition:** a region with a `technique` is tinted in its style's colour (`style-blend`, `-swap`, `-filter`,
+  `-echo`, `-cut`; `styleOf`), as is the overlap in the transition editor (`MixWaveform`).
+
 **Now playing** (#77, `frontend2/src/features/nowplaying/`, `#/now-playing?set=ID`, ⌘K "Go to Now playing"): the set as two
 stacked decks, full screen and without the shell. Both waveforms scroll under one playhead column, zoomed together in bars so
-a beat is the same width on both, so the grids line up when the plan has the tracks in sync; every other phrase is tinted and
-the transition is marked on each deck's track. A deck's panel shows its BPM, its pitch against its own tempo, its key and the
+a beat is the same width on both, so the grids line up when the plan has the tracks in sync; its phrases are tinted by section and
+the transition is marked on each deck's track in its style's colour. A deck's panel shows its BPM, its pitch against its own tempo, its key and the
 time left, with stem meters and the plan's EQ, filter and fader moving as it plays; the strip along the bottom names the next track, the
 technique and the bars to go. `?demo=1` shows it on synthetic data (screenshots, the benchmark).
 
