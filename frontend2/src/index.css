@@ -51,6 +51,21 @@
   --color-section-outro: #3fb8af;
   --color-phrase: #dfe3ea; /* phrase lines (every 8 bars) and their numbers; bars use fg at low alpha */
   --color-cue-mix: #9be564; /* mix-in / mix-out cues; other cues take their section's colour */
+  /* hot cue slots A-H */
+  --color-cue-1: #ef7a5a;
+  --color-cue-2: #f2a94e;
+  --color-cue-3: #e6d35a;
+  --color-cue-4: #7fd36a;
+  --color-cue-5: #4fc7c4;
+  --color-cue-6: #5a8ff0;
+  --color-cue-7: #9a7cf2;
+  --color-cue-8: #e36fc4;
+  /* transition styles: the overlap region of a plan, by its technique */
+  --color-style-blend: #6ec3e8;
+  --color-style-swap: #5b84f5;
+  --color-style-filter: #b994f5;
+  --color-style-echo: #e08ad6;
+  --color-style-cut: #f08a5a;
   --color-stem-drums: #f2c14e;
   --color-stem-bass: #4d7cfe;
   --color-stem-vocals: #e26ee5;

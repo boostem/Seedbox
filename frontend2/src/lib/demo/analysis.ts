@@ -51,6 +51,19 @@ export function demoAnalysis(): TrackAnalysis {
     { bar: 16, time_s: 16 * BAR_S, label: "mix in (16-bar intro)" },
     { bar: 24, time_s: 24 * BAR_S, label: "drop" },
     { bar: 56, time_s: 56 * BAR_S, label: "mix out (8-bar outro)" },
+    // hot cues in their slots' colours: B lands on the drop's cue, so the two stack
+    { bar: 0, time_s: 0, label: "start", slot: 0 },
+    { bar: 24, time_s: 24 * BAR_S, label: "drop", slot: 1 },
+    { bar: 40, time_s: 40 * BAR_S, label: "break", slot: 2 },
+  ];
+  // the phrases the sections analysis finds: a 32-bar phrase opens each drop's run, 8s in the build and breakdown
+  const phrases: TrackAnalysis["phrases"] = [
+    { bar: 0, level: 16 },
+    { bar: 16, level: 8 },
+    { bar: 24, level: 16 },
+    { bar: 40, level: 8 },
+    { bar: 48, level: 8 },
+    { bar: 56, level: 8 },
   ];
   const perBar = Array.from({ length: BARS }, (_, b) => energyAt(b));
   return {
@@ -63,6 +76,7 @@ export function demoAnalysis(): TrackAnalysis {
     bar_s: BAR_S,
     bar_count: BARS,
     phrase_offset: 0,
+    phrases,
     energy_per_bar: perBar,
     low_per_bar: perBar.map((e) => (e < 0.4 ? 0.1 : e)),
     vocal_per_bar: perBar.map(() => 0),
@@ -73,6 +87,9 @@ export function demoAnalysis(): TrackAnalysis {
     waveform: { points_per_second: PPS, low, mid, high },
   };
 }
+
+/** Where the demo's mix out would play, as a deck marks it: an 8-bar bass swap over the outro. */
+export const demoRegions = () => [{ start_s: 56 * BAR_S, end_s: 64 * BAR_S, label: "Bass swap", technique: "bass swap" }];
 
 /** A 20 s preview clip of the demo track, from its first drop. */
 export function demoClip(): WaveData | null {

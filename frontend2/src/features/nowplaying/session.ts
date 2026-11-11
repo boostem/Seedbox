@@ -10,6 +10,7 @@ import { laneValue } from "@/features/waveform/stems";
 import { STEMS, type StemWave } from "@/features/waveform/stems";
 import type { WaveData } from "@/features/waveform/prepare";
 import type { WaveRegion } from "@/features/waveform";
+import { barAt } from "@/features/waveform/grid";
 
 /** The next plan takes over this many beats before the end of a plan's window: time to fetch what it needs. */
 export const HANDOFF_BEATS = 8;
@@ -119,7 +120,7 @@ export const techniqueLabel = (plan: Pick<MixPlan, "technique">): string => cap(
 export function deckRegions(plan: MixPlan, side: PlanSide): WaveRegion[] {
   const { start, end } = blendSpan(plan);
   const deck = plan[side];
-  return [{ start_s: deckTime(deck, start), end_s: deckTime(deck, end), label: techniqueLabel(plan) }];
+  return [{ start_s: deckTime(deck, start), end_s: deckTime(deck, end), label: techniqueLabel(plan), technique: plan.technique }];
 }
 
 /** A deck's file time at a master beat: it waits at its cue before it comes in, and at its last sample once it has gone. */
@@ -243,7 +244,10 @@ export function deckAnalysis(track: SessionTrack, deck: Deck): TrackAnalysis {
   // on the plan's grid, downbeats are the multiples of a bar
   const planFirst = seg.start_s - (((seg.start_beat % beatsPerBar) + beatsPerBar) % beatsPerBar) * (60 / seg.bpm);
   const firstDownbeat = track.grid?.first_downbeat_s ?? ((planFirst % barS) + barS) % barS;
-  const barOf = (s: number) => Math.round((s - firstDownbeat) / barS);
+  // the track's own piecewise grid when it has one, else the plan's (the plan's grid is the track's, as the plan reads it)
+  const grid = track.grid ? (track.grid.segments?.length ? track.grid.segments : null) : deck.grid;
+  const on = { first_downbeat_s: firstDownbeat, bar_s: barS, grid };
+  const barOf = (s: number) => Math.round(barAt(on, s));
   const sections: Section[] = track.sections.map((s) => ({
     kind: (SECTION_KINDS.has(s.kind) ? s.kind : "body") as SectionKind,
     start_s: s.start_s,
@@ -252,6 +256,7 @@ export function deckAnalysis(track: SessionTrack, deck: Deck): TrackAnalysis {
     end_bar: barOf(s.end_s),
   }));
   const edge = { bars: 0, start_s: 0, end_s: 0, drums_only: false, has_vocals: false };
+  const phrases = (track.phrases ?? []).map((p) => ({ bar: Math.round(barAt(on, p.start_s)), level: p.level }));
   return {
     version: 0,
     track_id: track.hash,
@@ -262,6 +267,8 @@ export function deckAnalysis(track: SessionTrack, deck: Deck): TrackAnalysis {
     bar_s: barS,
     bar_count: Math.max(0, Math.floor((track.duration - firstDownbeat) / barS)),
     phrase_offset: 0,
+    grid,
+    ...(phrases.length ? { phrases } : {}),
     energy_per_bar: [],
     low_per_bar: [],
     vocal_per_bar: [],

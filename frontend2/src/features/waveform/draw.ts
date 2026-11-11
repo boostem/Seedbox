@@ -6,7 +6,8 @@
 import type { CuePoint, TrackAnalysis } from "@/api/types";
 import { textPx } from "@/lib/theme";
 import { waveGL } from "./gl/renderer";
-import { alpha, cueColor, edgeColor, edgeWords, rgbOf, SECTION_LABEL, sectionColor, type WavePalette, wavePalette } from "./palette";
+import { alpha, cueColor, edgeColor, edgeWords, rgbOf, SECTION_LABEL, sectionColor, slotLetter, styleColor, type WavePalette, wavePalette } from "./palette";
+import { barAt, beatTime, barTime, hasGrid, phraseLevel, phraseStarts } from "./grid";
 import type { WaveData } from "./prepare";
 import { useWaveSettings, type WaveMode } from "./settings";
 
@@ -212,39 +213,48 @@ export function drawWave2d(ctx: CanvasRenderingContext2D, lane: Lane, view: View
 // ------------------------------------------------------------------------------------------------ grid
 
 export interface GridOptions {
-  labels?: boolean; // bar numbers at phrase starts (top of the band)
+  labels?: boolean; // bar numbers (top of the band)
   labelY?: number;
 }
 
-/** Beat / bar / 8-bar phrase lines (phrases start at bars phrase_offset + 8k); density adapts to the zoom. */
+/** Phrase line weight by the length of the phrase it opens: [width px, alpha]. 32 bars heaviest. */
+export const PHRASE_LINE: Record<8 | 16 | 32, [number, number]> = { 8: [1, 0.26], 16: [1, 0.46], 32: [2, 0.6] };
+
+/**
+ * Beat, bar and phrase lines with bar numbers, on the track's grid (piecewise when it has one: `grid.ts`). A phrase
+ * line weighs more the longer the phrase it opens (8, 16, 32 bars: `PHRASE_LINE`); density adapts to the zoom, longer
+ * phrases staying when shorter ones would crowd.
+ */
 export function drawGrid(ctx: CanvasRenderingContext2D, lane: Lane, view: View, y: number, h: number, opts: GridOptions = {}): void {
   const an = lane.an;
-  if (!an || !(an.bar_s > 0)) return;
+  if (!hasGrid(an)) return;
   const p = wavePalette();
-  const barPx = (an.bar_s / lane.rate) * view.pxPerSec;
-  const fd = an.first_downbeat_s;
-  const k0 = Math.max(0, Math.floor((toFile(lane, view.start) - fd) / an.bar_s) - 1);
-  const k1 = Math.min(an.bar_count, Math.ceil((toFile(lane, mixAt(view, view.width)) - fd) / an.bar_s) + 1);
-  const off = ((an.phrase_offset % 8) + 8) % 8;
-  const isPhrase = (k: number) => (k - off) % 8 === 0;
+  const xOfBeat = (b: number) => xOf(view, toMix(lane, beatTime(an, b)));
+  const k0 = Math.max(0, Math.floor(barAt(an, toFile(lane, view.start))) - 1);
+  const k1 = Math.min(an.bar_count, Math.ceil(barAt(an, toFile(lane, mixAt(view, view.width)))) + 1);
+  if (k1 < k0) return;
+  // a bar's width here: piecewise grids change it, so measure it on screen
+  const barPx = Math.max(1e-6, (xOfBeat(k1 * 4) - xOfBeat(k0 * 4)) / Math.max(1, k1 - k0));
   ctx.save();
   // beats
   if (barPx / 4 >= 9) {
     ctx.fillStyle = alpha(p.fg, 0.07);
     for (let k = k0; k < k1; k++) {
       for (let b = 1; b < 4; b++) {
-        const x = xOf(view, toMix(lane, fd + (k + b / 4) * an.bar_s));
+        const x = xOfBeat(k * 4 + b);
         if (x >= -1 && x <= view.width + 1) ctx.fillRect(Math.round(x), y, 1, h);
       }
     }
   }
+  // bars and phrases
   for (let k = k0; k <= k1; k++) {
-    const x = Math.round(xOf(view, toMix(lane, fd + k * an.bar_s)));
-    if (x < -1 || x > view.width + 1) continue;
-    if (isPhrase(k) && k >= off) {
-      if (barPx * 8 < 6) continue;
-      ctx.fillStyle = alpha(p.phrase, 0.3);
-      ctx.fillRect(x, y, 1, h);
+    const x = Math.round(xOfBeat(k * 4));
+    if (x < -2 || x > view.width + 1) continue;
+    const level = phraseLevel(an, k);
+    if (level && barPx * level >= 6) {
+      const [w, a] = PHRASE_LINE[level];
+      ctx.fillStyle = alpha(p.phrase, a);
+      ctx.fillRect(x, y, w, h);
     } else if (barPx >= 6) {
       ctx.fillStyle = alpha(p.fg, barPx >= 18 ? 0.15 : 0.09);
       ctx.fillRect(x, y, 1, h);
@@ -253,14 +263,17 @@ export function drawGrid(ctx: CanvasRenderingContext2D, lane: Lane, view: View, 
   if (opts.labels) {
     ctx.font = font(p, 10, 600);
     ctx.textBaseline = "top";
-    const every = [1, 2, 4, 8, 16, 32, 64].find((n) => barPx * n >= 30);
-    if (every) {
+    // label every bar when they fit, else only phrase starts of the shortest level that fits
+    const minLevel = barPx >= 30 ? 1 : ([8, 16, 32] as const).find((n) => barPx * n >= 30) ?? 0;
+    if (minLevel) {
       for (let k = k0; k < Math.min(k1 + 1, an.bar_count); k++) {
-        if ((((k - off) % every) + every) % every !== 0) continue;
-        const x = xOf(view, toMix(lane, fd + k * an.bar_s));
+        const level = phraseLevel(an, k);
+        if (minLevel > 1 && level < minLevel) continue;
+        const x = xOfBeat(k * 4);
         if (x < -20 || x > view.width) continue;
-        ctx.fillStyle = isPhrase(k) ? alpha(p.phrase, 0.72) : alpha(p.fg, 0.42);
-        ctx.fillText(String(k + 1), x + 3, opts.labelY ?? y + 2);
+        ctx.font = font(p, 10, level === 32 ? 700 : 600);
+        ctx.fillStyle = level ? alpha(p.phrase, level === 32 ? 0.92 : level === 16 ? 0.8 : 0.68) : alpha(p.fg, 0.42);
+        ctx.fillText(String(k + 1), x + (level === 32 ? 4 : 3), opts.labelY ?? y + 2);
       }
     }
   }
@@ -272,28 +285,45 @@ export interface WaveRegion {
   start_s: number;
   end_s: number;
   label?: string;
+  /** the plan's technique: the region takes its style's colour (`styleColor`); the mix-cue colour without one */
+  technique?: string | null;
 }
 
-/** Every other phrase tinted, so the eye can count phrases as they pass. Under the grid. */
+/**
+ * Phrase colour bands, Rekordbox-style: each phrase tinted by the section it falls in (intro, build, drop, breakdown,
+ * outro: the music colours), every other one a little stronger so the eye can count phrases as they pass. A track
+ * without sections alternates the phrase colour. Under the grid.
+ */
 export function drawPhraseBands(ctx: CanvasRenderingContext2D, lane: Lane, view: View, y: number, h: number): void {
   const an = lane.an;
-  if (!an || !(an.bar_s > 0)) return;
-  const starts = an.phrases?.length ? an.phrases.map((ph) => ph.bar) : null;
-  const off = ((an.phrase_offset % 8) + 8) % 8;
-  const barAt = (i: number): number => (starts ? (starts[i] ?? an.bar_count) : off + i * 8);
-  const count = starts ? starts.length : Math.ceil((an.bar_count - off) / 8);
-  const xOfBar = (bar: number) => xOf(view, toMix(lane, an.first_downbeat_s + bar * an.bar_s));
-  ctx.fillStyle = alpha(wavePalette().phrase, 0.09);
-  for (let i = 1; i < count; i += 2) {
-    const x0 = xOfBar(barAt(i));
-    const x1 = xOfBar(Math.min(barAt(i + 1), an.bar_count));
+  if (!hasGrid(an)) return;
+  const p = wavePalette();
+  const starts = phraseStarts(an);
+  const xOfBar = (bar: number) => xOf(view, toMix(lane, barTime(an, bar)));
+  const sections = an.sections ?? [];
+  for (let i = 0; i < starts.length; i++) {
+    const b0 = starts[i];
+    const b1 = Math.min(starts[i + 1] ?? an.bar_count, an.bar_count);
+    if (b1 <= b0) continue;
+    const x0 = Math.round(xOfBar(b0));
+    const x1 = Math.round(xOfBar(b1));
     if (x1 < 0 || x0 > view.width) continue;
-    ctx.fillRect(Math.round(x0), y, Math.round(x1) - Math.round(x0), h);
+    const mid = (b0 + b1) / 2;
+    const sec = sections.find((s) => mid >= s.start_bar && mid < s.end_bar);
+    const odd = i % 2 === 1;
+    if (sec) ctx.fillStyle = alpha(sectionColor(sec.kind, p), odd ? 0.16 : 0.09);
+    else if (odd) ctx.fillStyle = alpha(p.phrase, 0.09);
+    else continue;
+    ctx.fillRect(x0, y, x1 - x0, h);
   }
 }
 
-/** Marked spans: a tint between two edges, and the label at the first edge. */
-export function drawRegions(ctx: CanvasRenderingContext2D, regions: WaveRegion[], view: View, y: number, h: number): void {
+/**
+ * Marked spans: a tint between two edges in the plan's style colour, and the label at the first edge. `tint` and
+ * `labels` split it in two, so a view can put the tint under its waveform and the label over it.
+ */
+export function drawRegions(ctx: CanvasRenderingContext2D, regions: WaveRegion[], view: View, y: number, h: number, opts: { tint?: boolean; labels?: boolean } = {}): void {
+  const { tint = true, labels = true } = opts;
   const p = wavePalette();
   ctx.save();
   ctx.font = font(p, 10, 600);
@@ -302,13 +332,24 @@ export function drawRegions(ctx: CanvasRenderingContext2D, regions: WaveRegion[]
     const x0 = Math.round(xOf(view, r.start_s));
     const x1 = Math.round(xOf(view, r.end_s));
     if (x1 < 0 || x0 > view.width) continue;
-    ctx.fillStyle = alpha(p.cueMix, 0.12);
-    ctx.fillRect(x0, y, Math.max(1, x1 - x0), h);
-    ctx.fillStyle = alpha(p.cueMix, 0.8);
-    ctx.fillRect(x0, y, 1, h);
-    ctx.fillRect(x1, y, 1, h);
+    const col = r.technique ? styleColor(r.technique, p) : p.cueMix;
+    if (tint) {
+      ctx.fillStyle = alpha(col, 0.16);
+      ctx.fillRect(x0, y, Math.max(1, x1 - x0), h);
+      ctx.fillStyle = alpha(col, 0.85);
+      ctx.fillRect(x0, y, 1, h);
+      ctx.fillRect(x1, y, 1, h);
+      ctx.fillRect(x0, y + h - 2, Math.max(1, x1 - x0), 2);
+    }
     // the label stays on screen while its region does
-    if (r.label) ctx.fillText(r.label, Math.max(x0, 0) + 4, y + 16); // under the labels of intros and outros
+    if (labels && r.label) {
+      const lx = Math.max(x0, 0) + 4;
+      const tw = ctx.measureText(r.label).width;
+      ctx.fillStyle = alpha(p.bg, 0.72);
+      ctx.fillRect(lx - 3, y + h - 17, tw + 6, 13);
+      ctx.fillStyle = col;
+      ctx.fillText(r.label, lx, y + h - 15.5); // along the bottom, clear of the cue flags and intro/outro labels
+    }
   }
   ctx.restore();
 }
@@ -405,18 +446,24 @@ export function drawEdges(ctx: CanvasRenderingContext2D, lane: Lane, view: View,
 /**
  * Cues merged for display: cues at the same moment (e.g. "first downbeat" and "mix in (16-bar intro)" both at bar 0)
  * become one, labels de-duplicated, and a bare "first downbeat" is dropped when something more useful sits there.
+ * Hot cues (with a `slot`) keep their own flag and colour: they stack beside the others instead.
  */
 export function mergeCues(cues: CuePoint[]): CuePoint[] {
-  const out: { bar: number; time_s: number; labels: string[] }[] = [];
-  for (const c of [...cues].sort((a, b) => a.time_s - b.time_s)) {
-    const last = out[out.length - 1];
-    if (last && (Math.abs(last.time_s - c.time_s) < 0.06 || last.bar === c.bar)) {
+  const out: { bar: number; time_s: number; labels: string[]; slot?: number | null }[] = [];
+  let last: (typeof out)[number] | undefined;
+  for (const c of [...cues].sort((a, b) => a.time_s - b.time_s || (a.slot ?? -1) - (b.slot ?? -1))) {
+    if (c.slot == null && last && last.slot == null && (Math.abs(last.time_s - c.time_s) < 0.06 || last.bar === c.bar)) {
       if (!last.labels.includes(c.label)) last.labels.push(c.label);
-    } else out.push({ bar: c.bar, time_s: c.time_s, labels: [c.label] });
+      continue;
+    }
+    out.push({ bar: c.bar, time_s: c.time_s, labels: [c.label], slot: c.slot });
+    if (c.slot == null) last = out[out.length - 1];
   }
   return out.map((g) => {
     const labels = g.labels.length > 1 ? g.labels.filter((l) => l !== "first downbeat") : g.labels;
-    return { bar: g.bar, time_s: g.time_s, label: labels.join(" · ") };
+    const cue: CuePoint = { bar: g.bar, time_s: g.time_s, label: labels.join(" · ") };
+    if (g.slot != null) cue.slot = g.slot;
+    return cue;
   });
 }
 
@@ -424,16 +471,19 @@ interface CueMark {
   x: number;
   label: string;
   color: string;
+  slot: number | null;
 }
 
 const CUE_ROW_H = 15;
 const CUE_LABEL_H = 13;
+/** Most rows of stacked cue labels (Mixxx 2.4 stacks the labels of markers that would overlap). */
+export const CUE_ROWS = 3;
 
 /**
  * Row layout for cue labels: `rows[i]` holds the [x0, x1] spans taken in row i. Seeded with the boxes of labels drawn
  * earlier (e.g. "INTRO 16") so cue labels keep clear of them.
  */
-export function cueLabelRows(boxes: LabelBox[], top: number, rows = 2): [number, number][][] {
+export function cueLabelRows(boxes: LabelBox[], top: number, rows = CUE_ROWS): [number, number][][] {
   return Array.from({ length: rows }, (_, i) => {
     const y0 = top + 7 + i * CUE_ROW_H;
     return boxes.filter((b) => b.y0 < y0 + CUE_LABEL_H && b.y1 > y0).map((b): [number, number] => [b.x0, b.x1]);
@@ -447,9 +497,14 @@ export function placeCueLabel(rows: [number, number][][], x0: number, x1: number
   return row;
 }
 
+/** How many label rows fit in a band of height h from `top`: at least one, at most `CUE_ROWS`. */
+export const cueRowsFor = (h: number): number => Math.max(1, Math.min(CUE_ROWS, Math.floor((h - 7 - 8) / CUE_ROW_H)));
+
 /**
- * Cue markers: a line through the band and a labelled flag at the top (merged when they coincide, two rows max).
- * `avoid`: label boxes already drawn (from `drawEdges`) that cue labels must not cover.
+ * Cue and mix-point markers: a line through the band, a flag at the top and a labelled tag. Hot cues take their slot's
+ * colour and letter; the analysis' cues are merged when they coincide. Tags that would overlap stack in rows under one
+ * another (as many as fit, `CUE_ROWS` at most) with a stem from the flag, as Mixxx 2.4 does; one with no room left
+ * keeps its flag and line. `avoid`: label boxes already drawn (from `drawEdges`) that cue labels must not cover.
  */
 export function drawCues(ctx: CanvasRenderingContext2D, lane: Lane, view: View, y: number, h: number, opts: { labels?: boolean; topOffset?: number; avoid?: LabelBox[] } = {}): void {
   const an = lane.an;
@@ -459,18 +514,21 @@ export function drawCues(ctx: CanvasRenderingContext2D, lane: Lane, view: View, 
   for (const c of mergeCues(an.cues)) {
     const x = xOf(view, toMix(lane, c.time_s));
     if (x < -120 || x > view.width + 2) continue;
+    const slot = c.slot ?? null;
+    const color = cueColor(c.label, p, slot);
     const last = marks[marks.length - 1];
-    if (last && Math.abs(last.x - x) < 3) {
+    // analysis cues a few px apart read as one; hot cues stay apart to keep their colours
+    if (last && slot == null && last.slot == null && Math.abs(last.x - x) < 3) {
       for (const l of c.label.split(" · ")) if (!last.label.split(" · ").includes(l)) last.label += ` · ${l}`;
       continue;
     }
-    marks.push({ x, label: c.label, color: cueColor(c.label, p) });
+    marks.push({ x, label: c.label, color, slot });
   }
   ctx.save();
   ctx.font = font(p, 10, 600);
   ctx.textBaseline = "middle";
   const top = y + (opts.topOffset ?? 0);
-  const rows = cueLabelRows(opts.avoid ?? [], top);
+  const rows = cueLabelRows(opts.avoid ?? [], top, cueRowsFor(y + h - top));
   for (const m of marks) {
     const x = Math.round(m.x) + 0.5;
     ctx.strokeStyle = alpha(m.color, 0.75);
@@ -488,7 +546,9 @@ export function drawCues(ctx: CanvasRenderingContext2D, lane: Lane, view: View, 
     ctx.closePath();
     ctx.fill();
     if (opts.labels === false) continue;
-    const tw = ctx.measureText(m.label).width + 8;
+    const letter = m.slot == null ? "" : slotLetter(m.slot);
+    const lw = letter ? ctx.measureText(letter).width + 8 : 0; // a hot cue's letter, on its colour
+    const tw = lw + ctx.measureText(m.label).width + 8;
     const lx = Math.min(x, view.width - tw);
     if (lx < 0) continue;
     const row = placeCueLabel(rows, lx, lx + tw);
@@ -498,8 +558,13 @@ export function drawCues(ctx: CanvasRenderingContext2D, lane: Lane, view: View, 
     ctx.fillRect(lx, ly, tw, CUE_LABEL_H);
     ctx.fillStyle = m.color;
     ctx.fillRect(lx, ly, 2, CUE_LABEL_H);
+    if (letter) {
+      ctx.fillRect(lx, ly, lw, CUE_LABEL_H);
+      ctx.fillStyle = p.bg;
+      ctx.fillText(letter, lx + 4, ly + CUE_LABEL_H / 2);
+    }
     ctx.fillStyle = alpha(p.fg, 0.9);
-    ctx.fillText(m.label, lx + 5, ly + CUE_LABEL_H / 2);
+    ctx.fillText(m.label, lx + lw + 5, ly + CUE_LABEL_H / 2);
   }
   ctx.restore();
 }
@@ -567,8 +632,8 @@ export function fmtPrecise(s: number): string {
 
 /** Bar.beat position of file time t (1-based like DJ software), or null without a grid. */
 export function barBeat(an: TrackAnalysis | null, t: number): string | null {
-  if (!an || !(an.bar_s > 0)) return null;
-  const rel = (t - an.first_downbeat_s) / an.bar_s;
+  if (!hasGrid(an)) return null;
+  const rel = barAt(an, t);
   const bar = Math.floor(rel);
   const beat = Math.floor((rel - bar) * 4);
   return `${bar + 1}.${beat + 1}`;

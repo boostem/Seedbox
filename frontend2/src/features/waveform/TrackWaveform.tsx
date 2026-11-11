@@ -44,7 +44,7 @@ export interface TrackWaveformProps {
   wave?: WaveData | null;
   /** Spans of the track to mark on the main view: where a transition happens. */
   regions?: WaveRegion[];
-  /** Tint every other phrase. */
+  /** Phrase colour bands behind the waveform, by section (default on). */
   phraseBands?: boolean;
   /** Seconds of track across the view, chosen from outside: two decks keep a beat the same width this way. */
   span?: number;
@@ -75,7 +75,7 @@ function setText(el: HTMLElement, text: string): void {
   if (el.textContent !== text) el.textContent = text;
 }
 
-export function TrackWaveform({ analysis, trackId, source, deck, follow, onSeek, wave: waveProp, regions, phraseBands, span, bare, height = 132, overview = true, hotkeys, toolbar, className }: TrackWaveformProps) {
+export function TrackWaveform({ analysis, trackId, source, deck, follow, onSeek, wave: waveProp, regions, phraseBands = true, span, bare, height = 132, overview = true, hotkeys, toolbar, className }: TrackWaveformProps) {
   const ownWave = useWave(analysis);
   const wave = waveProp ?? ownWave;
   const lane = useMemo(() => laneOf(analysis, wave), [analysis, wave]);
@@ -204,9 +204,9 @@ export function TrackWaveform({ analysis, trackId, source, deck, follow, onSeek,
     if (b) {
       b.ctx.fillStyle = p.bg;
       b.ctx.fillRect(0, 0, width, height);
-      edgeLabels = drawEdges(b.ctx, lane, view, TOP, waveH, { labels: true });
       if (phraseBands) drawPhraseBands(b.ctx, lane, view, TOP, waveH);
-      if (regions) drawRegions(b.ctx, regions, view, TOP, waveH);
+      edgeLabels = drawEdges(b.ctx, lane, view, TOP, waveH, { labels: true });
+      if (regions) drawRegions(b.ctx, regions, view, TOP, waveH, { labels: false });
       drawGrid(b.ctx, lane, view, TOP, waveH, { labels: true, labelY: 2 });
     }
     paintWave();
@@ -214,6 +214,7 @@ export function TrackWaveform({ analysis, trackId, source, deck, follow, onSeek,
     if (o) {
       o.ctx.fillStyle = alpha(p.fg, 0.08);
       o.ctx.fillRect(0, TOP + waveH / 2, width, 1);
+      if (regions) drawRegions(o.ctx, regions, view, TOP, waveH, { tint: false });
       drawCues(o.ctx, lane, view, TOP, waveH, { topOffset: 0, avoid: edgeLabels });
       drawSections(o.ctx, lane, view, height - SECTIONS, SECTIONS);
     }

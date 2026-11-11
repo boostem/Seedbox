@@ -43,7 +43,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from seedbox2.analysis import beats, energy, key, stems, vibe
+from seedbox2.analysis import beats, energy, key, sections, stems, vibe
 from seedbox2.library import Library
 from seedbox2.mix import convert
 from seedbox2.mix import master as master_chain
@@ -271,9 +271,11 @@ def _session_track(lib: Library, hash_: str) -> dict | None:
     grid = lib.analysis(hash_, beats.ANALYSER, beats.VERSION)
     curve = lib.analysis(hash_, energy.ANALYSER, energy.VERSION)
     level = lib.analysis(hash_, energy.LOUDNESS_ANALYSER, energy.VERSION)
+    secs = lib.analysis(hash_, sections.ANALYSER)  # the newest, as the sections are read (vibe.sections_of)
     return {
         "hash": hash_, "title": track.get("title") or next((Path(p).stem for p in track["paths"]), None), "artist": track.get("artist"), "duration": track.get("duration"),
-        "grid": {k: grid["data"].get(k) for k in ("bpm", "first_downbeat_s", "beats_per_bar")} if grid else None,
+        "grid": {k: grid["data"].get(k) for k in ("bpm", "first_downbeat_s", "beats_per_bar", "segments")} if grid else None,
+        "phrases": [{"start_s": p["start_s"], "level": p["length"]} for p in (secs["data"].get("phrases") or [])] if secs and isinstance(secs["data"], dict) else [],
         "sections": vibe.spans_of(lib, hash_, curve["data"] if curve else None),
         "key": key.effective(lib, hash_),
         "integrated_lufs": (level["data"].get("integrated_lufs") if level else None),

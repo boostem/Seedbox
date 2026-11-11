@@ -229,6 +229,14 @@ export interface CuePoint {
   bar: number;
   time_s: number;
   label: string; // "first downbeat", "mix in (16-bar intro)", "drop", "mix out (32-bar outro)", ...
+  slot?: number | null; // hot cue slot 0-7 (A-H), coloured by `cue-1`…`cue-8`; none for a cue the analysis placed
+}
+
+/** One piece of a piecewise beatgrid (seedbox2/analysis/grid.py): from beat `start_beat` at `start_s`, at `bpm`. */
+export interface GridSegment {
+  start_beat: number;
+  start_s: number;
+  bpm: number;
 }
 
 export interface Waveform {
@@ -248,6 +256,7 @@ export interface TrackAnalysis {
   bar_s: number;
   bar_count: number;
   phrase_offset: number; // 0-7: bar index where the 8-bar phrase grid starts (phrases begin at bars phrase_offset + 8k)
+  grid?: GridSegment[] | null; // the piecewise beatgrid when there is one; bar lines follow it instead of bar_s
   phrases?: { bar: number; level: 8 | 16 | 32 }[]; // every phrase start and the phrase it opens (8-bar grid re-anchored at sections; analysis v5+)
   energy_per_bar: number[]; // 0-1 overall
   low_per_bar: number[]; // kick/bass presence 0-1
@@ -681,7 +690,9 @@ export interface SessionTrack {
   artist: string | null;
   duration: number;
   /** The beats analysis, or null until it has run. */
-  grid: { bpm: number; first_downbeat_s: number; beats_per_bar: number } | null;
+  grid: { bpm: number; first_downbeat_s: number; beats_per_bar: number; segments?: GridSegment[] | null } | null;
+  /** Phrase starts from the sections analysis: where each begins and how many bars it runs (8, 16 or 32). */
+  phrases?: { start_s: number; level: 8 | 16 | 32 }[];
   /** Sections, or rough regions of the energy curve (`main`) until the track has them. */
   sections: { kind: string; start_s: number; end_s: number }[];
   key: { key: string | null; camelot: string | null };
