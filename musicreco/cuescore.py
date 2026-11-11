@@ -10,10 +10,15 @@ still rejects a blend with too many bars of vocal over vocal or of clashing keys
 
 Without a model nothing changes: `active()` is None and `_window` keeps its penalties. A model is plain JSON (a few
 KB): see `seedbox2/eval/cues.py` for training and evaluation, and seedbox2/README.md for the data.
+
+The utility is either linear in `FEATURES` (the conditional logit) or a small ONNX network (`NET_INPUTS`: the same
+features plus the pair's tempo and energy, so what a DJ prefers can depend on them), run by onnxruntime. The network
+travels inside the JSON, base64-encoded, so a model is still one file.
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import math
 import os
@@ -68,6 +73,16 @@ FEATURES = (
 )
 
 
+# The pair's context, for the network only (it is the same for every candidate of a transition, so a linear model gets
+# nothing from it; a network can let it change how the rest counts).
+CONTEXT = (
+    "ctx_bpm",  # A's tempo, (bpm - 125) / 10
+    "ctx_tempo_gap",  # |log2| of the tempo ratio, in semitones' worth (x 12)
+    "ctx_energy",  # the pair's energy: A's outro and B's intro, 0..1
+)
+NET_INPUTS = FEATURES + CONTEXT
+
+
 def energy_bucket(energy: float) -> str:
     """Bucket of a track's mean per-bar energy (0..1)."""
     return "low" if energy < 0.45 else "mid" if energy < 0.7 else "high"
@@ -86,9 +101,30 @@ class CueModel:
     # length prior: "genre/energy" -> {bars: p}; "*/energy" and "*/*" are the fallbacks
     length_prior: dict[str, dict[int, float]] = field(default_factory=lambda: {"*/*": dict(DEFAULT_LENGTH_PRIOR)})
     info: dict[str, Any] = field(default_factory=dict)
+    net: bytes | None = None  # an ONNX graph: float32 [n, len(NET_INPUTS)] -> [n, 1] utility; None: linear weights
+    _session: Any = field(default=None, repr=False, compare=False)
 
     def utility(self, x: dict[str, float]) -> float:
+        if self.net is not None:
+            return float(self.utilities([x])[0])
         return sum(self.weights.get(k, 0.0) * v for k, v in x.items())
+
+    def utilities(self, xs: list[dict[str, float]]) -> list[float]:
+        """The utility of several candidates at once (one network call)."""
+        if self.net is None:
+            return [self.utility(x) for x in xs]
+        import numpy as np
+
+        if self._session is None:
+            import onnxruntime as ort
+
+            opts = ort.SessionOptions()
+            opts.intra_op_num_threads = 1
+            opts.inter_op_num_threads = 1
+            self._session = ort.InferenceSession(self.net, sess_options=opts, providers=["CPUExecutionProvider"])
+        arr = np.array([[x.get(k, 0.0) for k in NET_INPUTS] for x in xs], dtype=np.float32)
+        (out,) = self._session.run(None, {self._session.get_inputs()[0].name: arr})
+        return [float(v) for v in out.reshape(-1)]
 
     def fit(self, x: dict[str, float]) -> float:
         z = self.scale * self.utility(x) + self.bias
@@ -108,6 +144,7 @@ class CueModel:
             "scale": round(self.scale, 5), "bias": round(self.bias, 5),
             "length_prior": {k: {str(n): round(p, 4) for n, p in v.items()} for k, v in self.length_prior.items()},
             "info": self.info,
+            **({"net": base64.b64encode(self.net).decode(), "net_inputs": list(NET_INPUTS)} if self.net else {}),
         }  # fmt: skip
 
     @classmethod
@@ -120,6 +157,7 @@ class CueModel:
             length_prior={k: {int(n): float(p) for n, p in v.items()} for k, v in (d.get("length_prior") or {}).items()}
             or {"*/*": dict(DEFAULT_LENGTH_PRIOR)},
             info=dict(d.get("info") or {}),
+            net=_net(d),
         )  # fmt: skip
 
     def save(self, path: Path) -> None:
@@ -129,6 +167,14 @@ class CueModel:
     @classmethod
     def load(cls, path: Path) -> CueModel:
         return cls.from_json(json.loads(path.read_text()))
+
+
+def _net(d: dict) -> bytes | None:
+    if not d.get("net"):
+        return None
+    if list(d.get("net_inputs") or []) != list(NET_INPUTS):
+        raise ValueError("cue model network was trained on other inputs")
+    return base64.b64decode(d["net"])
 
 
 def features(
@@ -186,6 +232,9 @@ def features(
         "len8": float(length == 8),
         "len32": float(length == 32),
         "len_prior": math.log(max(p, 1e-3)),
+        "ctx_bpm": (240.0 / a.bar_s - 125.0) / 10.0 if a.bar_s > 0 else 0.0,
+        "ctx_tempo_gap": abs(math.log2(a.bar_s / b.bar_s)) * 12.0 if a.bar_s > 0 and b.bar_s > 0 else 0.0,
+        "ctx_energy": (a.mean(a.energy, o0, end) + b.mean(b.energy, i0, i1 or 1)) / 2,
     }
 
 

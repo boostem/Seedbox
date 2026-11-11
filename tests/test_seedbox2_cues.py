@@ -157,3 +157,51 @@ def test_read_skips_tracks_without_analysis(tmp_path: Path) -> None:
     p.write_text(json.dumps(rec) + "\n")
     logs: list[str] = []
     assert cues.read(p, log=logs.append) == [] and "1 no analysis" in logs[0]
+
+
+@pytest.fixture(scope="module")
+def trained_net(trained) -> tuple[list[cues.Transition], CueModel]:
+    ts, _ = trained
+    return ts, cues.train(ts, log=lambda _: None, kind="net")
+
+
+def test_network_is_onnx_small_and_learns(trained_net, tmp_path: Path) -> None:
+    """The network model: one JSON file carrying an ONNX graph (well under the 1 MB limit) that onnxruntime runs, and
+    it learns the synthetic DJ's taste better than the hand-set penalties."""
+    ts, model = trained_net
+    assert model.net is not None and model.info["kind"] == "net"
+    path = tmp_path / "net.json"
+    model.save(path)
+    assert path.stat().st_size < 1_000_000
+    back = CueModel.load(path)
+    t = ts[0]
+    xs = [cuescore.features(t.ga, t.gb, p.a0, p.b0, p.length, False, p.a_loop, p.b_loop, back)
+          for p in cues.candidates(t)]  # fmt: skip
+    assert back.utilities(xs) == pytest.approx(model.utilities(xs), abs=1e-5)
+    assert [back.utility(x) for x in xs[:3]] == pytest.approx(back.utilities(xs)[:3], abs=1e-5)
+    test = [t for t in ts if cues.held_out(t.mix, 0.2)]
+    assert cues.agreement(test, model)["both_within_8"] > cues.agreement(test, None)["both_within_8"]
+
+
+def test_onnx_graph_matches_the_numpy_network(trained) -> None:
+    import onnxruntime as ort
+
+    ts, model = trained
+    rows = cues.design(ts[:40], model, cuescore.NET_INPUTS)
+    net, _ = cues.fit_net(rows, steps=50)
+    sess = ort.InferenceSession(net.onnx(), providers=["CPUExecutionProvider"])
+    x = np.concatenate([r[0] for r in rows[:5]]).astype(np.float32)
+    (u,) = sess.run(None, {"x": x})
+    assert u.reshape(-1) == pytest.approx(net(x.astype(np.float64)), abs=1e-4)
+
+
+def test_a_network_for_other_inputs_is_refused(trained_net, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _, model = trained_net
+    d = model.to_json()
+    d["net_inputs"] = d["net_inputs"][:-1]
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps(d))
+    with pytest.raises(ValueError):
+        CueModel.load(path)
+    monkeypatch.setenv(cuescore.MODEL_ENV, str(path))
+    assert cuescore.active() is None  # the planner keeps its penalties
