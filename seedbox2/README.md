@@ -450,6 +450,16 @@ cue-in and A's in-point, and the overlap runs to the end of A's run. A tracklist
 search to 10 minutes around it. Dead links are noted and skipped; YouTube rate limits ("confirm you're not a bot") are
 retried by the next run.
 
+**First result on real mixes (2026-11-11, 22 mixes, 114 aligned transitions):** both cues within 8 bars of the DJ's on
+the held-out mixes 21% of the time with the learnt model against 14% with the hand-set penalties. B's cue is within 8
+bars 79% against 71%, the length matches 43% against 29%. That is far from the 74% target, and the held-out set is
+small (2 mixes, 14 transitions). `auto` kept the logit: the network's validation loss was no better on this little
+data. The main limit is the candidate set, not the score. 58 of the 112 transitions have no candidate within a phrase
+of what the DJ did. In 44 of them the DJ cued B after the end of its detected intro, and the planner only cues B inside
+it. DJs left A with a median of 9 bars of its music to go (75th percentile 21) and overlapped a median of 26 bars. Part
+of the late B cues may be the alignment: a quiet fade-in counts from when B is clearly heard. Letting the planner cue B
+past its intro is the change that would move this number; it is a planner decision, not part of the model.
+
 **The data and its licence.** The paper's data is not usable as it is. `mir-aidj/djmix-dataset` publishes only
 metadata: 5,040 mixes from mixesdb with their tracklists, the mix's audio URL (SoundCloud, Mixcloud, YouTube) and the
 tracks' YouTube IDs. It has no cue points and no alignments: the `djmix` package downloads the audio and aligns it
