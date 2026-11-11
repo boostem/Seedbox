@@ -8,6 +8,7 @@
     python -m seedbox2.eval mixes [PAIRS.toml] [--json FILE]   (objective mix metrics, #54)
     python -m seedbox2.eval listen [PAIRS.toml] [--techniques A,B]   (renders for the #/listen page, #86)
     python -m seedbox2.eval stems --musdb DIR --model FILE...  (HTDemucs through ONNX against torch, #44)
+    python -m seedbox2.eval cues train|eval|synth [--help]       (cue points learnt from real DJ mixes, #55)
     python -m seedbox2.eval golden [--help]                    (the golden corpus and render regression, #87)
     python -m seedbox2.eval energy [--help]                    (calibrate the track energy against hand ratings, #48)
     python -m seedbox2.eval stretch [--help]                   (time stretch: CPU per minute, A/B renders, #52)
@@ -182,6 +183,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     sub.add_parser("energy", help="calibrate the track energy against hand ratings (#48); --help after it",
                    add_help=False)  # fmt: skip
     sub.add_parser("stretch", help="time stretch: CPU per minute and A/B renders (#52); --help after it", add_help=False)
+    sub.add_parser("cues", help="learn cue points and transition lengths from real DJ mixes (#55); --help after it",
+                   add_help=False)
     sub.add_parser("golden", help="render the golden corpus and catch regressions (#87); --help after it",
                    add_help=False)
     return p.parse_args(argv)
@@ -205,6 +208,10 @@ def main(argv: list[str] | None = None) -> int:
         from . import stretchtest
 
         return stretchtest.main(argv[1:])
+    if argv and argv[0] == "cues":  # has its own parser
+        from . import cues
+
+        return cues.main(argv[1:])
     if argv and argv[0] == "golden":  # has its own parser
         from . import golden
 
