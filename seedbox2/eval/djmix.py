@@ -245,8 +245,8 @@ def use_root(root: Path) -> None:
     os.environ["SEEDBOX_CACHE_DIR"] = str(cache)
     os.environ["SEEDBOX_SUPPORT_DIR"] = str(root)
     settings = root / "settings.json"
-    if not settings.is_file():  # keep the stems cache small: the vocals analysis stays when its stems go
-        settings.write_text(json.dumps({"stems": {"limit_gb": 4}}) + "\n")
+    if not settings.is_file():  # room for every track's stems while analysing (a full cache skips them, not evicts);
+        settings.write_text(json.dumps({"stems": {"limit_gb": 60}}) + "\n")  # analyse() deletes them when done
 
 
 def open_library(root: Path) -> Any:
@@ -293,6 +293,9 @@ def analyse(root: Path, mixes: list[dict], heavy_workers: int = 1, say: Callable
             time.sleep(2)
     finally:
         jobs.stop()
+    import shutil
+
+    shutil.rmtree(root / "cache" / "stems", ignore_errors=True)  # the vocals analysis stays; the stems are ~90 MB a track
     failed = [j for j in jobs.jobs() if j["state"] == "failed"]
     if failed:
         say(f"{len(failed)} analysis jobs failed, e.g. {failed[0]['kind']}: {failed[0].get('error')}")
