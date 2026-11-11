@@ -278,7 +278,11 @@ def analyse(root: Path, mixes: list[dict], heavy_workers: int = 1, say: Callable
         jobs.add_listener(lambda row, mod=mod: mod.on_job_finished(jobs, lib, row))
     jobs.start()
     try:
-        queue_analysis(jobs, todo)
+        fresh = [h for h in todo if lib.analysis(h, "beats") is None]
+        queue_analysis(jobs, fresh)  # everything, for tracks never analysed
+        for h in todo:  # the rest only need what's missing: a cached stems job queues vocals and sections again
+            if h not in fresh:
+                jobs.submit("stems", {"hash": h}, priority="background")
         t0 = time.monotonic()
         last = 0.0
         while active := [j for j in jobs.jobs() if j["state"] in ("queued", "running")]:
