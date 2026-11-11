@@ -31,6 +31,60 @@ export interface SystemFolders {
   music: string; // the music library shared with Seedbox 1
 }
 
+// ---- Updates and "Report a problem" (#89): /api/system/updates, /api/system/ytdlp/*, /api/system/report ----
+
+export type AppUpdateState = "idle" | "checking" | "up_to_date" | "available" | "downloading" | "ready" | "error";
+
+export interface AppRelease {
+  version: string;
+  tag: string;
+  name: string;
+  url: string; // the release page
+  notes: string;
+  published_at: string | null;
+  asset: { name: string; size: number; url: string } | null; // this computer's installer
+}
+
+export interface AppUpdateStatus {
+  current: string;
+  enabled: boolean; // check at startup (settings.json `updates.check`)
+  installable: boolean; // false from source and on Linux: the release is only linked to
+  reason: string | null; // why not installable
+  state: AppUpdateState;
+  latest: AppRelease | null;
+  progress: { done: number; total: number } | null;
+  error: string | null;
+  checked_at: number | null; // unix seconds
+  install_on_exit: boolean;
+  releases_url: string;
+}
+
+export interface YtdlpStatus {
+  running: string;
+  bundled: string | null;
+  installed: string | null; // a downloaded copy (in use, or used after a restart)
+  latest: string | null; // PyPI's newest, once the background check answered
+  update_available: boolean;
+  checking: boolean;
+  updating: boolean;
+  error: string | null;
+  restart: boolean; // a downloaded copy waits for the next launch
+  can_roll_back: boolean;
+}
+
+export interface UpdatesStatus {
+  app: AppUpdateStatus;
+  ytdlp: YtdlpStatus;
+}
+
+export interface ProblemReport {
+  path: string;
+  size: number;
+  files: string[];
+  issue_url: string; // a new GitHub issue, versions filled in
+  self_test_ok: boolean | null;
+}
+
 // ---- First run (#80): GET/POST /api/onboarding, GET /api/tunebat/search, POST /api/tunebat/download ----
 
 export interface Onboarding {

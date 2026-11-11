@@ -5,7 +5,7 @@
 import { toast } from "@/store/toasts";
 import type { MixPlan } from "./mixplan.generated";
 import type { JobRow, SetExportStatus } from "./types";
-import type { ArcTemplate, AssistantDraft, AssistantDryRun, AssistantScope, AssistantStatus, CrateLink, LongSetResult, SetSourceRef, LibraryBridges, OnlineBridges, MasterStatus, MasterTarget, SetSession, SetOrderResult, SetOrderSettings, SetTimelineData, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, TunebatCrate, TunebatCrateJob, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
+import type { ArcTemplate, AssistantDraft, AssistantDryRun, AssistantScope, AssistantStatus, CrateLink, LongSetResult, SetSourceRef, LibraryBridges, OnlineBridges, MasterStatus, MasterTarget, SetSession, SetOrderResult, SetOrderSettings, SetTimelineData, PowerMode, PowerStatus, CrateSummary, Health, ImportStatus, JobsResponse, LibraryRow, LibrarySummary, LibraryTrack, KeyStatus, ListenImport, ListenRating, ListenStatus, ListenSummary, ListenTrial, ModelInfo, ModelSettings, ModelsStatus, Onboarding, SetStemsStatus, SetSummary, StemsStatus, SystemInfo, ProblemReport, UpdatesStatus, TunebatCrate, TunebatCrateJob, TunebatDownload, TunebatTrack, WatchFolders } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
@@ -89,6 +89,18 @@ export const api = {
   system: (opts?: RequestOptions) => get<SystemInfo>("/api/system", opts),
   /** Show a file or folder (inside Seedbox 2's folders) in Finder / Explorer / the file manager. */
   reveal: (path: string, opts?: RequestOptions) => post<{ ok: boolean }>("/api/system/reveal", { path }, opts),
+  updates: {
+    status: (opts?: RequestOptions) => get<UpdatesStatus>("/api/system/updates", opts),
+    /** Check GitHub and PyPI now; the answer comes in later `status` calls. */
+    check: (opts?: RequestOptions) => post<UpdatesStatus>("/api/system/updates/check", undefined, opts),
+    setCheck: (check: boolean, opts?: RequestOptions) => post<UpdatesStatus>("/api/system/updates/settings", { check }, opts),
+    /** The app quits, installs the downloaded update and starts again. */
+    install: (opts?: RequestOptions) => post<UpdatesStatus>("/api/system/updates/install", { relaunch: true }, opts),
+    updateYtdlp: (opts?: RequestOptions) => post<{ ok: boolean; version: string; message: string; ytdlp: UpdatesStatus["ytdlp"] }>("/api/system/ytdlp/update", undefined, opts),
+    rollbackYtdlp: (opts?: RequestOptions) => post<{ ok: boolean; version: string; message: string; ytdlp: UpdatesStatus["ytdlp"] }>("/api/system/ytdlp/rollback", undefined, opts),
+  },
+  /** "Report a problem": writes the zip into the logs folder (runs the self-test, so it takes a few seconds). */
+  report: (opts?: RequestOptions) => post<ProblemReport>("/api/system/report", undefined, opts),
   listen: {
     status: (rater: string, opts?: RequestOptions) => get<ListenStatus>(`/api/listen/status?rater=${encodeURIComponent(rater)}`, opts),
     /** A new blind trial: only the pair's name and an id say anything about it. */
