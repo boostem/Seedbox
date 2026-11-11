@@ -398,6 +398,48 @@ them as `forces`, listed in its report, and `enforce` puts them back after `auto
 pass, so `offline.render_adapted` ends with them holding; its plan's `stems` has the report and the final checks.
 `timeline.plan_pair` stores the stem-aware plan, so a set's transitions use the stems once they are cached.
 
+**Learnt cue points** (#55, `musicreco/cuescore.py`, `seedbox2/eval/cues.py`): where A lets B in, where B is cued and how
+long they overlap, learnt from real DJ mixes instead of `transitions._window`'s hand-set per-bar penalties.
+
+- **The model:** the planner's own candidates (`blend_windows`: every phrase-aligned overlap of 8, 16 and 32 bars, loops
+  included) are described by 29 features (`cuescore.FEATURES`): the phrase level at both cues, the section each cue is
+  in (intro, outro, drums-only edge, a drop inside the overlap), how much of each track's body or edges is cut, skipped
+  or under the other, the low-end (bass/kick stem) activity of both decks, the energy delta, the vocal state of both
+  and of both at once, key-clash bars, loops, the length, and the length prior. A conditional logit (a softmax over each
+  transition's candidates, L2, Adam in numpy) learns which candidate the DJ played; Platt scaling puts its utility on
+  the planner's 0-100 fit, so the DJ's pick reads above `_MIN_BLEND_FIT` and the others mostly below it. The model is
+  plain JSON: weights, the scaling and the length prior (1.6 KB; the limit is 1 MB).
+- **Hard limits stay:** candidates are phrase-aligned only, and `_plan` still turns down a blend with more vocal-over-vocal
+  bars than `_max_clash` allows or too many clashing-key bars, whatever the score. A Short or Long mix-length setting
+  still shifts the fit by its difference to Normal.
+- **Transition lengths:** P(8/16/32/64 bars | genre, energy) counted from the mixes, smoothed towards the coarser
+  level (genre/energy → energy → all → a hand-set default with Kim et al.'s peaks at multiples of 32 beats). It is
+  the planner's prior through the `len_prior` feature (the planner knows the energy, not the genre). The planner still
+  plans 8, 16 or 32 bars. 64-bar transitions are counted, so the prior knows them, but nothing plans them yet.
+- **Installed:** `cuescore.active()` reads `$SEEDBOX_CUE_MODEL`, else `cue_model.json` in the settings folder
+  (`$SEEDBOX_SUPPORT_DIR`), again when the file changes. Without one, or with a broken one (logged), the hand-set penalties
+  are used and nothing changes. **Seedbox doesn't ship a model:** it has none trained on real mixes yet (below).
+- **Training and evaluation:** `python -m seedbox2.eval cues train transitions.jsonl --install` and `... eval`. The
+  format is in `cues.py`'s docstring: per transition, the mix, both tracks (library hash or an analysis), A's time when B
+  comes in, B's cue-in and the overlap length, all in track time. The tracks are analysed by our own analysers, so the
+  model learns from what Seedbox sees. 20% of the mixes (by a hash of the mix id) are held out whole, and the report gives how
+  often the planner's choice (`_plan`, hard limits and all) is within 8 bars of the DJ's, for B's cue, A's in-point and
+  both, against the hand-set penalties. The target is the 74% at which DJs agree with each other (Kim et al. 2020).
+- **Checked on synthetic mixes only:** `cues synth` writes mixes by a DJ with a known taste (16/32-bar phrases, drum
+  edges, no vocal clash, 32 bars) plus noise. On 9 held-out mixes (72 transitions) both cues land within 8 bars 61% of
+  the time, against 64% for the DJ's own noiseless taste (the ceiling the noise allows) and 43% for the hand-set
+  penalties. The model recovers the taste, but these numbers say nothing about real music.
+
+**The data and its licence.** The paper's data is not usable as it is. `mir-aidj/djmix-dataset` publishes only
+metadata: 5,040 mixes from mixesdb with their tracklists, the mix's audio URL (SoundCloud, Mixcloud, YouTube) and the
+tracks' YouTube IDs. It has no cue points and no alignments: the `djmix` package downloads the audio and aligns it
+itself. `mir-aidj/djmix-analysis` (Kim et al., ISMIR 2020) has the alignment code and no results. **Neither repository
+has a licence**, so no rights are granted to redistribute anything from them, and the audio belongs to its rights
+holders. So Seedbox ships no data and no audio, and only trains locally. Two ways to get `transitions.jsonl`: align mixes
+you are allowed to download with the `djmix` package and convert its cue points, or log your own mixes (each track's
+time at the transition), which also fits the model to your taste. A model trained that way is derived data. Whether one
+trained on djmix audio may ship in the app is a question for the dataset's authors before it does.
+
 ## Ordering a set
 
 **Set ordering** (#60, `seedbox2/sets/`, `#/sets`): puts a set's tracks in order from our own analysis. Tag and tunebat

@@ -11,7 +11,7 @@ import math
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from . import mixing
+from . import cuescore, mixing
 from .models import Track
 from .structure import phrase_grid
 
@@ -336,7 +336,8 @@ def _window(
 ) -> Plan:
     """Score one phrase-aligned overlap: A bars [a0, a0+L) under B bars [b0, b0+L), under a mix length preference.
     Past A's music A loops a phrase of its outro (outro_loop), and B may loop one of its intro (b_loop); every bar is
-    read through the loops, each looped bar costs a little."""
+    read through the loops, each looped bar costs a little. With a learnt cue model installed (musicreco.cuescore),
+    its score replaces the penalties; the clash counts still go to _plan's hard limits."""
     a_loop = outro_loop(a, a0, length)
     xa, xb = (a_loop.bars if a_loop else 0), (b_loop.bars if b_loop else 0)
     e = a0 + length - xa  # A bar where A's own play ends
@@ -365,8 +366,12 @@ def _window(
 
     clean_a = a.outro_drums and a0 >= o0
     clean_b = b.intro_drums and b0 + length - xb <= i1
-    both, one, neither = _LENGTH_BONUS.get(pref, _LENGTH_BONUS["normal"])[length]
-    bonus = both if clean_a and clean_b else one if clean_a or clean_b else neither
+    edge = 0 if clean_a and clean_b else 1 if clean_a or clean_b else 2
+    bonus = _LENGTH_BONUS.get(pref, _LENGTH_BONUS["normal"])[length][edge]
+    if (model := cuescore.active()) is not None:  # learnt from real mixes (#55); the hard limits stay in _plan
+        fit = model.fit(cuescore.features(a, b, a0, b0, length, key_clash, a_loop, b_loop, model))
+        fit += bonus - _LENGTH_BONUS["normal"][length][edge]  # a Short/Long mix length setting still leans its way
+        return Plan("phrase blend", a0, b0, length, fit, clash, tonal, a_loop, b_loop)
     return Plan("phrase blend", a0, b0, length, 100.0 - pen + bonus, clash, tonal, a_loop, b_loop)
 
 
