@@ -28,10 +28,11 @@ These ports differ from Seedbox 1's (5173 and 8765), so both apps can run side b
 Flags:
 - `--server-only [--port N]`: no window. Open the printed URL in a browser.
 - `--dev`: as above. `--debug`: verbose logs and the web inspector.
-- `--self-test`: JSON diagnostics: ffmpeg/deno, imports, and the server answering `/api/health` and serving `frontend2/dist`.
+- `--self-test [--report FILE]`: JSON diagnostics: ffmpeg/deno running, imports, onnxruntime running a tiny embedded model
+  (in-process and in a spawned worker), and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_setexport.py tests/test_seedbox2_bridge.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_sections.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py tests/test_seedbox2_longset.py tests/test_seedbox2_now_playing.py tests/test_seedbox2_assistant.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_seedbox2_packaging.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_setexport.py tests/test_seedbox2_bridge.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_sections.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_sets.py tests/test_seedbox2_longset.py tests/test_seedbox2_now_playing.py tests/test_seedbox2_assistant.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -47,6 +48,10 @@ The environment variables override each folder; `#/settings` shows the folders i
 Finder/Explorer/file manager button. The window is Cocoa on macOS, WebView2 on Windows (the Edge WebView2 runtime
 ships with Windows 10 and 11) and WebKitGTK or Qt on Linux, with a dark title bar where the platform allows it.
 ffmpeg and deno are found on the PATH or in the usual package manager folders of each OS (`musicreco/paths.py`).
+
+**Installers** (#88, `packaging/README-seedbox2.md`): `packaging/build_seedbox2.py` builds a DMG on macOS (arm64 and
+Intel, separately) and an Inno Setup installer on Windows, each under 250 MB, with an LGPL ffmpeg and deno inside and no
+torch. CI builds them and smoke tests what gets installed (`installers.yml`). The models download on first run.
 
 **What's there so far** (#36): the server (`seedbox2/server/`: `/api/health`, `/api/system`, the `/api/events`
 stream and one empty router per area) and the `frontend2/` app shell (#72: an icon rail, a top bar, a transport strip,
