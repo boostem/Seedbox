@@ -1,5 +1,5 @@
 """The Seedbox 2 installers (packaging/): the self-test's onnxruntime check and what the smoke test holds a build to.
-The builds themselves run in .github/workflows/installers.yml."""
+The builds themselves run by hand on each target (packaging/README-seedbox2.md)."""
 
 import importlib.util
 import json

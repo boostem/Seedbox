@@ -51,16 +51,6 @@ example `2026-11-02-m1-air-8gb.json`), with the output of `python -m seedbox2.be
 mention whether the laptop was on battery. The file records the machine (CPU, cores, RAM, OS, battery state), the
 commit, the corpus and what each stage ran, so runs stay comparable later.
 
-## Nightly CI
-
-`.github/workflows/bench.yml` runs `run --frontend` every night (and on demand from the Actions tab) on
-GitHub's Ubuntu runner, keeps the corpus and the last night's results in the Actions cache, and compares tonight's
-results with them. On a regression over 10 % it comments on the open issue titled *Nightly benchmark regressions*
-(created the first time). Every night's results and comparison are kept as an artifact for 90 days, and the report
-is in the run's summary. A pull request labelled `bench` runs it too, on every push, and gets one comment (updated
-each time) with its numbers and the comparison with the last nightly run; it doesn't replace the nightly baseline. CI runners are shared and noisy and are not the reference laptops: CI catches regressions,
-the laptops check the budgets.
-
 ## Results file
 
 ```jsonc

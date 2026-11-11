@@ -1,7 +1,7 @@
 # Seedbox 2 installers
 
-`build_seedbox2.py` builds the installer for the machine it runs on. Run it on each target; `.github/workflows/installers.yml`
-does that on GitHub's macOS arm64, macOS Intel and Windows runners. It needs [uv](https://docs.astral.sh/uv/), a network
+`build_seedbox2.py` builds the installer for the machine it runs on. Run it on each target (macOS arm64, macOS Intel and
+Windows). It needs [uv](https://docs.astral.sh/uv/), a network
 connection, and:
 - macOS: the Xcode command line tools, `brew install nasm pkgconf`.
 - Windows: [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`choco install innosetup`).
@@ -55,9 +55,9 @@ the same story: without a code signing certificate SmartScreen warns about the s
 
 ## Releasing and updates
 
-Set `__version__` in `seedbox2/__init__.py`, then push the tag `seedbox2-v<version>` (say `seedbox2-v2.0.0`).
-`installers.yml` builds the three installers, checks the tag against `__version__`, and publishes a GitHub release with
-them and a `SHA256SUMS.txt`. A tag with `a`, `b`, `rc` or `dev` and a number at the end is a pre-release, which only
+Set `__version__` in `seedbox2/__init__.py`, build the three installers, and publish a GitHub release tagged
+`seedbox2-v<version>` (say `seedbox2-v2.0.0`) with them and a `SHA256SUMS.txt` (`sha256sum Seedbox-2-* >
+SHA256SUMS.txt`), for example with `gh release create`. A tag with `a`, `b`, `rc` or `dev` and a number at the end is a pre-release, which only
 pre-release builds update to. Installed apps find the release, download their installer, check it against
 `SHA256SUMS.txt` and install it on restart (`seedbox2/update.py`). Seedbox 1's tags (`v…`) don't count.
 
