@@ -53,6 +53,19 @@ ffmpeg and deno are found on the PATH or in the usual package manager folders of
 Intel, separately) and an Inno Setup installer on Windows, each under 250 MB, with an LGPL ffmpeg and deno inside and no
 torch. CI builds them and smoke tests what gets installed (`installers.yml`). The models download on first run.
 
+**Updates and "Report a problem"** (#89, `#/settings`). The installed app looks for a newer release on GitHub 15 s after
+it starts and then daily (the "Check at startup" switch turns that off; "Check now" always works): a release tagged
+`seedbox2-v<version>` with this computer's installer. It downloads the installer into the cache folder, checks its
+SHA-256 against the release's `SHA256SUMS.txt` (or GitHub's digest of the file), and installs it when the app quits or on
+"Restart to update": a helper waits for the app to exit, swaps the `.app` for the one in the DMG (macOS) or runs the
+setup silently (Windows), and starts it again (`seedbox2/update.py`). From source it only links to the release.
+yt-dlp, which goes stale within weeks, updates on its own schedule as in Seedbox 1: newer yt-dlp and yt-dlp-ejs wheels
+from PyPI, checked in a separate process, into `pydeps/` in the settings folder, ahead of the bundled copy from the next
+launch, with a rollback (`seedbox2/ytdlp.py`, `--update-ytdlp`). "Report a problem" writes a zip into `reports/` in the
+logs folder with the logs, the system's details, a `--self-test` run, every analyser's and model's version and what the
+library holds of each, and no audio, library or settings; the home folder is written as `~` (`seedbox2/support.py`,
+`--report-problem`). It opens a new GitHub issue to attach it to.
+
 **What's there so far** (#36): the server (`seedbox2/server/`: `/api/health`, `/api/system`, the `/api/events`
 stream and one empty router per area) and the `frontend2/` app shell (#72: an icon rail, a top bar, a transport strip,
 the ⌘K command palette and the `?` shortcuts sheet, a placeholder page per area, `#/settings`, and `#/ui` with the

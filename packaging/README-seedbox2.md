@@ -52,3 +52,15 @@ goes in the DMG). To ship them notarised, with an Apple Developer account:
 The build then signs the app with a hardened runtime and `seedbox2.entitlements`, signs the DMG, notarises it and
 staples the ticket. This path hasn't run yet, as there is no account; expect to adjust the entitlements. Windows has
 the same story: without a code signing certificate SmartScreen warns about the setup.
+
+## Releasing and updates
+
+Set `__version__` in `seedbox2/__init__.py`, then push the tag `seedbox2-v<version>` (say `seedbox2-v2.0.0`).
+`installers.yml` builds the three installers, checks the tag against `__version__`, and publishes a GitHub release with
+them and a `SHA256SUMS.txt`. A tag with `a`, `b`, `rc` or `dev` and a number at the end is a pre-release, which only
+pre-release builds update to. Installed apps find the release, download their installer, check it against
+`SHA256SUMS.txt` and install it on restart (`seedbox2/update.py`). Seedbox 1's tags (`v…`) don't count.
+
+The apps ask GitHub's API without a token, so they only see the releases of a **public** repository. While this one is
+private, updates can't be found (the check reports a 404). Publishing the releases in a public repository and pointing
+`DEFAULT_REPO` in `seedbox2/update.py` at it would fix that.

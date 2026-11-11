@@ -156,10 +156,21 @@ def start_api(args: argparse.Namespace) -> Any:
         log.warning("no built frontend found (frontend2/dist); the window only says how to build it")
     t0 = time.monotonic()
     handle = start_server(static, port=port, dev=args.dev, log_level="debug" if args.debug else "warning",
-                          start_jobs=True, watch_folders=True, download_models=True)
+                          start_jobs=True, watch_folders=True, download_models=True, check_updates=True)
     wait_healthy(handle.url, alive=lambda: handle.running)
     log.info("Seedbox 2 %s API on %s (%.2fs, static=%s)", __version__, handle.url, time.monotonic() - t0, static)
     return handle
+
+
+def install_update_at_exit(handle: Any) -> None:
+    """A downloaded update is installed as the app exits (#89): "Restart to update" asked for it, or it was ready."""
+    updater = getattr(handle.app.state, "updater", None) if handle is not None else None
+    if updater is not None:
+        updater.install_if_ready()
+
+
+def quit_requested(handle: Any) -> bool:
+    return bool(handle is not None and handle.app.state.quit.is_set())
 
 
 def _finish(code: int) -> int:
@@ -171,20 +182,22 @@ def _finish(code: int) -> int:
 
 
 def run_server_only(args: argparse.Namespace) -> int:
+    import signal
+
+    stop = threading.Event()
+    # before the server starts: a SIGTERM sent as soon as /api/health answers must stop it cleanly, not kill it
+    sigs = [signal.SIGTERM, signal.SIGINT] + ([signal.SIGHUP] if hasattr(signal, "SIGHUP") else [])
+    for sig in sigs:  # SIGINT may be ignored when started with `&`
+        signal.signal(sig, lambda *_: stop.set())
     handle = start_api(args)
     print(f"Seedbox 2 {__version__} API on {handle.url}  (Ctrl-C to stop)", flush=True)
-    stop = threading.Event()
     try:
-        import signal
-
-        sigs = [signal.SIGTERM, signal.SIGINT] + ([signal.SIGHUP] if hasattr(signal, "SIGHUP") else [])
-        for sig in sigs:  # SIGINT may be ignored when started with `&`
-            signal.signal(sig, lambda *_: stop.set())
-        while handle.running and not stop.wait(0.5):
+        while handle.running and not quit_requested(handle) and not stop.wait(0.5):
             pass
     except KeyboardInterrupt:
         pass
     handle.stop()
+    install_update_at_exit(handle)
     return _finish(0)
 
 
@@ -337,11 +350,12 @@ def run_in_browser(args: argparse.Namespace) -> int:
     handle = start_api(args)
     webbrowser.open(DEV_URL if args.dev else f"{handle.url}/")
     try:
-        while handle.running:
+        while handle.running and not quit_requested(handle):
             time.sleep(0.5)
     except KeyboardInterrupt:
         pass
     handle.stop()
+    install_update_at_exit(handle)
     return _finish(0)
 
 
@@ -370,11 +384,20 @@ def run_window(args: argparse.Namespace, log_file: Path) -> int:
             stopped.set()
             log.info("window closing; stopping the server")
             handle.stop(timeout=4.0)
+            install_update_at_exit(handle)
 
     window.events.before_show += _dark_window
     if handle is not None:
         window.events.loaded += lambda: _accept_drops(window, handle.url)
     window.events.closing += shutdown
+    if handle is not None:  # "Restart to update" (#89): the page asks the app to quit
+        def close_on_quit() -> None:
+            handle.app.state.quit.wait()
+            if not stopped.is_set():
+                log.info("quitting to install an update")
+                window.destroy()
+
+        threading.Thread(target=close_on_quit, name="seedbox2-quit-watch", daemon=True).start()
     icon = icon_path()
     webview.start(gui=gui_backend(), debug=bool(args.dev or args.debug),
                   private_mode=False, icon=str(icon) if icon else None)  # fmt: skip

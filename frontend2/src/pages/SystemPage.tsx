@@ -8,6 +8,8 @@ import { ModelsPanel } from "@/features/models/ModelsPanel";
 import { StemsPanel } from "@/features/models/StemsPanel";
 import { MasterPanel } from "@/features/system/MasterPanel";
 import { PowerPanel } from "@/features/system/PowerPanel";
+import { ReportPanel } from "@/features/system/ReportPanel";
+import { UpdatesPanel } from "@/features/system/UpdatesPanel";
 import { WaveSettingsPanel } from "@/features/waveform";
 import { useApp } from "@/store/app";
 
@@ -73,6 +75,7 @@ export function SystemPage() {
             <Value v={system ? (system.frontend ?? "Vite dev server") : undefined} />
           </InfoRow>
         </Panel>
+        <UpdatesPanel />
         <WatchFoldersPanel />
         <ModelsPanel />
         <StemsPanel />
@@ -81,6 +84,7 @@ export function SystemPage() {
         <AssistantPanel />
         <WaveSettingsPanel className="max-w-3xl" />
         <FoldersPanel />
+        <ReportPanel />
       </PageBody>
     </Page>
   );

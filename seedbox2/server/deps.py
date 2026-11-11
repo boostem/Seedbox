@@ -180,6 +180,30 @@ def power(app: Any) -> Any:
 PowerDep = Annotated[Any, Depends(get_power)]
 
 
+def updater(app: Any) -> Any:
+    """The app's AppUpdater (#89), made on first use: its `updates` setting next to the library file, its downloads in
+    the cache folder."""
+    from seedbox2 import paths
+    from seedbox2.library.service import SETTINGS_FILE, Settings
+    from seedbox2.update import AppUpdater
+
+    state = app.state
+    if state.updater is None:
+        with _open_lock:
+            if state.updater is None:
+                folder = Path(state.library_path).parent if state.library_path else default_path().parent
+                state.updater = AppUpdater(Settings(folder / SETTINGS_FILE), cache_dir=paths.folders()["cache"],
+                                           publish=state.events.publish)  # fmt: skip
+    return state.updater
+
+
+def get_updater(request: Request) -> Any:
+    return updater(request.app)
+
+
+UpdaterDep = Annotated[Any, Depends(get_updater)]
+
+
 def onboarding_pending(app: Any) -> bool:
     """Is this a first run (#80)? Setup was never finished and the library is empty: someone who already has tracks
     has no use for it. Until it is over, models don't download on their own, so its "skip" means skip."""

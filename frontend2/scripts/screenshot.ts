@@ -215,6 +215,12 @@ function waveFile(seed: number, duration: number): Uint8Array {
   return bytes;
 }
 
+const YTDLP = { running: "2026.10.26", bundled: "2026.10.26", installed: null, latest: "2026.10.26", update_available: false, checking: false, updating: false, error: null, restart: false, can_roll_back: false };
+const APP_UPDATE = { current: "2.0.0", enabled: true, installable: true, reason: null, state: "up_to_date", latest: null, progress: null, error: null, checked_at: 1_789_000_000, install_on_exit: false, releases_url: "https://github.com/boostem/Seedbox/releases" };
+const RELEASE = { version: "2.1.0", tag: "seedbox2-v2.1.0", name: "Seedbox 2 2.1.0", url: "https://github.com/boostem/Seedbox/releases/tag/seedbox2-v2.1.0", notes: "", published_at: "2026-11-01T00:00:00Z", asset: { name: "Seedbox-2-2.1.0-macos-arm64.dmg", size: 182_000_000, url: "https://example.invalid/x.dmg" } };
+const UPDATE_READY = { app: { ...APP_UPDATE, state: "ready", latest: RELEASE }, ytdlp: { ...YTDLP, latest: "2026.11.08", update_available: true } };
+const REPORT = { path: "/home/dj/.local/state/seedbox2/log/reports/Seedbox-2-report-20261111-140210.zip", size: 412_000, files: ["README.txt", "system.json", "versions.json", "self-test.json", "logs/seedbox2.log"], issue_url: "https://github.com/boostem/Seedbox/issues/new", self_test_ok: true };
+
 const API: Record<string, unknown> = {
   "/api/health": { ok: true },
   "/api/system": SYSTEM,
@@ -236,6 +242,7 @@ const API: Record<string, unknown> = {
   "/api/models": modelsStatus(model()),
   "/api/onboarding": { first_run: false },
   "/api/power": POWER,
+  "/api/system/updates": { app: APP_UPDATE, ytdlp: YTDLP },
   "/api/mixes/master": { target: "streaming", target_lufs: -14, ceiling_dbtp: -1.6, makeup_db: 0.5, targets: { streaming: -14, club: -9 } },
 };
 
@@ -329,6 +336,8 @@ const SHOTS: Shot[] = [
   { name: "mixes", hash: "#/mixes" },
   { name: "settings", hash: "#/settings" },
   { name: "settings-low-power", hash: "#/settings", data: { "/api/power": ON_BATTERY } },
+  { name: "settings-update-ready", hash: "#/settings", data: { "/api/system/updates": UPDATE_READY } },
+  { name: "settings-report", hash: "#/settings", posts: { "/api/system/report": REPORT, "/api/system/reveal": { ok: true } }, clicks: ["Create report", "Passed"] },
   { name: "settings-loading", hash: "#/settings", api: "loading" },
   { name: "settings-offline", hash: "#/settings", api: "offline", settle: 5000 }, // offline after 4 failed reconnects (~3.5 s)
   { name: "ui", hash: "#/ui" },
