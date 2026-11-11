@@ -51,7 +51,7 @@ ffmpeg and deno are found on the PATH or in the usual package manager folders of
 
 **Installers** (#88, `packaging/README-seedbox2.md`): `packaging/build_seedbox2.py` builds a DMG on macOS (arm64 and
 Intel, separately) and an Inno Setup installer on Windows, each under 250 MB, with an LGPL ffmpeg and deno inside and no
-torch. CI builds them and smoke tests what gets installed (`installers.yml`). The models download on first run.
+torch, and smoke tests what gets installed. The models download on first run.
 
 **Updates and "Report a problem"** (#89, `#/settings`). The installed app looks for a newer release on GitHub 15 s after
 it starts and then daily (the "Check at startup" switch turns that off; "Check now" always works): a release tagged
@@ -664,9 +664,8 @@ It needs `mir_eval` (in `requirements-dev.txt`).
   (42.2 against 29.7 on the 18 of them not used for tuning). The annotations were shifted onto our own audio copies, and
   copies of a different edit were left out; with so few tracks the difference has a wide interval (held out: +2 to +23).
 - **Runs** are saved as JSON (`$SEEDBOX2_EVAL_RESULTS`, default `eval-results` in the cache folder) with every
-  track's scores. `--baseline FILE --max-drop 2` exits 1 when a metric is more than 2 points worse. The nightly
-  workflow (`.github/workflows/eval-nightly.yml`) does that on the first 50 GiantSteps tracks against
-  `seedbox2/eval/baseline.json`: an analysis ticket that improves a number refreshes it with `--write-baseline`.
+  track's scores. `--baseline FILE --max-drop 2` exits 1 when a metric is more than 2 points worse. Run it
+  on the first 50 GiantSteps tracks against `seedbox2/eval/baseline.json`; an analysis ticket that improves a number refreshes it with `--write-baseline`.
 
 **The live engine** (#65, `frontend2/src/audio/engine/`): plays a plan in the browser with no server render.
 `new LiveEngine()`, then `load(deck, { hash, trimDb })`, `schedule(plan)`, `play(when?)`, `pause()`, `seek(beat)`,
@@ -809,7 +808,7 @@ export SEEDBOX2_GOLDEN_AUDIO=/mnt/media/MUSIC:$HOME/golden-free       # folders 
 | Set planning | `seedbox2/sets/`, `seedbox2/assistant/` | Ordering on our own analysis with energy arcs and lookahead; multi-crate sets; an optional Claude-powered assistant (#60–#64) |
 | UI | `frontend2/` | React 19 + Vite + Tailwind 4 + zustand (forked from `frontend/`). Design language v2 (#71). Performance rules in `frontend2/PERFORMANCE.md`: no React render per frame, narrow selectors, virtualised lists, waveform data in a worker (#84). WebGL2 waveforms (#74). A WebAudio AudioWorklet engine that plays plans live (#65–#67) |
 | Evaluation | `seedbox2/eval/` | `python -m seedbox2.eval analysis/mixes/golden` and the `#/listen` blind A/B page (#50, #54, #86, #87) |
-| Benchmarks | `seedbox2/bench/` | `python -m seedbox2.bench` checks the budgets below, nightly in CI and on real laptops ([how](bench/README.md)) (#68) |
+| Benchmarks | `seedbox2/bench/` | `python -m seedbox2.bench` checks the budgets below on real laptops ([how](bench/README.md)) (#68) |
 
 Seedbox 1's `musicreco` stays importable: tunebat, YouTube and tagging are reused, not forked.
 
