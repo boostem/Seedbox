@@ -231,9 +231,10 @@ def fake_stems(lib: Library, hash_: str, *, size: int = 1_000, age: float = 0.0,
 
 def test_settings_have_defaults_and_ignore_nonsense(tmp_path):
     s = Settings(tmp_path / "s.json")
-    assert st.read_settings(s) == {"limit_gb": 20.0, "format": "flac", "low_power": False} == st.read_settings(None)
-    s.set("stems", {"limit_gb": -3, "format": "mp3", "low_power": 1})
-    assert st.read_settings(s) == {"limit_gb": 20.0, "format": "flac", "low_power": True}
+    assert st.read_settings(s) == {"limit_gb": 20.0, "format": "flac", "low_power": False,
+                                   "enabled": True} == st.read_settings(None)  # fmt: skip
+    s.set("stems", {"limit_gb": -3, "format": "mp3", "low_power": 1, "enabled": 0})
+    assert st.read_settings(s) == {"limit_gb": 20.0, "format": "flac", "low_power": True, "enabled": False}
     s.set("stems", {"limit_gb": 1.5, "format": "opus"})
     assert st.read_settings(s)["limit_gb"] == 1.5 and st.read_settings(s)["format"] == "opus"
 
@@ -307,6 +308,14 @@ def test_the_background_stops_at_the_limit_but_an_open_set_evicts(cache, lib, tm
     r = st.stems_job({"hash": h, "set": set_id}, Ctx(lib, settings, FakeSession()))
     assert r["evicted"] == ["aa11"] and not old.exists()  # the oldest (bb22) belongs to the set
     assert in_set.exists() and st.current(lib, h) is not None and st.current(lib, other) is None
+
+
+def test_stems_off_skips_the_background(cache, lib, tmp_path):
+    settings = tmp_path / "settings.json"
+    Settings(settings).set("stems", {"enabled": False})
+    h = add_track(lib, tmp_path / "a.wav")
+    assert st.stems_job({"hash": h}, Ctx(lib, settings, FakeSession())) == {"hash": h, "skipped": "disabled"}
+    assert st.current(lib, h) is None
 
 
 @needs_ffmpeg
@@ -419,6 +428,8 @@ def test_missing_stems_are_queued_as_far_as_the_cache_goes_and_only_with_a_model
     store.installed = lambda s, root: s.name == "htdemucs"
     try:
         assert st.queue_missing(jobs, lib, settings) == 2
+        settings.set("stems", {**settings.get("stems"), "enabled": False})
+        assert st.queue_missing(jobs, lib, settings) == 0  # stems off: none at all
     finally:
         store.installed = installed
     assert [(s[1]["hash"], s[2]) for s in jobs.submitted] == [("bb22", "background"), ("cc33", "background")]
@@ -480,7 +491,7 @@ def test_the_api_reports_opens_serves_and_limits(cache, tmp_path):
     app = create_app(library_path=tmp_path / "support" / "library.sqlite3")
     with TestClient(app) as client:
         assert client.get("/api/analysis/stems").json() == {"limit_gb": 20.0, "format": "flac", "low_power": False,
-                                                            "usage": {"tracks": 0, "bytes": 0}}  # fmt: skip
+                                                            "enabled": True, "usage": {"tracks": 0, "bytes": 0}}  # fmt: skip
         lib = app.state.library  # opened by that request
         fake_stems(lib, "aa11", size=4_000, age=100)
         fake_stems(lib, "bb22", size=4_000, age=50)

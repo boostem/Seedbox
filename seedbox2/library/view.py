@@ -9,8 +9,13 @@ The key (#45): the user's override wins (`key_from` "user"), then our analysis (
 confident is `key` None with `key_from` "unknown", shown as "?". Once either of those speaks, the tags stop filling
 in: the first hint that disagrees is `key_hint`, from `key_hint_from`, to show next to ours.
 
+Ready (`ready`, `missing`): a track is ready once every analysis that mixing and set building read has finished for
+its current version: beats, key, energy, sections, vocals and the waveform, plus stems unless stems are off in the
+settings (then the mix falls back on EQ). `missing` names the ones it lacks, in that order; a required analysis whose
+latest job failed is missing even if an older run left data.
+
 Status (`state`): `analysing` while one of its jobs runs, `queued` while one waits, `failed` if the latest run of a
-job failed, `done` once it has a waveform and nothing is pending, else `new`. "Not analysed yet" is every state but
+job failed, `done` once it is ready and nothing is pending, else `new`. "Not analysed yet" is every state but
 `done`.
 
 Overviews: `pack_overviews` puts the 1,200-column peak overview of each band (low, mid, high) of many tracks in one
@@ -151,13 +156,17 @@ def _text(tags: dict) -> str:
     return " · ".join(dict.fromkeys(parts))
 
 
+REQUIRED = ("beats", "key", "energy", "sections", "vocals")  # analyses (the `analyses` table) a ready track has
 _STEMS_PENDING = ("queued", "running", "failed")  # a job that ended otherwise left stems, or skipped them, or they were evicted
 
 
 def describe(track: dict, *, analyses: dict[str, dict] | None = None, artifacts: Iterable[str] = (),
-             jobs: dict[str, dict] | None = None, waveform_version: str | None = None) -> dict:  # fmt: skip
+             jobs: dict[str, dict] | None = None, waveform_version: str | None = None,
+             finished: Iterable[str] | None = None, stems_required: bool = True) -> dict:  # fmt: skip
     """The table row for a track. `analyses`: analyser → its newest data's fields (bpm, camelot, key, energy);
-    `artifacts`: "kind:model_version" strings; `jobs`: kind → the newest job about it ({state, progress})."""
+    `artifacts`: "kind:model_version" strings; `jobs`: kind → the newest job about it ({state, progress});
+    `finished`: the analysers with data of their current version (None: those in `analyses`); `stems_required`:
+    False when stems are off in the settings."""
     tags = track.get("tags") or {}
     analyses = analyses or {}
     jobs = jobs or {}
@@ -195,6 +204,9 @@ def describe(track: dict, *, analyses: dict[str, dict] | None = None, artifacts:
     waveform = any(a.startswith("waveform:") and (waveform_version is None or a == f"waveform:{waveform_version}")
                    for a in arts)  # fmt: skip
     stems = any(a.startswith("stems:") for a in arts)
+    have = {*(analyses if finished is None else finished), *(("waveform",) * waveform), *(("stems",) * stems)}
+    required = (*REQUIRED, "waveform", *(("stems",) * stems_required))
+    missing = [n for n in required if n not in have or jobs.get(n, {}).get("state") == "failed"]
     states = {j["state"] for j in jobs.values()}
     if "running" in states:
         state = "analysing"
@@ -203,10 +215,12 @@ def describe(track: dict, *, analyses: dict[str, dict] | None = None, artifacts:
     elif "failed" in states:
         state = "failed"
     else:
-        state = "done" if waveform else "new"
+        state = "new" if missing else "done"
     stems_job = jobs.get("stems")
     row["status"] = {
         "state": state,
+        "ready": not missing,
+        "missing": missing,
         "waveform": waveform,
         "stems": True if stems else (stems_job["state"] if stems_job and stems_job["state"] in _STEMS_PENDING else False),
         "stems_progress": stems_job.get("progress") if stems_job and stems_job["state"] == "running" else None,

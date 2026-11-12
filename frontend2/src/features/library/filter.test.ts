@@ -26,7 +26,7 @@ export function row(p: Partial<LibraryRow> & { state?: LibraryRow["status"]["sta
     text: "",
     artwork: false,
     format: "mp3",
-    status: { state, waveform: state === "done", stems: false, stems_progress: null, analyses: [], jobs: {} },
+    status: { state, ready: state === "done", missing: [], waveform: state === "done", stems: false, stems_progress: null, analyses: [], jobs: {} },
     ...rest,
   };
 }

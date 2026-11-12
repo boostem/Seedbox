@@ -49,20 +49,50 @@ def test_rows_use_our_analysis_and_fall_back_to_tag_hints():
                         artifacts=["waveform:v1"], waveform_version="v1")  # fmt: skip
     assert (row["bpm"], row["bpm_from"], row["key"], row["key_from"], row["energy"]) == (121.98, "analysis", "9A",
                                                                                         "analysis", 0.42)  # fmt: skip
-    assert row["status"]["state"] == "done" and row["status"]["analyses"] == ["beats", "energy", "key"]
+    assert row["status"]["state"] == "new" and row["status"]["analyses"] == ["beats", "energy", "key"]  # not ready
+    assert row["status"]["missing"] == ["sections", "vocals", "stems"]
+
+
+ALL = ("beats", "key", "energy", "sections", "vocals")
 
 
 def test_status_follows_the_jobs():
     def state(jobs: dict, arts=("waveform:v1",)) -> dict:
-        return view.describe(_track(), artifacts=arts, jobs=jobs, waveform_version="v1")["status"]
+        return view.describe(_track(), artifacts=arts, jobs=jobs, waveform_version="v1", finished=ALL)["status"]
 
-    assert state({})["state"] == "done"
+    assert state({}, arts=("waveform:v1", "stems:htdemucs"))["state"] == "done"
+    assert state({})["state"] == "new"  # no stems: not ready yet
     assert state({}, arts=("waveform:v0",))["state"] == "new"  # an old version is not a waveform
     assert state({"stems": {"state": "queued", "progress": 0}})["state"] == "queued"
     s = state({"stems": {"state": "running", "progress": 0.4}, "beats": {"state": "queued", "progress": 0}})
     assert (s["state"], s["stems"], s["stems_progress"]) == ("analysing", "running", 0.4)
     assert state({"beats": {"state": "failed", "progress": 0}})["state"] == "failed"
     assert state({}, arts=("waveform:v1", "stems:htdemucs"))["stems"] is True
+
+
+def test_ready_and_missing():
+    def status(finished=(), arts=(), jobs=None, stems_required=True) -> dict:
+        s = view.describe(_track(), artifacts=arts, jobs=jobs, waveform_version="v1", finished=finished,
+                          stems_required=stems_required)["status"]  # fmt: skip
+        return {k: s[k] for k in ("state", "ready", "missing")}
+
+    every = ("waveform:v1", "stems:htdemucs")
+    assert status() == {"state": "new", "ready": False,
+                        "missing": ["beats", "key", "energy", "sections", "vocals", "waveform", "stems"]}  # fmt: skip
+    light = status(ALL, ("waveform:v1",))  # the light analyses only: stems still to come
+    assert light == {"state": "new", "ready": False, "missing": ["stems"]}
+    assert status(ALL, every) == {"state": "done", "ready": True, "missing": []}
+    assert status(ALL, ("waveform:v1",), stems_required=False) == {"state": "done", "ready": True, "missing": []}
+    assert status(ALL[:-1], ("waveform:v1",), stems_required=False)["missing"] == ["vocals"]
+    assert status(ALL, ("waveform:v0", "stems:x"))["missing"] == ["waveform"]  # an old waveform version
+    failed = status(ALL, every, {"vocals": {"state": "failed", "progress": 0}})  # data from an older run, then it failed
+    assert failed == {"state": "failed", "ready": False, "missing": ["vocals"]}
+    failed = status(ALL[1:], every, {"beats": {"state": "failed", "progress": 0}})
+    assert failed == {"state": "failed", "ready": False, "missing": ["beats"]}
+    rerun = status(ALL, every, {"key": {"state": "running", "progress": 0.5}})  # still has the data it re-analyses
+    assert rerun == {"state": "analysing", "ready": True, "missing": []}
+    queued = status(ALL, ("waveform:v1",), {"stems": {"state": "queued", "progress": 0}})
+    assert queued == {"state": "queued", "ready": False, "missing": ["stems"]}
 
 
 @pytest.fixture
@@ -94,9 +124,28 @@ def test_view_rows_for_the_whole_library(lib, tmp_path):
     rows = {r["hash"]: r for r in lib.view_rows(waveform_version="v1")}
     assert list(rows) == [a, b]
     assert (rows[a]["bpm"], rows[a]["bpm_from"], rows[a]["key"]) == (128.02, "analysis", "4A")
-    assert rows[a]["status"] == {"state": "done", "waveform": True, "stems": False, "stems_progress": None,
+    assert rows[a]["status"] == {"state": "new", "ready": False, "missing": ["key", "energy", "sections", "vocals",
+                                 "stems"], "waveform": True, "stems": False, "stems_progress": None,
                                  "analyses": ["beats"], "jobs": {}}  # fmt: skip
     assert rows[b]["status"]["state"] == "queued" and rows[b]["status"]["jobs"] == {"waveform": "queued"}
+
+    for analyser in ALL:
+        lib.put_analysis(a, analyser, "1", {})
+    assert lib.view_rows(waveform_version="v1", hashes=[a])[0]["status"]["missing"] == ["stems"]
+    assert lib.view_rows(waveform_version="v1", hashes=[a], stems_required=False)[0]["status"]["state"] == "done"
+    lib.put_artifact(a, "stems", "htdemucs", tmp_path / "stems")
+    status = lib.view_rows(waveform_version="v1", hashes=[a])[0]["status"]
+    assert (status["state"], status["ready"], status["missing"]) == ("done", True, [])
+    failed = lib.add_job("sections", {"hash": a})
+    lib.update_job(failed["id"], state="failed", error="boom")
+    status = lib.view_rows(waveform_version="v1", hashes=[a])[0]["status"]
+    assert (status["state"], status["ready"], status["missing"]) == ("failed", False, ["sections"])
+
+
+def test_the_required_analyses_are_the_analysers_names():
+    from seedbox2.analysis import beats, energy, key, sections, vocals
+
+    assert view.REQUIRED == ALL == tuple(m.ANALYSER for m in (beats, key, energy, sections, vocals))
 
 
 def test_dragging_tracks_into_crates_and_sets(lib, tmp_path):
@@ -170,7 +219,13 @@ def test_the_library_view_api(tmp_path, monkeypatch):
         status, body, _ = _call(api + "/library/view")
         rows = json.loads(body)["items"]
         assert status == 200 and [r["title"] for r in rows] == ["Alpha", "Beta"] and rows[0]["key"] == "8A"
-        assert rows[0]["status"]["state"] == "done" and rows[1]["status"]["state"] == "new"
+        assert [(r["status"]["state"], r["status"]["ready"]) for r in rows] == [("new", False), ("new", False)]
+        assert rows[0]["status"]["missing"] == ["beats", "key", "energy", "sections", "vocals", "stems"]
+        from seedbox2.library.service import SETTINGS_FILE, Settings
+
+        Settings(tmp_path / "data" / SETTINGS_FILE).set("stems", {"enabled": False})  # stems off: not needed
+        rows = json.loads(_call(api + "/library/view", "POST", {"hashes": [a]})[1])["items"]
+        assert rows[0]["status"]["missing"] == ["beats", "key", "energy", "sections", "vocals"]
         status, body, _ = _call(api + "/library/view", "POST", {"hashes": [b]})
         assert status == 200 and [r["hash"] for r in json.loads(body)["items"]] == [b]
 
