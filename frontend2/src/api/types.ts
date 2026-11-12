@@ -144,6 +144,8 @@ export interface TunebatCrateItem {
   text: string;
   status: "downloaded" | "copied" | "exists" | "skipped" | "failed" | null;
   reason: string | null;
+  /** the library track it became, once imported (its analysis can be followed from there) */
+  hash?: string | null;
 }
 
 /** A `tunebat.crate` event, and the answer to POST /api/tunebat/crates/{seed}/download. */

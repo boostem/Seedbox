@@ -2,18 +2,24 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ServerEvent, TunebatCrate, TunebatCrateJob, TunebatRec, TunebatTrack } from "@/api/types";
+import type { LibraryRow, ServerEvent, TunebatCrate, TunebatCrateJob, TunebatRec, TunebatTrack } from "@/api/types";
 
 const tunebat = vi.hoisted(() => ({ search: vi.fn(), crate: vi.fn(), downloadCrate: vi.fn(), cancelCrateDownload: vi.fn() }));
 const listeners = vi.hoisted(() => new Set<(ev: ServerEvent) => void>());
-vi.mock("@/api/client", () => ({ api: { tunebat }, ApiError: class extends Error {} }));
+const library = vi.hoisted(() => ({ view: vi.fn(), crates: vi.fn(), smartCrates: vi.fn() }));
+vi.mock("@/api/client", () => ({ api: { tunebat, library, sets: { list: vi.fn(async () => []) } }, ApiError: class extends Error {} }));
 vi.mock("@/api/events", () => ({
   onServerEvent: (fn: (ev: ServerEvent) => void) => {
     listeners.add(fn);
     return () => listeners.delete(fn);
   },
 }));
-const { DiscoverPage, defaultTicks } = await import("./DiscoverPage");
+const { DiscoverPage, analysisOf, defaultTicks } = await import("./DiscoverPage");
+const { useJobs } = await import("@/store/jobs");
+const { useLibrary } = await import("@/store/library");
+
+const libRow = (hash: string, status: Partial<LibraryRow["status"]>) =>
+  ({ hash, title: hash, status: { state: "new", ready: false, missing: [], waveform: false, stems: false, stems_progress: null, analyses: [], jobs: {}, ...status } }) as unknown as LibraryRow;
 
 const track = (id: string, name: string, camelot = "8A", bpm = 124): TunebatTrack & { key: string; energy: number } => ({
   id, name, artists: ["Artist"], album: "Album", duration: 200, bpm, camelot, cover_url: null, key: "A minor", energy: 0.8,
@@ -38,6 +44,10 @@ beforeEach(() => {
   localStorage.clear();
   tunebat.search.mockResolvedValue({ total: 1, items: [track("seed", "Seed Song")] });
   tunebat.crate.mockResolvedValue(CRATE);
+  library.view.mockResolvedValue({ items: [] });
+  library.crates.mockResolvedValue([]);
+  library.smartCrates.mockResolvedValue({ crates: [] });
+  useJobs.setState({ running: {}, queued: {}, queuedHash: {} });
 });
 afterEach(cleanup);
 
@@ -48,6 +58,17 @@ describe("defaultTicks", () => {
     expect([...defaultTicks(CRATE, false)].sort()).toEqual(["near", "seed"]);
     expect([...defaultTicks(CRATE, true)].sort()).toEqual(["far", "near", "seed"]);
     expect([...defaultTicks({ ...CRATE, seed: { ...CRATE.seed, in_library: true } }, false)]).toEqual(["near"]);
+  });
+});
+
+describe("analysisOf", () => {
+  it("says where a downloaded track's analysis is", () => {
+    expect(analysisOf(undefined, undefined)).toBeNull();
+    expect(analysisOf(undefined, { running: [], queued: 3 })?.text).toBe("Waiting to analyse");
+    expect(analysisOf(undefined, { running: [{ kind: "beats", progress: 0 }], queued: 2 })?.text).toBe("Analysing");
+    expect(analysisOf(undefined, { running: [{ kind: "stems", progress: 0.42 }], queued: 0 })?.text).toBe("Stems 42%");
+    expect(analysisOf(libRow("h", { state: "done", ready: true }), undefined)).toMatchObject({ text: "Ready", tone: "ok" });
+    expect(analysisOf(libRow("h", { state: "failed", missing: ["key"] }), undefined)).toMatchObject({ text: "Analysis failed", title: "Missing: key" });
   });
 });
 
@@ -95,6 +116,29 @@ describe("DiscoverPage", () => {
     emit("tunebat.crate", { ...job, state: "done", items: job.items.map((i) => ({ ...i, status: i.id === "far" ? "skipped" : "downloaded" })) });
     expect(screen.getByText(/2 of 3 in the crate/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Crates" })).toBeTruthy();
+  });
+
+  it("follows each downloaded track's analysis from download to ready", async () => {
+    const user = await openCrate();
+    const job: TunebatCrateJob = {
+      id: "j1", seed_id: "seed", seed: "Artist - Seed Song", folder: "Artist - Seed Song", state: "running", error: null,
+      items: ["seed", "near"].map((id) => ({ id, name: id, artists: ["Artist"], text: "queued", status: null, reason: null, hash: null })),
+    };
+    tunebat.downloadCrate.mockResolvedValue(job);
+    await user.click(screen.getByRole("button", { name: /Download 2 tracks/ }));
+    emit("tunebat.crate", { ...job, items: job.items.map((i) => (i.id === "seed" ? { ...i, status: "downloaded", text: "downloaded", hash: "h1" } : i)) });
+    expect(screen.queryByText("Analysing")).toBeNull();
+    act(() => useJobs.setState({ queued: { q1: "beats" }, queuedHash: { q1: "h1" } }));
+    expect(screen.getByText("Waiting to analyse")).toBeTruthy();
+    act(() => useJobs.setState({ queued: {}, queuedHash: {}, running: { q1: { id: "q1", kind: "beats", hash: "h1", progress: 0, startedAt: 0, seenStart: true } } }));
+    expect(screen.getByText("Analysing")).toBeTruthy();
+    act(() => useJobs.setState({ running: { s1: { id: "s1", kind: "stems", hash: "h1", progress: 0.5, startedAt: 0, seenStart: true } } }));
+    expect(screen.getByText("Stems 50%")).toBeTruthy();
+    act(() => {
+      useJobs.setState({ running: {} });
+      useLibrary.setState({ rows: [libRow("h1", { state: "done", ready: true })] });
+    });
+    expect(screen.getByText("Ready")).toBeTruthy();
   });
 
   it("says when tunebat doesn't answer", async () => {

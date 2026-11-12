@@ -17,7 +17,8 @@ export interface LibraryFilter {
   /** 1-10, as Mixed In Key shows energy. */
   energyMin: number | null;
   energyMax: number | null;
-  /** Only tracks whose analysis isn't done (new, queued, analysing or failed). */
+  /** Only tracks that aren't ready (`status.ready`): an analysis mixing and sets need is missing, pending or failed.
+   * (The name is older than "ready"; stored smart crates still use it.) */
   unanalysed: boolean;
 }
 
@@ -62,7 +63,7 @@ export function activeFilters(f: LibraryFilter): string[] {
   if (f.energyMin !== null || f.energyMax !== null) {
     out.push(`energy ${f.energyMin ?? 1}-${f.energyMax ?? 10}`);
   }
-  if (f.unanalysed) out.push("not analysed yet");
+  if (f.unanalysed) out.push("not ready");
   return out;
 }
 
@@ -104,7 +105,7 @@ export function matcher(f: LibraryFilter): (r: LibraryRow) => boolean {
   const eMax = f.energyMax ?? 10;
   const energyOn = f.energyMin !== null || f.energyMax !== null;
   return (r) => {
-    if (f.unanalysed && r.status.state === "done") return false;
+    if (f.unanalysed && r.status.ready) return false;
     if (!bpmFits(r.bpm, f)) return false;
     if (key && !(r.key && camelotAdjacent(key, r.key))) return false;
     if (energyOn) {

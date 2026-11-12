@@ -2,10 +2,13 @@ import { AlertTriangle, ArrowLeft, Boxes, Check, Download, RotateCw, Search, Sea
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/api/client";
 import { onServerEvent } from "@/api/events";
-import type { TunebatCrate, TunebatCrateJob, TunebatCrateTrack, TunebatTrack } from "@/api/types";
+import type { LibraryRow, TunebatCrate, TunebatCrateJob, TunebatCrateTrack, TunebatTrack } from "@/api/types";
 import { Badge, Button, Checkbox, CoverArt, EmptyState, Input, KeyBadge, Page, PageBody, PageHeader, Panel, PanelHeader, ProgressBar, ScoreChip, Skeleton, Spinner, Switch } from "@/components/ui";
 import { fmtTime } from "@/lib/format";
+import { cn } from "@/lib/cn";
 import { navigate, useHashQuery } from "@/lib/router";
+import { jobsByTrack, useJobs } from "@/store/jobs";
+import { followLibrary, useLibrary } from "@/store/library";
 
 const TICK_ALL_KEY = "seedbox2.tunebat.tickAll";
 
@@ -31,14 +34,61 @@ export function defaultTicks(crate: TunebatCrate, tickAll: boolean): Set<string>
 const FINISHED: TunebatCrateJob["state"][] = ["done", "cancelled", "failed"];
 const STATUS_WORD: Record<string, string> = { downloaded: "Downloaded", copied: "Copied", exists: "Already there", skipped: "Not found", failed: "Failed" };
 
+type TrackJobs = ReturnType<typeof jobsByTrack> extends Map<string, infer V> ? V : never;
+export interface Analysis {
+  text: string;
+  tone: "busy" | "ok" | "danger" | "muted";
+  title?: string;
+}
+
+/** Where a downloaded track's analysis is, from its pending jobs and its library row: waiting, analysing (stems with
+ * their progress when that is what's left), ready, or failed. Null while there is nothing to say yet. */
+export function analysisOf(row: LibraryRow | undefined, jobs: TrackJobs | undefined): Analysis | null {
+  if (jobs && (jobs.running.length || jobs.queued)) {
+    const stems = jobs.running.find((j) => j.kind === "stems");
+    if (stems && jobs.running.length === 1) return { text: `Stems ${Math.round(stems.progress * 100)}%`, tone: "busy", title: "Separating the stems" };
+    if (jobs.running.length) return { text: "Analysing", tone: "busy" };
+    return { text: "Waiting to analyse", tone: "muted" };
+  }
+  if (!row) return null;
+  if (row.status.ready) return { text: "Ready", tone: "ok", title: "Analysed: ready for sets and mixes" };
+  if (row.status.state === "failed") return { text: "Analysis failed", tone: "danger", title: `Missing: ${row.status.missing.join(", ")}` };
+  if (row.status.state === "queued" || row.status.state === "analysing") return { text: "Analysing", tone: "busy" };
+  return { text: "Not ready", tone: "muted", title: row.status.missing.length ? `Missing: ${row.status.missing.join(", ")}` : undefined };
+}
+
+const ANALYSIS_TONE: Record<Analysis["tone"], string> = { busy: "text-fg-muted", ok: "text-ok", danger: "text-danger", muted: "text-fg-subtle" };
+
+/** After "Downloaded": the track's analysis, so it can be followed from download to ready. */
+function ItemAnalysis({ hash }: { hash: string }) {
+  const row = useLibrary((s) => s.rows?.find((r) => r.hash === hash));
+  const running = useJobs((s) => s.running);
+  const queuedHash = useJobs((s) => s.queuedHash);
+  const queued = useJobs((s) => s.queued);
+  const jobs = useMemo(() => jobsByTrack({ running, queued, queuedHash }).get(hash), [running, queued, queuedHash, hash]);
+  const a = analysisOf(row, jobs);
+  if (!a) return null;
+  return (
+    <span className={cn("flex items-center gap-1 text-xs", ANALYSIS_TONE[a.tone])} title={a.title}>
+      <span className="text-fg-subtle">·</span>
+      {a.tone === "busy" && <Spinner size={11} />}
+      {a.tone === "ok" && <Check size={13} />}
+      {a.text}
+    </span>
+  );
+}
+
 function ItemStatus({ item }: { item: TunebatCrateJob["items"][number] | undefined }) {
   if (!item) return null;
   if (item.status) {
     const ok = item.status !== "failed" && item.status !== "skipped";
     return (
-      <span className={ok ? "flex items-center gap-1 text-xs text-ok" : "text-xs text-danger"} title={item.reason ?? undefined}>
-        {ok && <Check size={13} />}
-        {STATUS_WORD[item.status] ?? item.status}
+      <span className="flex items-center gap-1.5">
+        <span className={ok ? "flex items-center gap-1 text-xs text-ok" : "text-xs text-danger"} title={item.reason ?? undefined}>
+          {ok && <Check size={13} />}
+          {STATUS_WORD[item.status] ?? item.status}
+        </span>
+        {ok && item.hash && <ItemAnalysis hash={item.hash} />}
       </span>
     );
   }
@@ -101,6 +151,7 @@ function CrateView({ crate, onBack }: { crate: TunebatCrate; onBack: () => void 
   const [ticks, setTicks] = useState<Set<string>>(() => defaultTicks(crate, tickAll));
   const [job, setJob] = useState<TunebatCrateJob | null>(null);
   const [starting, setStarting] = useState(false);
+  useEffect(followLibrary, []); // the library rows say when each downloaded track is ready
 
   useEffect(
     () =>
@@ -181,7 +232,7 @@ function CrateView({ crate, onBack }: { crate: TunebatCrate; onBack: () => void 
             <Badge tone="accent">Seed</Badge>
             {crate.seed.in_library && <Badge>In library</Badge>}
           </span>
-          <span className="flex w-28 justify-end">
+          <span className="flex w-56 justify-end">
             <ItemStatus item={items.get(crate.seed.id)} />
           </span>
         </li>
@@ -194,7 +245,7 @@ function CrateView({ crate, onBack }: { crate: TunebatCrate; onBack: () => void 
               {r.related ? <Badge tone="ok">Mixes</Badge> : <Badge variant="outline">Other</Badge>}
               <ScoreChip value={r.score} move={r.move} passed={r.related} />
             </span>
-            <span className="flex w-28 justify-end">
+            <span className="flex w-56 justify-end">
               <ItemStatus item={items.get(r.track.id)} />
             </span>
           </li>

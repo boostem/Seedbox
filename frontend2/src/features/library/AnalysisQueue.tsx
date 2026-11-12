@@ -1,12 +1,14 @@
 /**
- * The analysis queue indicator (#73), in the top bar: what is analysing, how far the stems are and when the queue
- * will be done. Click for the details. Hidden while there is nothing to do.
+ * The analysis queue indicator (#73), in the top bar next to "Live": how many tracks are analysing (or, when stems
+ * are all that's left, separating stems and how far), and when the queue will be done. Hidden while there is nothing
+ * to do. Click it for the library's tracks that aren't ready; the chevron beside it opens the queue's details.
  */
-import { Layers, Loader2 } from "lucide-react";
+import { ChevronDown, Layers, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ProgressBar } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { queuedByKind, queueEta, type RunningJob, useJobs } from "@/store/jobs";
+import { navigate } from "@/lib/router";
+import { pendingTracks, queuedByKind, queueEta, type RunningJob, useJobs } from "@/store/jobs";
 import { useLibrary } from "@/store/library";
 
 /** "~40 s", "~3 min", "~1 h 20 min". */
@@ -32,9 +34,20 @@ function useTick(on: boolean): number {
   return t;
 }
 
+/** "Analysing 3 tracks", "Stems · 2 tracks", or for jobs about no track (an export) what the old indicator said. */
+export function queueLabel(tracks: number, stemsOnly: boolean, runningJobs: number, queuedJobs: number): string {
+  const n = `${tracks} ${tracks === 1 ? "track" : "tracks"}`;
+  if (tracks > 0) return stemsOnly ? `Stems · ${n}` : `Analysing ${n}`;
+  return runningJobs > 0 ? `Working on ${runningJobs}` : `Waiting · ${queuedJobs} queued`;
+}
+
+/** The library, showing only the tracks that aren't ready. */
+export const NOT_READY_HREF = "#/library?show=not-ready";
+
 export function AnalysisQueue() {
   const running = useJobs((s) => s.running);
   const queued = useJobs((s) => s.queued);
+  const queuedHash = useJobs((s) => s.queuedHash);
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const runningList = Object.values(running);
@@ -52,28 +65,40 @@ export function AnalysisQueue() {
   if (!busy) return null;
   const s = useJobs.getState();
   const eta = queueEta(s, performance.now());
-  const stems = runningList.find((j) => j.kind === "stems");
+  const pending = pendingTracks({ running, queued, queuedHash });
+  const tracks = pending.tracks.size;
+  const stems = pending.stemsProgress;
   return (
-    <div ref={box} className="relative">
+    <div ref={box} className="relative flex items-center">
+      <button
+        type="button"
+        onClick={() => navigate(NOT_READY_HREF)}
+        className="flex h-7 items-center gap-2 rounded-l-sm px-2 text-xs text-fg-muted transition-colors hover:bg-hover hover:text-fg"
+        title={tracks > 0 ? "Show the tracks that aren't ready yet" : undefined}
+      >
+        {pending.stemsOnly ? (
+          <Layers size={13} className="text-accent" />
+        ) : (
+          <Loader2 size={13} className={cn("text-accent", runningList.length > 0 && "animate-spin")} />
+        )}
+        <span className="num">{queueLabel(tracks, pending.stemsOnly, runningList.length, queuedCount)}</span>
+        {stems !== null && (
+          <span className="flex items-center gap-1" title="Stem separation">
+            {!pending.stemsOnly && <Layers size={12} className="text-fg-subtle" />}
+            <span className="num">{Math.round(stems * 100)}%</span>
+          </span>
+        )}
+        {eta !== null && <span className="num text-fg-subtle">{fmtEta(eta)}</span>}
+      </button>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex h-7 items-center gap-2 rounded-sm px-2 text-xs text-fg-muted transition-colors hover:bg-hover hover:text-fg"
-        aria-label="Analysis queue"
+        aria-label="Analysis queue details"
+        title="What's in the queue"
+        className="flex h-7 items-center rounded-r-sm px-1 text-fg-subtle transition-colors hover:bg-hover hover:text-fg"
       >
-        <Loader2 size={13} className={cn("text-accent", runningList.length > 0 && "animate-spin")} />
-        <span className="num">
-          {runningList.length > 0 ? `Analysing ${runningList.length}` : "Waiting"}
-          {queuedCount > 0 && <span className="text-fg-subtle"> · {queuedCount} queued</span>}
-        </span>
-        {stems && (
-          <span className="flex items-center gap-1" title="Stem separation">
-            <Layers size={12} className="text-fg-subtle" />
-            <span className="num">{Math.round(stems.progress * 100)}%</span>
-          </span>
-        )}
-        {eta !== null && <span className="num text-fg-subtle">{fmtEta(eta)}</span>}
+        <ChevronDown size={13} className={cn("transition-transform", open && "rotate-180")} />
       </button>
       {open && <QueuePanel running={runningList} queued={queued} eta={eta} />}
     </div>
