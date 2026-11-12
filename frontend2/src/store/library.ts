@@ -77,17 +77,21 @@ export function refreshSoon(hash: string) {
   }, 400);
 }
 
-/** Show a job starting or queueing on its row right away (batched per 200 ms, one array copy per batch). */
+/** Show a job starting or queueing on its row right away (batched per 200 ms, one array copy per batch). A track
+ * the page doesn't have yet (one a download has just imported, while its batch goes on) is read in, unless an
+ * import is running: the library reloads when that one finishes. */
 function markSoon(hash: string, state: "queued" | "analysing") {
   if (marks.get(hash) !== "analysing") marks.set(hash, state);
   markTimer ??= setTimeout(() => {
     markTimer = undefined;
     const m = new Map(marks);
     marks.clear();
+    const unknown = new Set(m.keys());
     useLibrary.setState((s) => {
       if (!s.rows) return {};
       let changed = false;
       const rows = s.rows.map((r) => {
+        unknown.delete(r.hash);
         const st = m.get(r.hash);
         if (!st || r.status.state === st || (st === "queued" && r.status.state === "analysing")) return r;
         changed = true;
@@ -95,6 +99,8 @@ function markSoon(hash: string, state: "queued" | "analysing") {
       });
       return changed ? { rows } : {};
     });
+    const importing = ["queued", "running"].includes(useImports.getState().status.state);
+    if (useLibrary.getState().rows && !importing) for (const h of unknown) refreshSoon(h);
   }, 200);
 }
 

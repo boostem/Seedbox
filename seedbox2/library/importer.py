@@ -85,13 +85,14 @@ class Importer:
         self.artwork_dir = artwork_dir
         self.workers = workers
 
-    def import_paths(self, paths: Iterable[Path | str], *, source: str = "local",
-                     progress: Progress | None = None) -> ImportReport:  # fmt: skip
+    def import_paths(self, paths: Iterable[Path | str], *, source: str = "local", progress: Progress | None = None,
+                     crates: bool = True) -> ImportReport:  # fmt: skip
         """Add or update every audio file in `paths` (files and folders). Unreadable files go to the report's
-        errors."""
+        errors. `crates=False` takes files in crate folders as plain files too (their crate and set aren't touched),
+        for a file a download has just finished while the rest of its crate isn't there yet."""
         report = ImportReport()
         files = list(dict.fromkeys(iter_audio(paths)))
-        crate_dirs = {f.parent for f in files if sb1_import.is_crate_folder(f.parent)}
+        crate_dirs = {f.parent for f in files if crates and sb1_import.is_crate_folder(f.parent)}
         plain = [f for f in files if f.parent not in crate_dirs]
         done = 0
         with ThreadPoolExecutor(max_workers=self.workers, thread_name_prefix="seedbox2-import") as pool:

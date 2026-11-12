@@ -172,7 +172,11 @@ class TunebatTry:
             dest = self.music.upload_path(f"{', '.join(track.artists)} - {track.name}.mp3")
             youtube.download(found.match, dest)
             _write_tags(dest, track)
-            self.music.import_files([dest])
+            try:  # at once, not behind other imports: its row and its analyses start now
+                self.music.import_now([dest])
+            except Exception:  # noqa: BLE001 - the queued import below takes it in anyway
+                log.warning("couldn't import %s straight away", dest.name, exc_info=True)
+            self.music.import_files([dest])  # finds it in the library (no decode): says so on the library page
             self._emit(track.id, "done")
         except Exception as e:  # noqa: BLE001 - the thread's last stop: whatever went wrong goes to the screen
             log.warning("couldn't fetch %s: %s", track.id, e)
