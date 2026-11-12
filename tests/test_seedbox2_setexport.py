@@ -23,6 +23,7 @@ from seedbox2.server.app import create_app
 from seedbox2.sets import export as set_export
 
 from .fixtures import Spec, analysis, click_track, pad_track, track
+from .s2_ready import make_ready
 
 SR = 44100
 SPECS = [
@@ -398,6 +399,7 @@ def library(tmp_path: Path, files: list[Path], monkeypatch: pytest.MonkeyPatch) 
             c.execute("INSERT INTO track_paths (path, hash, size, mtime_ns) VALUES (?, ?, 1, 1)", (str(f), s.id))
     for s, t, plan in zip(SPECS, SPECS[1:], _plans()):
         lib.put_plan(s.id, t.id, plan.model_dump(), user_edited=False)
+    make_ready(lib)
     return lib
 
 
@@ -467,6 +469,7 @@ def test_the_export_route(tmp_path: Path, files: list[Path], monkeypatch: pytest
         lib = lib or Library.open(tmp_path / "lib.sqlite3")
         for s in SPECS:
             lib.upsert_track(s.id, s.duration_s, title=s.id)
+        make_ready(lib)
         set_id = client.post("/api/sets", json={"name": "S", "hashes": [s.id for s in SPECS]}).json()["id"]
         status = client.get(f"/api/sets/{set_id}/export").json()
         assert [f["id"] for f in status["formats"]] == ["wav", "flac", "mp3", "aac"] and status["job"] is None

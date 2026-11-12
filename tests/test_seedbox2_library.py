@@ -22,6 +22,8 @@ from seedbox2.library.import_seedbox1 import import_seedbox1
 from seedbox2.mix import plan as v3
 from seedbox2.server import start_server
 
+from .s2_ready import make_ready
+
 ROOT = Path(__file__).resolve().parent.parent
 needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs ffmpeg")
 
@@ -309,6 +311,9 @@ def test_library_sets_and_plans_over_http(tmp_path):
         assert full["plan"]["to_id"] == "S1"
         assert plans[0]["from_name"] and plans[0]["to_name"]
         # this one is too sparse for a plan's checks: the live engine isn't handed it (a good one: the engine's browser test)
+        other = Library.open(tmp_path / "data" / "lib.sqlite3")
+        make_ready(other, plans[0]["from_hash"], plans[0]["to_hash"])  # else it's refused before that (#99)
+        other.close()
         assert client.request("GET", f"/api/mixes/plans/{plans[0]['from_hash']}/{plans[0]['to_hash']}/live")[0] == 422
         assert client.request("GET", "/api/mixes/plans/none/none/live")[0] == 404
     finally:
@@ -479,6 +484,7 @@ def test_the_editor_saves_and_resets_a_plan_over_the_api(tmp_path, monkeypatch):
     a = lib.add_file(_mp3(tmp_path / "a.mp3", 330))["hash"]
     b = lib.add_file(_mp3(tmp_path / "b.mp3", 550))["hash"]
     lib.put_plan(a, b, _edit_plan(a, b), user_edited=False)
+    make_ready(lib, a, b)
     lib.close()
 
     handle = start_server(tmp_path / "nodist", port=0)

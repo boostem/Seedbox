@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from seedbox2.analysis import vibe
 from seedbox2.library import Library
+from seedbox2.library.ready import NotReady
 from seedbox2.server.app import create_app
 from seedbox2.sets import TEMPLATES, OrderRequest, Problem, TrackFeatures, order_tracks
 from seedbox2.sets.cost import Weights, group_bands
@@ -16,10 +17,13 @@ from seedbox2.sets.longset import (
     SourceError,
     bridges,
     build_long_set,
+    explain_hashes,
     links_between,
     quotas,
     walk,
 )
+
+from .s2_ready import make_ready
 
 FLAT = TEMPLATES["flat"]
 
@@ -122,14 +126,6 @@ def test_a_walk_follows_the_arc_and_stays_in_key():
     assert max(steps) < 3  # no clash
 
 
-def test_a_walk_prefers_analysed_tracks():
-    pool = [track(f"bare{i}", bpm=None, key=None, energy=None) for i in range(10)] + [track(f"known{i}") for i in range(5)]
-    picked = walk(pool, 3, [0.5] * 3, None, before=None, weights=Weights(), detail=lambda _t: None, energy_range=(0.0, 1.0))
-    assert all(t.hash.startswith("known") for t in picked)
-    all_of_them = walk(pool, 12, [0.5] * 12, None, before=None, weights=Weights(), detail=lambda _t: None, energy_range=(0.0, 1.0))
-    assert len(all_of_them) == 12  # not enough analysed: it takes what there is
-
-
 # --- links -----------------------------------------------------------------------------------------------------------
 
 
@@ -168,6 +164,7 @@ def add(lib: Library, name: str, bpm: float, key: str, energy: float) -> str:
     lib.put_analysis(h, "key", "1", {"camelot": key, "key": "x", "open_key": "y"})
     lib.put_analysis(h, "energy", vibe.energy.VERSION, {"energy": energy, "rating": round(energy * 9) + 1, "bar_s": [0.0, 120.0, 240.0],
                                                         "curve": [energy, energy]})  # fmt: skip
+    make_ready(lib, h)
     return h
 
 
@@ -243,6 +240,31 @@ def test_the_library_adds_what_a_crate_doesnt_have(lib):
     result = build_long_set(lib, [{"kind": "crate", "id": a}, {"kind": "library"}], max_tracks=4)
     assert len(result["order"]) == 4 and set(ah) <= set(names(result))
     assert [s["picked"] for s in result["sources"]] == [2, 2]
+
+
+def test_the_library_gives_its_ready_tracks_only(lib):
+    a, ah = crate(lib, "a", ["8A", "9A"])
+    for i in range(3):
+        add(lib, f"more{i}", 125, "9A", 0.5)
+    waiting = "waiting".ljust(40, "0")
+    lib.upsert_track(waiting, 240.0, title="waiting", artist="Someone")
+    lib.put_analysis(waiting, "beats", "1", {"bpm": 125.0})  # tempo, but not the rest yet (#99)
+    result = build_long_set(lib, [{"kind": "crate", "id": a}, {"kind": "library"}], max_tracks=10)
+    assert "waiting" not in names(result) and len(result["order"]) == 5
+
+
+def test_a_crate_with_a_track_that_isnt_ready_is_refused(lib):
+    a, ah = crate(lib, "a", ["8A", "9A"])
+    waiting = "waiting".ljust(40, "0")
+    lib.upsert_track(waiting, 240.0, title="waiting", artist="Someone")
+    lib.add_to_crate(a, [waiting])
+    with pytest.raises(NotReady) as e:
+        build_long_set(lib, [{"kind": "crate", "id": a}])
+    assert [t["hash"] for t in e.value.tracks] == [waiting] and "beats" in e.value.tracks[0]["missing"]
+    with pytest.raises(NotReady):
+        bridges(lib, [{"kind": "crate", "id": a}])
+    with pytest.raises(NotReady):
+        explain_hashes(lib, [*ah, waiting])
 
 
 def test_crates_too_large_for_the_limit_are_shortened_not_refused(lib):

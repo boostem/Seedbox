@@ -49,7 +49,7 @@ describe("BridgePanel", () => {
     expect(await screen.findByText("Fits")).toBeTruthy();
     expect(sets.bridge).toHaveBeenCalledWith(1, 2, expect.anything());
     expect(screen.getByText(/Look for a 124 BPM 9A track/)).toBeTruthy();
-    expect(screen.getByText("2 more tracks wait for their tempo or key.")).toBeTruthy();
+    expect(screen.getByText("2 more tracks aren't ready to mix yet.")).toBeTruthy();
   });
 
   it("adds a track between the two neighbours", async () => {

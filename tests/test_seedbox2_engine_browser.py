@@ -22,6 +22,8 @@ from seedbox2.bench import frontend
 from seedbox2.library import Library
 from seedbox2.mix import plan as v3
 
+from .s2_ready import make_ready
+
 SR = 44100
 BPM = 120.0
 DIST = frontend.DIST
@@ -189,6 +191,7 @@ def test_the_mixes_page_scrubs_loops_and_takes_edits_while_it_plays(tmp_path, mo
         path.parent.mkdir(parents=True, exist_ok=True)
         wf.write(wf.compute(tmp_path / name), path)
         lib.put_artifact(hash_, wf.ARTIFACT_KIND, wf.MODEL_VERSION, path)
+    make_ready(lib, a, b)  # the live engine is only handed plans of ready tracks (#99)
     lib.close()
 
     # the page's engine, seen from outside: the worklet's reports, and a meter on its output

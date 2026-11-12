@@ -40,6 +40,21 @@ def track(hash_: str, lib: LibraryDep) -> dict:
     return {**t, "analyses": lib.analyses(hash_), "artifacts": lib.artifacts(hash_)}
 
 
+class UseAnyway(BaseModel):
+    use_anyway: bool
+
+
+@router.put("/tracks/{hash_}/use-anyway")
+def use_anyway(hash_: str, body: UseAnyway, lib: LibraryDep) -> dict:
+    """The user's "use anyway" (#99): a track whose analysis failed may go into sets and mixes all the same (or, False,
+    no longer). It doesn't make a track still being analysed usable. The track's library row comes back."""
+    from seedbox2.library import ready
+
+    if not lib.set_use_anyway(hash_, body.use_anyway):
+        raise HTTPException(404, "no such track")
+    return ready.rows(lib, [hash_])[0]
+
+
 @router.get("/crates")
 def crates(lib: LibraryDep) -> list[dict]:
     return lib.crates()
@@ -212,11 +227,9 @@ def choose(body: ChooseBody) -> dict:
 
 
 def _stems_required(lib: Any) -> bool:
-    """Whether a ready track needs its stems: not when stems are off in the settings."""
-    from seedbox2.analysis import stems
-    from seedbox2.library.service import SETTINGS_FILE, Settings
+    from seedbox2.library import ready
 
-    return stems.read_settings(Settings(Path(lib.db.path).parent / SETTINGS_FILE))["enabled"]
+    return ready.stems_required(lib)
 
 
 @router.get("/view")

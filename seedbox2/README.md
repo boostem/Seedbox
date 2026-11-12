@@ -576,6 +576,15 @@ longer blends (48-64 bars) for house and techno. The A/B (#94) tells whether tha
 keys, tempos and energies count as unknown here (the genre tag is the exception: no analysis gives one), so imported
 tracks order as well as any once they're analysed.
 
+**Ready tracks only** (#99, `seedbox2/library/ready.py`): adding to a set, ordering, building, bridges, the timeline and
+set plan, the pair-plan jobs, the now-playing session and export only take tracks whose analysis is finished
+(`status.ready` in the library view), and answer 409 `{message, tracks: [{hash, title, artist, state, missing}]}` for the
+others rather than mix them on guesses. A failed track can be used anyway: kept with the track
+(`PUT /library/tracks/{hash}/use-anyway`, `status.use_anyway`) or sent with one request (`use_anyway`: hashes); one whose
+analysis is still queued or running waits either way. `status.usable` says which tracks may go in. Building from the
+whole library and the bridge search draw from usable tracks; the assistant only sees them. Playing one track is
+always allowed.
+
 - **Cost** (`cost.py`, one unit is about one uncomfortable move): Camelot moves, where a clash costs 3 and a track can be
   played a semitone up or down for 1.5 (the shift stays on for the whole track, so a Viterbi pass picks them per order;
   it's a mix plan's `key_shift`); tempo distance, also at half or double time, which barely counts under 5 % and is a

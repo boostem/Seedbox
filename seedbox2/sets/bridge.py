@@ -256,14 +256,18 @@ def _intro_seconds(lib: Any, hash_: str) -> float | None:
 
 def search_library(lib: Any, index: vibe.Index, gap: Gap, exclude: Iterable[str], limit: int = DEFAULT_LIMIT,
                    weights: Weights | None = None) -> dict:  # fmt: skip
-    """`{gap, want, results, candidates, unanalysed}`: the analysed tracks outside the set that do better than the gap,
-    best first."""
+    """`{gap, want, results, candidates, unanalysed}`: the tracks outside the set that do better than the gap, best
+    first. Only tracks that may go into a set are candidates (#99, `seedbox2.library.ready`); `unanalysed` counts the
+    others, still being analysed or failed."""
+    from seedbox2.library import ready
+
     skip = set(exclude)
-    rows = [r for r in lib.view_rows() if r["hash"] not in skip]
-    usable = [r for r in rows if r.get("bpm") and r.get("bpm_from") == "analysis" and r.get("key_from") in OURS
+    rows = [r for r in ready.rows(lib) if r["hash"] not in skip]
+    ok = [r for r in rows if r["status"].get("usable")]
+    usable = [r for r in ok if r.get("bpm") and r.get("bpm_from") == "analysis" and r.get("key_from") in OURS
               and key_index(r.get("key")) != UNKNOWN_KEY]  # fmt: skip
     out = {"gap": _gap_json(gap), "want": wanted(gap), "results": [], "candidates": len(usable),
-           "unanalysed": len(rows) - len(usable)}  # fmt: skip
+           "unanalysed": len(rows) - len(ok)}  # fmt: skip
     if not usable:
         return out
 
