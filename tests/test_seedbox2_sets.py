@@ -37,6 +37,8 @@ from seedbox2.sets.cost import (
 from seedbox2.sets.features import load_features, vocal_share
 from seedbox2.sets.solver import SolverError
 
+from .s2_ready import make_ready
+
 FLAT = TEMPLATES["flat"]
 ONLY_KEY = Weights(tempo=0, tempo_breach=0, tempo_unknown=0, half_time=0, journey=0, energy_level=0, energy_step=0, vibe=0,
                    vibe_unknown=0, vocal_run=0, genre=0)  # fmt: skip
@@ -504,6 +506,7 @@ def seed_library(lib: Library, n: int = 5) -> list[str]:
         lib.put_analysis(h, "key", "1", {"camelot": f"{i + 1}A", "key": "A minor", "open_key": "1m"})
         lib.put_analysis(h, "energy", "1", {"energy": i / 9, "rating": i + 1})
         hashes.append(h)
+    make_ready(lib, *hashes)
     return hashes
 
 
@@ -631,6 +634,7 @@ def _analysed(library: Library, name: str, bpm: float = 124.0, duration: float =
         "bar_s": bars, "curve": [min(1.0, i / 20, (n - i) / 20) for i in range(n)], "features": {"bass": [0.8] * n},
         "rating": 5, "energy": 0.4,
     })  # fmt: skip
+    make_ready(library, hash_)
     return hash_
 
 

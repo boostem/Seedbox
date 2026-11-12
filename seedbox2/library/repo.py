@@ -177,12 +177,19 @@ class Library:
         for per_track in jobs.values():  # done jobs say nothing the artifacts and analyses don't
             for kind in [k for k, j in per_track.items() if j["state"] == "done"]:
                 del per_track[kind]
-        tracks = _rows(r.execute(f"SELECT hash, duration, title, artist, album, tags, source, added_at FROM tracks "
+        tracks = _rows(r.execute(f"SELECT hash, duration, title, artist, album, tags, source, added_at, use_anyway "
+                                 f"FROM tracks "
                                  f"WHERE 1{in_} ORDER BY artist COLLATE NOCASE, title COLLATE NOCASE, hash", args))  # fmt: skip
         return [view.describe(t, analyses=analyses.get(t["hash"]), artifacts=artifacts.get(t["hash"], ()),
                               jobs=jobs.get(t["hash"]), waveform_version=waveform_version,
                               finished=finished.get(t["hash"], ()), stems_required=stems_required)
                 for t in tracks]  # fmt: skip
+
+    def set_use_anyway(self, hash_: str, use: bool) -> bool:
+        """The user's "use anyway" for a track whose analysis failed (`seedbox2.library.ready`). False if there is no
+        such track."""
+        with self.db.write() as c:
+            return c.execute("UPDATE tracks SET use_anyway = ? WHERE hash = ?", (int(use), hash_)).rowcount > 0
 
     def track_count(self) -> int:
         return self.db.read().execute("SELECT count(*) FROM tracks").fetchone()[0]

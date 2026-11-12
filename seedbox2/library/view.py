@@ -14,6 +14,9 @@ its current version: beats, key, energy, sections, vocals and the waveform, plus
 settings (then the mix falls back on EQ). `missing` names the ones it lacks, in that order; a required analysis whose
 latest job failed is missing even if an older run left data.
 
+Usable (`usable`, #99): what sets, mixes and exports take (`seedbox2.library.ready`). A ready track, or a failed one
+(nothing of it queued or running any more) that the user said to use anyway (`use_anyway`, kept with the track).
+
 Status (`state`): `analysing` while one of its jobs runs, `queued` while one waits, `failed` if the latest run of a
 job failed, `done` once it is ready and nothing is pending, else `new`. "Not analysed yet" is every state but
 `done`.
@@ -217,10 +220,13 @@ def describe(track: dict, *, analyses: dict[str, dict] | None = None, artifacts:
     else:
         state = "new" if missing else "done"
     stems_job = jobs.get("stems")
+    use_anyway = bool(track.get("use_anyway"))
     row["status"] = {
         "state": state,
         "ready": not missing,
         "missing": missing,
+        "use_anyway": use_anyway,
+        "usable": not missing or (use_anyway and state == "failed"),
         "waveform": waveform,
         "stems": True if stems else (stems_job["state"] if stems_job and stems_job["state"] in _STEMS_PENDING else False),
         "stems_progress": stems_job.get("progress") if stems_job and stems_job["state"] == "running" else None,

@@ -1,6 +1,9 @@
 """Long sets (#62): a set built from several crates and sets, or from the whole library, in the order they're given; the
 best links from the end of one crate to the start of another; and #64's search for a gap, before the set is saved.
 
+Only tracks that may go into a set are taken (#99, `seedbox2.library.ready`): a crate, set or list of tracks with one that
+isn't ready is refused (`NotReady`), and the library gives its usable tracks only.
+
 Everything is scored by `cost.py`, so these say the same as the set they end up in. A library is far too large for
 `Problem`'s n x n tables, so it's narrowed first with key, tempo and arc alone (`_Pool`, one row of numbers per track), and
 only a shortlist has its embeddings read and goes through `Problem`.
@@ -14,6 +17,7 @@ from typing import Any
 
 import numpy as np
 
+from seedbox2.library import ready
 from seedbox2.sets import bridge
 from seedbox2.sets.arcs import TEMPLATES, arc_from
 from seedbox2.sets.cost import (
@@ -117,9 +121,8 @@ def walk(tracks: Sequence[TrackFeatures], count: int, levels: Sequence[float], t
          energy_range: tuple[float, float]) -> list[TrackFeatures]:  # fmt: skip
     """`count` of these tracks, picked one at a time along the arc (`levels`) and the journey (`targets`), each the best to
     follow the last. Greedy: the solver puts them in order afterwards, so this only has to pick tracks that can go together.
-    Analysed tracks only, unless there aren't enough."""
-    analysed = [t for t in tracks if t.bpm and t.camelot]
-    pool = _Pool(analysed if len(analysed) >= count else tracks, weights, *energy_range)
+    The tracks are ready ones (`build_long_set` sees to it), so they have their key, tempo and energy."""
+    pool = _Pool(tracks, weights, *energy_range)
     used = np.zeros(len(pool.tracks), bool)
     out: list[TrackFeatures] = []
     last = before
@@ -177,9 +180,10 @@ def _detail_once(lib: Any) -> Callable[[TrackFeatures], None]:
     return detail
 
 
-def _pools(sources: Sequence[Source], features: dict[str, TrackFeatures]) -> list[list[TrackFeatures]]:
+def _pools(sources: Sequence[Source], features: dict[str, TrackFeatures],
+           usable: set[str] | None = None) -> list[list[TrackFeatures]]:  # fmt: skip
     """Each source's tracks that exist, once each across all of them: a track belongs to the first crate that has it, and
-    the library is what no crate has (in hash order, so the same library always gives the same set)."""
+    the library is what no crate has (in hash order, so the same library always gives the same set) and is `usable`."""
     seen: set[str] = set()
     pools: list[list[TrackFeatures]] = []
     for s in sources:
@@ -188,24 +192,26 @@ def _pools(sources: Sequence[Source], features: dict[str, TrackFeatures]) -> lis
         pools.append([features[h] for h in fresh])
     for s, pool in zip(sources, pools, strict=True):
         if s.kind == "library":
-            fresh = [h for h in sorted(features) if h not in seen]
+            fresh = [h for h in sorted(features) if h not in seen and (usable is None or h in usable)]
             seen.update(fresh)
             pool.extend(features[h] for h in fresh)
     return pools
 
 
 def build_long_set(lib: Any, specs: Sequence[dict], request: OrderRequest | None = None, *, max_tracks: int | None = None,
-                   keep_order: bool = True) -> dict:  # fmt: skip
+                   keep_order: bool = True, use_anyway: Sequence[str] = ()) -> dict:  # fmt: skip
     """The best order found for these sources, nothing saved: `order_tracks`' answer, each track with the `source` it came
-    from, and `sources`, `left_out` and `moved` (tracks playing outside their source's share)."""
+    from, and `sources`, `left_out` and `moved` (tracks playing outside their source's share). NotReady if a crate or set
+    has a track that isn't ready; the library gives its usable tracks only."""
     request = request or OrderRequest()
     if not specs:
         raise SolverError("a long set needs a crate, a set or the library")
     sources = resolve_sources(lib, specs)
+    ready.require(lib, [h for s in sources for h in s.hashes], use_anyway)
     has_library = any(s.kind == "library" for s in sources)
     features = load_features(lib, None if has_library else {h for s in sources for h in s.hashes}, detail=False)
 
-    pools = _pools(sources, features)
+    pools = _pools(sources, features, ready.usable_hashes(lib, use_anyway) if has_library else None)
 
     sizes = [len(p) for p in pools]
     named_tracks = sum(n for n, s in zip(sizes, sources, strict=True) if s.kind != "library")
@@ -247,17 +253,19 @@ def build_long_set(lib: Any, specs: Sequence[dict], request: OrderRequest | None
             "left_out": sum(sizes) - total, "moved": moved}  # fmt: skip
 
 
-def _tracks_of(lib: Any, hashes: Sequence[str]) -> list[TrackFeatures]:
+def _tracks_of(lib: Any, hashes: Sequence[str], use_anyway: Sequence[str] = ()) -> list[TrackFeatures]:
     features = load_features(lib, set(hashes))
     missing = [h for h in hashes if h not in features]
     if missing:
         raise SourceError(f"no such track: {missing[0]}")
+    ready.require(lib, hashes, use_anyway)
     return [features[h] for h in hashes]
 
 
-def explain_hashes(lib: Any, hashes: Sequence[str], request: OrderRequest | None = None) -> dict:
-    """These tracks in this order, explained: a built set after a track was put into it."""
-    return evaluate_tracks(_tracks_of(lib, hashes), request)
+def explain_hashes(lib: Any, hashes: Sequence[str], request: OrderRequest | None = None,
+                   use_anyway: Sequence[str] = ()) -> dict:  # fmt: skip
+    """These tracks in this order, explained: a built set after a track was put into it. NotReady if one isn't ready."""
+    return evaluate_tracks(_tracks_of(lib, hashes, use_anyway), request)
 
 
 # --- bridges --------------------------------------------------------------------------------------------------------
@@ -309,11 +317,12 @@ def links_between(tracks: Sequence[TrackFeatures], edges: Sequence[tuple[Sequenc
     return out
 
 
-def bridges(lib: Any, specs: Sequence[dict], *, edge: int = EDGE) -> dict:
+def bridges(lib: Any, specs: Sequence[dict], *, edge: int = EDGE, use_anyway: Sequence[str] = ()) -> dict:
     """How the end of each crate or set mixes into the start of each other one. The library has no end or start, so it
-    has no links. A crate's end is its last tracks as it stands."""
+    has no links. A crate's end is its last tracks as it stands. NotReady if a crate or set has a track that isn't ready."""
     sources = resolve_sources(lib, specs)
     named = [(s, g) for g, s in enumerate(sources) if s.kind != "library"]
+    ready.require(lib, [h for s, _ in named for h in s.hashes], use_anyway)
     edges = [(s.hashes[:edge], s.hashes[-edge:]) for s, _ in named]
     features = load_features(lib, {h for pair in edges for side in pair for h in side})
     edges = [tuple([h for h in side if h in features] for side in pair) for pair in edges]
@@ -327,7 +336,8 @@ def bridges(lib: Any, specs: Sequence[dict], *, edge: int = EDGE) -> dict:
 
 
 def find_bridges(lib: Any, index: Any, hashes: Sequence[str], position: int, request: OrderRequest | None = None,
-                 limit: int = bridge.DEFAULT_LIMIT) -> dict:  # fmt: skip
-    """#64's search of the library for a gap, for a set that isn't saved yet, so it has no id. Its own tracks are left out."""
-    tracks = _tracks_of(lib, hashes)
+                 limit: int = bridge.DEFAULT_LIMIT, use_anyway: Sequence[str] = ()) -> dict:  # fmt: skip
+    """#64's search of the library for a gap, for a set that isn't saved yet, so it has no id. Its own tracks are left out.
+    NotReady if one of them isn't ready."""
+    tracks = _tracks_of(lib, hashes, use_anyway)
     return bridge.search_library(lib, index, bridge.find_gap(tracks, request or OrderRequest(), position), hashes, limit)

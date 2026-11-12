@@ -4,11 +4,12 @@ here renders audio to listen to: the server renders for export only (#70)."""
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from seedbox2.library import ready
 from seedbox2.library.service import SETTINGS_FILE, Settings
 from seedbox2.mix import convert, genre, styles
 from seedbox2.mix import plan as v3
@@ -64,11 +65,17 @@ def plan(from_hash: str, to_hash: str, lib: LibraryDep) -> dict:
 
 
 @router.get("/plans/{from_hash}/{to_hash}/live")
-def live_plan(from_hash: str, to_hash: str, lib: LibraryDep) -> dict:
-    """The pair's plan as v3 with the decks on these hashes, for the live engine, whichever version wrote it."""
+def live_plan(from_hash: str, to_hash: str, lib: LibraryDep,
+              use_anyway: Annotated[list[str], Query(max_length=1000)] = []) -> dict:  # noqa: B006
+    """The pair's plan as v3 with the decks on these hashes, for the live engine, whichever version wrote it. 409
+    `{message, tracks}` if one of them isn't ready (#99, `seedbox2.library.ready`): it would mix on guesses."""
     p = lib.plan(from_hash, to_hash)
     if p is None:
         raise HTTPException(404, "no saved plan for this pair")
+    try:
+        ready.require(lib, [from_hash, to_hash], use_anyway)
+    except ready.NotReady as e:
+        raise HTTPException(409, e.detail()) from None
     try:
         plan = convert.load(p["plan"], from_track=from_hash, to_track=to_hash)
     except ValueError as e:

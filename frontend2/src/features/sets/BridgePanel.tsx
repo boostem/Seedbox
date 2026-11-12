@@ -135,7 +135,7 @@ export function BridgePanel({ setId, position, onInserted }: BridgePanelProps) {
       ) : (
         <p className="text-xs text-fg-subtle">Nothing in the library does better than this transition.</p>
       )}
-      {library.unanalysed > 0 && <p className="text-xs text-fg-subtle">{library.unanalysed} more tracks wait for their tempo or key.</p>}
+      {library.unanalysed > 0 && <p className="text-xs text-fg-subtle">{library.unanalysed} more tracks aren't ready to mix yet.</p>}
 
       {online ? (
         <>

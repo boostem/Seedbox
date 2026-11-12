@@ -156,7 +156,12 @@ _V4 = """
 ALTER TABLE plans ADD COLUMN auto_plan TEXT;
 """
 
-MIGRATIONS: list[Migration] = [_V1, _V2, _V3, _V4]
+# v5 (#99): the user's "use anyway" for a track whose analysis failed: it may go into sets and mixes all the same
+_V5 = """
+ALTER TABLE tracks ADD COLUMN use_anyway INTEGER NOT NULL DEFAULT 0;
+"""
+
+MIGRATIONS: list[Migration] = [_V1, _V2, _V3, _V4, _V5]
 SCHEMA_VERSION = len(MIGRATIONS)
 
 

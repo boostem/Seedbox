@@ -17,6 +17,8 @@ from seedbox2.sets.bridge import bridge_keys, find_gap, rank_online, wanted
 from seedbox2.sets.cost import key_index, key_step
 from seedbox2.sets.explain import GAP_SCORE, score_of
 
+from .s2_ready import make_ready
+
 
 def unit(*values: float) -> np.ndarray:
     v = np.zeros(vibe.clap.DIM, np.float32)
@@ -131,7 +133,9 @@ class Fixture:
         self.lib.close()
 
     def add(self, h: str, *, bpm: float | None = None, camelot: str | None = None, energy: float | None = None,
-            vec: np.ndarray | None = None, intro_bars: int = 0, title: str | None = None, artist: str = "") -> str:  # fmt: skip
+            vec: np.ndarray | None = None, intro_bars: int = 0, title: str | None = None, artist: str = "",
+            ready: bool | None = None) -> str:  # fmt: skip
+        """`ready` (#99), by default once it has a tempo and a key."""
         h = h.ljust(40, "0")
         self.lib.upsert_track(h, 400.0, title=title or h[:4], artist=artist, tags={})
         if bpm is not None:
@@ -149,6 +153,8 @@ class Fixture:
             windows = [{"name": n, "start_s": 0.0} for n in ("intro", "main", "outro")]
             vibe.write_embeddings(path, windows, np.stack([vec, vec, vec]))
             self.lib.put_artifact(h, vibe.ARTIFACT_KIND, vibe.model_version(), path)
+        if ready if ready is not None else bpm is not None and camelot is not None:
+            make_ready(self.lib, h)
         return h
 
     def gap_set(self, a_key: str = "8A", b_key: str = "10A", a_bpm: float = 120.0, b_bpm: float = 130.0) -> tuple[int, str, str]:

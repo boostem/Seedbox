@@ -26,6 +26,8 @@ from seedbox2.sets import TEMPLATES, OrderRequest, Problem, TrackFeatures
 from seedbox2.sets.explain import plan_words, why
 from seedbox2.sets.service import add_mix_plans, order_tracks
 
+from .s2_ready import make_ready
+
 MODEL = "claude-sonnet-5-5"
 SECRET = "sk-ant-test-do-not-send"
 
@@ -75,6 +77,7 @@ def seed(lib: Library, n: int = 6) -> list[str]:
         lib.put_analysis(h, "energy", "1", {"energy": i / 9, "rating": i + 1})
         lib.put_analysis(h, "vocals", "1", {"active": "1111" if i == 5 else "0000"})
         hashes.append(h)
+    make_ready(lib, *hashes)
     return hashes
 
 
@@ -277,13 +280,15 @@ def test_search_filters_on_our_analysis(lib):
     assert found["matched"] == 6 and len(found["tracks"]) == 2
 
 
-def test_a_tags_guess_isnt_our_analysis(tmp_path):
+def test_a_track_that_isnt_ready_isnt_offered(tmp_path):
     lib = Library.open(tmp_path / "l.sqlite3")
     lib.upsert_track("a" * 40, 200.0, title="Tagged", tags={"file": {"bpm": 128, "key": "8A"}, "tunebat": {"energy": 7}})
-    s = Session(lib)
-    track = s.search_library({})["tracks"][0]
+    s = Session(lib)  # tags only, no analysis: not ready (#99), so the assistant can't put it in a set
+    assert s.search_library({})["matched"] == 0
+    assert s.scope_summary()["tracks"] == 0 and s.scope_summary()["not_ready_left_out"] == 1
+    make_ready(lib, "a" * 40)  # ready, with our analysis empty: the tags' guesses still don't count
+    track = Session(lib).search_library({})["tracks"][0]
     assert "bpm" not in track and "key" not in track and "energy" not in track
-    assert s.search_library({"bpm_min": 100})["matched"] == 0
     lib.close()
 
 

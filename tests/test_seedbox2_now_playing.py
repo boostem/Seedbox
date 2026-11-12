@@ -20,6 +20,7 @@ from seedbox2.mix import plan as v3
 from seedbox2.server.routers.sets import set_session
 
 from .fixtures import PAIRS, analysis, track
+from .s2_ready import make_ready
 
 
 def _kf(value: float) -> dict:
@@ -40,6 +41,7 @@ def _library(tmp_path) -> tuple[Library, int]:
     lib = Library.open(tmp_path / "library.sqlite3")
     for h, title in (("a" * 40, "One"), ("b" * 40, "Two"), ("c" * 40, "Three")):
         lib.upsert_track(h, 240.0, title=title, artist="Someone")
+    make_ready(lib)
     return lib, lib.save_set("Friday", ["a" * 40, "b" * 40, "c" * 40])
 
 
@@ -60,7 +62,8 @@ def test_session_has_the_tracks_in_order_with_what_is_known_and_each_pairs_plan(
     assert one["grid"] == {"bpm": 126.0, "first_downbeat_s": 0.25, "beats_per_bar": 4, "segments": []}
     assert one["phrases"] == []
     assert one["integrated_lufs"] == -9.5 and one["duration"] == 240.0
-    assert two["grid"] is None and two["integrated_lufs"] is None and two["sections"] == []
+    assert two["grid"] == dict.fromkeys(("bpm", "first_downbeat_s", "beats_per_bar", "segments"))  # an empty grid
+    assert two["integrated_lufs"] is None and two["sections"] == []
     assert two["phrases"] == [{"start_s": 0.5, "level": 32}, {"start_s": 61.0, "level": 8}]
     assert two["key"]["camelot"] is None
     assert len(s["plans"]) == 2
@@ -132,6 +135,7 @@ def test_a_set_plays_through_a_hand_off_without_a_gap(tmp_path, monkeypatch):
         added = lib.add_file(tmp_path / f"{name}.wav")
         lib.upsert_track(added["hash"], added["duration"], title=name)
         hashes.append(added["hash"])
+    make_ready(lib, *hashes)
     x, y, z = hashes
     # x -> y blends over beats 8-16, and the plan's window ends on 32, so y goes on to the next plan on about beat 24
     lib.put_plan(x, y, {"version": v3.PLAN_VERSION, "technique": "bass swap", "bars": 4, "window": {"start_beat": 0.0, "end_beat": 32.0},

@@ -471,6 +471,10 @@ export interface LibraryRow {
     ready: boolean;
     /** what it lacks, in that order (a failed one counts) */
     missing: string[];
+    /** the user said to use this failed track anyway (PUT /library/tracks/{hash}/use-anyway) */
+    use_anyway: boolean;
+    /** what sets, mixes and exports take: ready, or failed and use_anyway; the API answers 409 for the others */
+    usable: boolean;
     waveform: boolean;
     /** true once separated; else the stems job's state, or false if there is none */
     stems: boolean | "queued" | "running" | "failed";
@@ -703,7 +707,7 @@ export interface LibraryBridges {
   results: LibraryBridge[];
   /** Analysed tracks outside the set. */
   candidates: number;
-  /** Tracks outside the set that wait for their tempo or key. */
+  /** Tracks outside the set that aren't ready to mix (still being analysed, or failed). */
   unanalysed: number;
 }
 

@@ -17,6 +17,7 @@ earlier job's result always wins.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -98,10 +99,11 @@ def _failed_pairs(lib: Any) -> dict[tuple[str, str], str]:
 
 
 def timeline(lib: Any, hashes: list[str], jobs: Any = None, *, retry: bool = False,
-             picks: Any = None) -> dict:  # fmt: skip
+             picks: Any = None, use_anyway: Sequence[str] = ()) -> dict:  # fmt: skip
     """The running order `hashes` as the timeline draws it. With `jobs`, what's missing is queued: a pair's plan once both
     tracks have beats (the first thing a track gets), else those beats. `retry` tries a failed pair again. `picks()`
-    gives the set plan's pick per pair (`setplan.picks`), asked only when a pair is queued."""
+    gives the set plan's pick per pair (`setplan.picks`), asked only when a pair is queued. The caller has seen to it
+    that the tracks are ready (#99, `seedbox2.library.ready`); `use_anyway` goes to the jobs, which check again."""
     tracks = {h: track_view(lib, h) for h in set(hashes)}
     failed = _failed_pairs(lib)
     out = []
@@ -128,7 +130,9 @@ def timeline(lib: Any, hashes: list[str], jobs: Any = None, *, retry: bool = Fal
                     if chosen is None:
                         chosen = _picks(picks)
                     pick = chosen.get((a, b))
-                    jobs.submit(JOB, {"from": a, "to": b, **({"pick": pick} if pick else {})}, front=True)
+                    anyway = [h for h in (a, b) if h in use_anyway]
+                    jobs.submit(JOB, {"from": a, "to": b, **({"pick": pick} if pick else {}),
+                                      **({"use_anyway": anyway} if anyway else {})}, front=True)  # fmt: skip
         out.append(item)
     return {"tracks": [tracks[h] for h in hashes], "transitions": out}
 
@@ -247,12 +251,15 @@ def plan_pair(lib: Any, from_hash: str, to_hash: str, pick: dict | None = None) 
 
 @register(JOB, pool="light")
 def set_plan_job(payload: dict, ctx: Any) -> dict:
-    """Payload `{"from": hash, "to": hash, "pick"?: the set plan's pick}`: plans the pair and saves it, unless it has a
-    plan by now."""
+    """Payload `{"from": hash, "to": hash, "pick"?: the set plan's pick, "use_anyway"?: hashes}`: plans the pair and
+    saves it, unless it has a plan by now. Fails if a track isn't ready (#99): a plan on guesses would be a bad mix."""
+    from seedbox2.library import ready
+
     a, b = payload["from"], payload["to"]
     lib = ctx.library
     if lib.plan(a, b) is not None:
         return {"from": a, "to": b, "planned": False}
+    ready.require(lib, [a, b], payload.get("use_anyway") or ())
     pick = payload.get("pick")
     plan = plan_pair(lib, a, b, pick if isinstance(pick, dict) else None)
     lib.put_plan(a, b, plan.model_dump(), user_edited=False, source=PLAN_SOURCE)

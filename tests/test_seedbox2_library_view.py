@@ -16,6 +16,8 @@ from seedbox2.analysis import waveform as wf
 from seedbox2.library import Library, view
 from seedbox2.library.hashing import ContentHash
 
+from .s2_ready import make_ready
+
 
 @pytest.mark.parametrize(("key", "camelot"), [
     ("8A", "8A"), ("08a", "8A"), ("12B", "12B"), ("13A", None), ("Am", "8A"), ("A minor", "8A"), ("C", "8B"),
@@ -125,7 +127,7 @@ def test_view_rows_for_the_whole_library(lib, tmp_path):
     assert list(rows) == [a, b]
     assert (rows[a]["bpm"], rows[a]["bpm_from"], rows[a]["key"]) == (128.02, "analysis", "4A")
     assert rows[a]["status"] == {"state": "new", "ready": False, "missing": ["key", "energy", "sections", "vocals",
-                                 "stems"], "waveform": True, "stems": False, "stems_progress": None,
+                                 "stems"], "use_anyway": False, "usable": False, "waveform": True, "stems": False, "stems_progress": None,
                                  "analyses": ["beats"], "jobs": {}}  # fmt: skip
     assert rows[b]["status"]["state"] == "queued" and rows[b]["status"]["jobs"] == {"waveform": "queued"}
 
@@ -249,6 +251,11 @@ def test_the_library_view_api(tmp_path, monkeypatch):
 
         status, body, _ = _call(api + "/sets", "POST", {"name": "Friday"})
         set_id = json.loads(body)["id"]
+        status, body, _ = _call(api + f"/sets/{set_id}/tracks", "POST", {"hashes": [b, a]})  # not analysed (#99)
+        assert status == 409 and [t["hash"] for t in json.loads(body)["detail"]["tracks"]] == [b, a]
+        other = Library.open(tmp_path / "data" / "library.sqlite3")
+        make_ready(other, a, b)
+        other.close()
         assert json.loads(_call(api + f"/sets/{set_id}/tracks", "POST", {"hashes": [b, a]})[1])["hashes"] == [b, a]
         assert json.loads(_call(api + f"/sets/{set_id}/hashes")[1]) == {"hashes": [b, a]}
 

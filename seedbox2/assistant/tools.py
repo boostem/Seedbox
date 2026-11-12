@@ -113,7 +113,11 @@ class Session:
         to the text; it raises when CLAP can't answer."""
         self.lib = lib
         self.vibe = vibe
-        self.rows = {r["hash"]: r for r in lib.view_rows(hashes=scope)}
+        from seedbox2.library import ready
+
+        rows = ready.rows(lib, scope)  # the assistant builds sets: ready tracks only (#99)
+        self.rows = {r["hash"]: r for r in rows if r["status"].get("usable")}
+        self.not_ready = len(rows) - len(self.rows)
         self._ids: dict[str, str] = {}
         self._hashes: dict[str, str] = {}
         self._vocals: dict[str, float | None] = {}
@@ -169,7 +173,7 @@ class Session:
         rows = self.rows.values()
         bpms = sorted(r["bpm"] for r in rows if r.get("bpm_from") == "analysis" and r.get("bpm"))
         return {
-            "tracks": len(self.rows), "hours": round(sum(r.get("duration") or 0 for r in rows) / 3600, 1),
+            "tracks": len(self.rows), "not_ready_left_out": self.not_ready, "hours": round(sum(r.get("duration") or 0 for r in rows) / 3600, 1),
             "analysed": {"bpm": len(bpms), "key": sum(r.get("key_from") in ("analysis", "user") for r in rows),
                          "energy": sum(r.get("energy_from") == "analysis" for r in rows)},
             "bpm_range": [bpms[0], bpms[-1]] if bpms else None,

@@ -134,11 +134,15 @@ def _safe_name(name: str) -> str:
 
 @register(JOB, pool="heavy")
 def set_export_job(payload: dict, ctx: Any) -> dict:
-    """Payload `{"set_id", "hashes", "format", "target"}`. The result says where the files are and what they measure."""
+    """Payload `{"set_id", "hashes", "format", "target", "use_anyway"?}`. The result says where the files are and what
+    they measure. Fails if a track isn't ready (#99), as `POST /sets/{id}/export` refuses it."""
+    from seedbox2.library import ready
+
     ctx.release_sessions()  # a stems model this worker ran before would sit on the memory budget for a whole render
     lib = ctx.library
     fmt = setexport.FORMATS[payload["format"]]
     hashes = payload["hashes"]
+    ready.require(lib, hashes, payload.get("use_anyway") or ())
     check(lib, hashes)
     target_name = payload.get("target") or master_chain.target_name(ctx.settings)
     target_lufs = master_chain.TARGETS[target_name]

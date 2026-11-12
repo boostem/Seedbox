@@ -33,6 +33,12 @@ Long sets (#62), nothing saved until the result goes to `POST /sets`:
 - `POST /sets/bridges` with `sources`: the best link from the end of each to the start of each other.
 - `POST /sets/build/bridge` with `hashes`, `position`, `limit`: #64's library search for a gap in those tracks.
 
+Only ready tracks (#99, `seedbox2.library.ready`): adding tracks to a set, ordering, building, bridges, the timeline and
+the set plan, the now-playing session and export answer 409 `{message, tracks: [{hash, title, artist, state, missing}]}`
+when a track isn't ready, rather than mix it on guesses. Bodies take `use_anyway` (hashes): failed tracks to take all the
+same, for this request (`PUT /library/tracks/{hash}/use-anyway` keeps it with the track). Reading a set, its stems and
+its order as it stands still works, and so does playing one track (`/tracks`).
+
 Events: `stems.set` (`ready`, `ready_tracks`, `total`, `progress`) when a track of the set finishes, and `job.progress`
 (with the track's `hash`) while one runs.
 """
@@ -42,13 +48,14 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from pathlib import Path
-from typing import Any, Literal
+from collections.abc import Iterable
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from seedbox2.analysis import beats, energy, key, sections, stems, vibe
-from seedbox2.library import Library
+from seedbox2.library import Library, ready
 from seedbox2.mix import convert
 from seedbox2.mix import master as master_chain
 from seedbox2.mix.setexport import FORMATS
@@ -70,6 +77,16 @@ from seedbox2.sets.timeline import timeline
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/sets", tags=["sets"])
+Anyway = Annotated[list[str], Field(max_length=1000)]  # failed tracks to take all the same (#99)
+AnywayQuery = Annotated[list[str], Query(max_length=1000)]  # the same, as `?use_anyway=hash&use_anyway=hash`
+
+
+def _require(lib: Library, hashes: list[str] | None, use_anyway: Iterable[str] = ()) -> None:
+    """409 with the tracks that aren't ready and what each is missing."""
+    try:
+        ready.require(lib, hashes or [], use_anyway)
+    except ready.NotReady as e:
+        raise HTTPException(409, e.detail()) from None
 
 
 @router.get("")
@@ -87,7 +104,9 @@ def build(body: BuildBody, lib: LibraryDep) -> dict:
     request = body.request()
     try:
         result = build_long_set(lib, [s.model_dump() for s in body.sources], request, max_tracks=body.max_tracks,
-                                keep_order=body.keep_order)  # fmt: skip
+                                keep_order=body.keep_order, use_anyway=body.use_anyway)  # fmt: skip
+    except ready.NotReady as e:
+        raise HTTPException(409, e.detail()) from None
     except SourceError as e:
         raise HTTPException(404, str(e)) from None
     except (ArcError, SolverError) as e:
@@ -99,7 +118,9 @@ def build(body: BuildBody, lib: LibraryDep) -> dict:
 def build_explain(body: ExplainBody, lib: LibraryDep) -> dict:
     request = body.request()
     try:
-        return {**explain_hashes(lib, body.hashes, request), "settings": _settings_out(request)}
+        return {**explain_hashes(lib, body.hashes, request, body.use_anyway), "settings": _settings_out(request)}
+    except ready.NotReady as e:
+        raise HTTPException(409, e.detail()) from None
     except SourceError as e:
         raise HTTPException(404, str(e)) from None
     except (ArcError, SolverError) as e:
@@ -109,7 +130,10 @@ def build_explain(body: ExplainBody, lib: LibraryDep) -> dict:
 @router.post("/build/bridge")
 def build_bridge(body: BuildBridgeBody, request: Request, lib: LibraryDep) -> dict[str, Any]:
     try:
-        return find_bridges(lib, vibe_index(request), body.hashes, body.position, body.request(), body.limit)
+        return find_bridges(lib, vibe_index(request), body.hashes, body.position, body.request(), body.limit,
+                            body.use_anyway)  # fmt: skip
+    except ready.NotReady as e:
+        raise HTTPException(409, e.detail()) from None
     except SourceError as e:
         raise HTTPException(404, str(e)) from None
     except (ArcError, SolverError, bridge.BridgeError) as e:
@@ -119,7 +143,9 @@ def build_bridge(body: BuildBridgeBody, request: Request, lib: LibraryDep) -> di
 @router.post("/bridges")
 def crate_bridges(body: BridgesBody, lib: LibraryDep) -> dict:
     try:
-        return bridges(lib, [s.model_dump() for s in body.sources])
+        return bridges(lib, [s.model_dump() for s in body.sources], use_anyway=body.use_anyway)
+    except ready.NotReady as e:
+        raise HTTPException(409, e.detail()) from None
     except SourceError as e:
         raise HTTPException(404, str(e)) from None
 
@@ -135,16 +161,19 @@ def one_set(set_id: int, lib: LibraryDep) -> dict:
 class NewSet(BaseModel):
     name: str
     hashes: list[str] = []
+    use_anyway: Anyway = []
 
 
 class HashesBody(BaseModel):
     hashes: list[str]
+    use_anyway: Anyway = []
 
 
 @router.post("", status_code=201)
 def new_set(body: NewSet, lib: LibraryDep) -> dict:
     if not body.name.strip():
         raise HTTPException(422, "a set needs a name")
+    _require(lib, body.hashes, body.use_anyway)
     set_id = lib.save_set(body.name.strip(), [])
     _add(lib, set_id, body.hashes)
     return lib.set(set_id)  # type: ignore[return-value]
@@ -152,7 +181,8 @@ def new_set(body: NewSet, lib: LibraryDep) -> dict:
 
 @router.post("/{set_id}/tracks")
 def add_tracks(set_id: int, body: HashesBody, lib: LibraryDep) -> dict:
-    """Append tracks to the end of the set (dragged onto it in the library)."""
+    """Append tracks to the end of the set (dragged onto it in the library). 409 if one isn't ready."""
+    _require(lib, body.hashes, body.use_anyway)
     return {"added": _add(lib, set_id, body.hashes), "hashes": lib.set_hashes(set_id)}
 
 
@@ -191,6 +221,7 @@ class OrderBody(BaseModel):
     tempo_end: float | None = None
     pins: list[Pin] = []
     note: str | None = Field(default=None, max_length=4000)  # the assistant's reasoning, kept with its set (#63)
+    use_anyway: Anyway = []
 
     def request(self) -> OrderRequest:
         return OrderRequest(arc=self.arc, tempo_start=self.tempo_start, tempo_end=self.tempo_end,
@@ -218,6 +249,7 @@ class ExplainBody(OrderBody):
 
 class BridgesBody(BaseModel):
     sources: list[SourceBody] = Field(min_length=1, max_length=50)
+    use_anyway: Anyway = []
 
 
 class BuildBridgeBody(ExplainBody):
@@ -243,6 +275,7 @@ def current_order(set_id: int, lib: LibraryDep) -> dict:
 @router.post("/{set_id}/order")
 def solve_order(set_id: int, body: OrderBody, lib: LibraryDep) -> dict:
     request = body.request()
+    _require(lib, lib.set_hashes(set_id), body.use_anyway)
     try:
         result = order_set(lib, set_id, request)
     except (ArcError, SolverError) as e:
@@ -259,6 +292,7 @@ def apply_order(set_id: int, body: ApplyOrderBody, lib: LibraryDep) -> dict:
         raise HTTPException(404, "no such set")
     if Counter(hashes) != Counter(body.hashes):
         raise HTTPException(409, "the set's tracks have changed: order it again")
+    _require(lib, hashes, body.use_anyway)
     request = body.request()
     if Counter((p["position"], p["hash"]) for p in request.pins) - Counter(enumerate(body.hashes)):
         raise HTTPException(422, "a pinned track isn't at its position in this order")
@@ -299,11 +333,12 @@ def _session_plan(lib: Library, from_hash: str, to_hash: str) -> dict | None:
 
 
 @router.get("/{set_id}/session")
-def set_session(set_id: int, lib: LibraryDep) -> dict:
+def set_session(set_id: int, lib: LibraryDep, use_anyway: AnywayQuery = []) -> dict:  # noqa: B006
     s = lib.set(set_id)
     hashes = lib.set_hashes(set_id)
     if s is None or hashes is None:
         raise HTTPException(404, "no such set")
+    _require(lib, hashes, use_anyway)
     tracks = [t for t in (_session_track(lib, h) for h in hashes) if t]
     return {
         "id": set_id, "name": s["name"], "tracks": tracks,
@@ -311,13 +346,14 @@ def set_session(set_id: int, lib: LibraryDep) -> dict:
     }  # fmt: skip
 
 
-def _gap(lib: Library, set_id: int, position: int) -> tuple[bridge.Gap, list[str]]:
+def _gap(lib: Library, set_id: int, position: int, use_anyway: list[str]) -> tuple[bridge.Gap, list[str]]:
     try:
         found = bridge.set_gap(lib, set_id, position)
     except (ArcError, SolverError, bridge.BridgeError) as e:
         raise HTTPException(422, str(e)) from None
     if found is None:
         raise HTTPException(404, "no such set")
+    _require(lib, [found[0].a.hash, found[0].b.hash], use_anyway)  # the two tracks either side of the gap
     return found
 
 
@@ -325,16 +361,18 @@ Limit = Query(default=bridge.DEFAULT_LIMIT, ge=1, le=50)
 
 
 @router.get("/{set_id}/bridge")
-def find_bridge(set_id: int, position: int, request: Request, lib: LibraryDep, limit: int = Limit) -> dict[str, Any]:
-    gap, hashes = _gap(lib, set_id, position)
+def find_bridge(set_id: int, position: int, request: Request, lib: LibraryDep, limit: int = Limit,
+                use_anyway: AnywayQuery = []) -> dict[str, Any]:  # fmt: skip
+    gap, hashes = _gap(lib, set_id, position, use_anyway)
     return bridge.search_library(lib, vibe_index(request), gap, hashes, limit)
 
 
 @router.get("/{set_id}/bridge/online")
-def find_bridge_online(set_id: int, position: int, lib: LibraryDep, tunebat: TunebatDep, limit: int = Limit) -> dict[str, Any]:
+def find_bridge_online(set_id: int, position: int, lib: LibraryDep, tunebat: TunebatDep, limit: int = Limit,
+                       use_anyway: AnywayQuery = []) -> dict[str, Any]:  # fmt: skip
     from seedbox2.library.tunebat_try import TunebatUnavailable
 
-    gap, _ = _gap(lib, set_id, position)
+    gap, _ = _gap(lib, set_id, position, use_anyway)
     try:
         return bridge.search_online(lib, tunebat, gap, limit)
     except TunebatUnavailable:
@@ -348,11 +386,13 @@ class InsertBridge(BaseModel):
     hash: str
     from_hash: str = Field(alias="from")
     to_hash: str = Field(alias="to")
+    use_anyway: Anyway = []
 
 
 @router.post("/{set_id}/bridge")
 def insert_bridge(set_id: int, body: InsertBridge, lib: LibraryDep) -> dict:
-    """The set with the track in it, explained as `GET /sets/{id}/order` does."""
+    """The set with the track in it, explained as `GET /sets/{id}/order` does. 409 if the track isn't ready."""
+    _require(lib, [body.hash], body.use_anyway)
     try:
         request = bridge.insert_bridge(lib, set_id, body.position, body.hash, body.from_hash, body.to_hash)
     except bridge.BridgeError as e:
@@ -365,6 +405,7 @@ def insert_bridge(set_id: int, body: InsertBridge, lib: LibraryDep) -> dict:
 class TimelineBody(BaseModel):
     hashes: list[str]
     retry: bool = False
+    use_anyway: Anyway = []
 
 
 @router.post("/{set_id}/timeline")
@@ -374,8 +415,9 @@ def set_timeline(set_id: int, body: TimelineBody, request: Request, lib: Library
         raise HTTPException(404, "no such set")
     if Counter(hashes) != Counter(body.hashes):
         raise HTTPException(409, "the set's tracks have changed")
+    _require(lib, hashes, body.use_anyway)
     order_request = request_from_settings(lib.set_order_settings(set_id))
-    return timeline(lib, body.hashes, get_jobs(request), retry=body.retry,
+    return timeline(lib, body.hashes, get_jobs(request), retry=body.retry, use_anyway=body.use_anyway,
                     picks=lambda: setplan.picks(lib, body.hashes, order_request))  # fmt: skip
 
 
@@ -395,6 +437,7 @@ def plan_set(set_id: int, body: SetPlanBody, lib: LibraryDep) -> dict:
     order = body.hashes if body.hashes is not None else hashes
     if Counter(hashes) != Counter(order):
         raise HTTPException(409, "the set's tracks have changed")
+    _require(lib, hashes, body.use_anyway)
     try:
         return setplan.plan_hashes(lib, order, body.request(), long_every=body.long_every, reorder=body.reorder,
                                    target_s=body.target_minutes * 60 if body.target_minutes else None,
@@ -406,6 +449,7 @@ def plan_set(set_id: int, body: SetPlanBody, lib: LibraryDep) -> dict:
 class ExportBody(BaseModel):
     format: Literal["wav", "flac", "mp3", "aac"]
     target: Literal["streaming", "club"] | None = None
+    use_anyway: Anyway = []
 
 
 def _export_jobs(lib: Library, set_id: int) -> list[dict]:
@@ -427,11 +471,14 @@ def export_set(set_id: int, body: ExportBody, lib: LibraryDep, jobs: JobsDep) ->
     if s is None:
         raise HTTPException(404, "no such set")
     hashes = lib.set_hashes(set_id)
+    _require(lib, hashes, body.use_anyway)
     try:
         set_export.check(lib, hashes)
     except set_export.NotReady as e:
         raise HTTPException(409, {"message": str(e), "pairs": e.pairs}) from None
-    return jobs.submit(set_export.JOB, {"set_id": set_id, "hashes": hashes, "format": body.format, "target": body.target, "name": s["name"]}, priority="set")
+    anyway = [h for h in dict.fromkeys(hashes or []) if h in body.use_anyway]
+    return jobs.submit(set_export.JOB, {"set_id": set_id, "hashes": hashes, "format": body.format, "target": body.target, "name": s["name"],
+                                        **({"use_anyway": anyway} if anyway else {})}, priority="set")  # fmt: skip
 
 
 def _add(lib: Library, set_id: int, hashes: list[str]) -> int:
