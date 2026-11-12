@@ -1,4 +1,4 @@
-/** The library's filters (#73): vibe text, BPM range, key compatible with X, energy, "not analysed yet". */
+/** The library's filters (#73): vibe text, BPM range, key compatible with X, energy, "not ready". */
 import { BookmarkPlus, Search, X } from "lucide-react";
 import { useState } from "react";
 import { Button, Input, Select } from "@/components/ui";
@@ -74,7 +74,7 @@ export function FilterBar({ filter: f, onChange, onSave }: FilterBarProps) {
         </Select>
       </div>
       <Chip on={f.unanalysed} onClick={() => set({ unanalysed: !f.unanalysed })}>
-        Not analysed yet
+        Not ready
       </Chip>
       {!empty && (
         <>

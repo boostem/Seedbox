@@ -63,10 +63,14 @@ describe("filterRows", () => {
     expect(filterRows(all, { ...EMPTY_FILTER, keyCompat: "2B" })).toEqual([techno]);
   });
 
-  it("filters energy on a 1-10 scale and the tracks not analysed yet", () => {
+  it("filters energy on a 1-10 scale and the tracks that aren't ready", () => {
     expect(filterRows(all, { ...EMPTY_FILTER, energyMin: 8 })).toEqual([dnb, techno]);
     expect(filterRows(all, { ...EMPTY_FILTER, energyMin: 5, energyMax: 8 })).toEqual([house, techno]);
     expect(filterRows(all, { ...EMPTY_FILTER, unanalysed: true })).toEqual([dnb, unknown]);
+    // ready but re-analysing (a newer analyser version) is still ready; failed is not
+    const busy = row({ state: "analysing", status: { ...house.status, state: "analysing", ready: true } });
+    const failed = row({ state: "failed" });
+    expect(filterRows([busy, failed], { ...EMPTY_FILTER, unanalysed: true })).toEqual([failed]);
   });
 
   it("narrows to a crate's tracks", () => {
@@ -75,7 +79,7 @@ describe("filterRows", () => {
 
   it("names the filters in use and reads stored ones back safely", () => {
     const f = { ...EMPTY_FILTER, text: "dub", bpmMin: 120, bpmMax: 124, keyCompat: "8A", energyMin: 6, unanalysed: true };
-    expect(activeFilters(f)).toEqual(["“dub”", "120-124 BPM", "fits 8A", "energy 6-10", "not analysed yet"]);
+    expect(activeFilters(f)).toEqual(["“dub”", "120-124 BPM", "fits 8A", "energy 6-10", "not ready"]);
     expect(cleanFilter(JSON.parse(JSON.stringify(f)) as Record<string, unknown>)).toEqual(f);
     expect(cleanFilter({ bpmMin: "fast", keyCompat: "13Z", extra: 1 })).toEqual(EMPTY_FILTER);
     expect(cleanFilter(null)).toEqual(EMPTY_FILTER);

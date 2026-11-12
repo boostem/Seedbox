@@ -230,7 +230,7 @@ def test_each_track_is_in_the_library_and_queued_as_soon_as_it_downloads(tmp_pat
                            complete_batch=pipeline.complete_batch, settings=settings)  # fmt: skip
     crates.open("seed")
     crates.download("seed", ["seed", "near", "far"])
-    wait_for(events, "done")
+    done = wait_for(events, "done")
     assert music.wait_idle(30)
 
     assert seen_mid_batch["rows"] == ["Seed Song"]  # track 1 has its row before tracks 2 and 3 are there
@@ -240,6 +240,9 @@ def test_each_track_is_in_the_library_and_queued_as_soon_as_it_downloads(tmp_pat
     assert sorted(r["title"] for r in rows) == ["Far", "Near", "Seed Song"]  # one row per track
     assert {r["source"] for r in rows} == {"seedbox1"}  # the folder import attached tunebat's crate data
     hashes = {r["hash"] for r in rows}
+    by_title = {r["title"]: r["hash"] for r in rows}  # each item says which track it became, to follow its analysis
+    assert {i["name"]: i["hash"] for i in done["items"]} == {"Seed Song": by_title["Seed Song"], "Near": by_title["Near"],
+                                                             "Far": by_title["Far"]}  # fmt: skip
     assert sorted(jobs.submitted) == sorted((k, h) for h in hashes for k in ("beats", "stems"))  # queued once each
     folder = root / "Artist - Seed Song"
     numbered = sorted(folder.glob("*.mp3"), key=lambda f: int(str(ID3(f)["TRCK"]).split("/")[0]))

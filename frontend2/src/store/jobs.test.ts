@@ -1,15 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { applyJobEvent, queuedByKind, queueEta, type RunningJob } from "./jobs";
+import { applyJobEvent, type JobsState, jobsByTrack, pendingTracks, queuedByKind, queueEta } from "./jobs";
 
-interface S {
-  running: Record<string, RunningJob>;
-  queued: Record<string, string>;
-  seconds: Record<string, number>;
-  pools: Record<string, string>;
-  workers: Record<string, number>;
-  pausedPools: string[];
-}
-const base = (): S => ({ running: {}, queued: {}, seconds: {}, pools: { waveform: "light", stems: "heavy" }, workers: { light: 2, heavy: 1 }, pausedPools: [] });
+type S = JobsState;
+const base = (): S => ({ running: {}, queued: {}, queuedHash: {}, seconds: {}, pools: { waveform: "light", stems: "heavy" }, workers: { light: 2, heavy: 1 }, pausedPools: [] });
 
 describe("the analysis queue", () => {
   it("follows jobs from queued to done and learns how long they take", () => {
@@ -53,5 +46,30 @@ describe("the analysis queue", () => {
     expect(queueEta({ ...s, queued: { e: "stems" }, pausedPools: ["heavy"] }, 0)).toBeNull(); // low-power mode: no end in sight
     // learnt times win over the defaults
     expect(queueEta({ ...s, queued: { e: "stems" }, seconds: { stems: 100 } }, 0)).toBe(100);
+  });
+
+  it("counts the tracks with work left, and notices when only stems are", () => {
+    let s = base();
+    const apply = (type: string, data: unknown) => {
+      s = { ...s, ...applyJobEvent(s, type, data, 0) };
+    };
+    expect(pendingTracks(s)).toEqual({ tracks: new Set(), stemsOnly: false, stemsProgress: null });
+    apply("job.queued", { id: "1", kind: "beats", payload: { hash: "a" } });
+    apply("job.queued", { id: "2", kind: "stems", payload: { hash: "a" } });
+    apply("job.queued", { id: "3", kind: "stems", payload: { hash: "b" } });
+    apply("job.queued", { id: "4", kind: "set_export", payload: { set_id: "s" } }); // about no track
+    expect(s.queuedHash).toEqual({ "1": "a", "2": "a", "3": "b" });
+    expect(pendingTracks(s)).toMatchObject({ tracks: new Set(["a", "b"]), stemsOnly: false });
+    apply("job.started", { id: "1", kind: "beats" }); // the hash comes from the queued event
+    expect(s.running["1"].hash).toBe("a");
+    expect(jobsByTrack(s).get("a")).toEqual({ running: [{ kind: "beats", progress: 0 }], queued: 1 });
+    apply("job.done", { id: "1", kind: "beats" });
+    apply("job.started", { id: "2", kind: "stems", payload: { hash: "a" } });
+    apply("job.progress", { id: "2", kind: "stems", progress: 0.4 });
+    expect(pendingTracks(s)).toEqual({ tracks: new Set(["a", "b"]), stemsOnly: true, stemsProgress: 0.4 });
+    apply("job.done", { id: "2", kind: "stems" });
+    apply("job.failed", { id: "3", kind: "stems" });
+    expect(pendingTracks(s).tracks.size).toBe(0);
+    expect(s.queuedHash).toEqual({});
   });
 });

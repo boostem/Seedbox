@@ -154,7 +154,7 @@ class TunebatCrates:
         job = {"id": uuid.uuid4().hex[:12], "seed_id": seed_id, "seed": seed.display_name,
                "folder": library.sanitize_filename(seed.display_name), "state": "queued", "error": None,
                "items": [{"id": t.id, "name": t.name, "artists": list(t.artists), "text": "queued", "status": None,
-                          "reason": None} for t in selected]}  # fmt: skip
+                          "reason": None, "hash": None} for t in selected]}  # fmt: skip
         cancel = threading.Event()
         with self._lock:
             self._jobs[job["id"]] = job
@@ -204,6 +204,13 @@ class TunebatCrates:
                         item["reason"] = reason
         self._emit(job)
 
+    def _set_hash(self, job: dict, track_id: str, hash_: str) -> None:
+        with self._lock:
+            for item in job["items"]:
+                if item["id"] == track_id:
+                    item["hash"] = hash_
+        self._emit(job)
+
     def _run(self, job: dict, seed: Any, recs: list[Any], scores: dict[str, Any], selected: list[Any],
              cancel: threading.Event) -> None:  # fmt: skip
         from musicreco import library
@@ -225,7 +232,7 @@ class TunebatCrates:
             def on_update(t: Any, text: str) -> None:  # from the download workers: the import waits its turn
                 self._item(job, t.id, text)
                 if text in HAVE_FILE:
-                    imports.submit(self._import_now, seed_dir, t)
+                    imports.submit(self._import_now, seed_dir, t, job)
 
             try:
                 results = self._run_batch(selected, seed, seed_dir, workers=int(settings.workers),
@@ -247,8 +254,9 @@ class TunebatCrates:
             log.exception("tunebat crate %s failed", job["folder"])
             self._set(job, state="failed", error=f"The download failed ({e}). Check the connection and try again.")
 
-    def _import_now(self, seed_dir: Path, t: Any) -> None:
-        """Import the file of a track that just finished, so it is in the library and analysing at once."""
+    def _import_now(self, seed_dir: Path, t: Any, job: dict | None = None) -> None:
+        """Import the file of a track that just finished, so it is in the library and analysing at once, and note
+        its library hash on the job's item (`hash`)."""
         from musicreco import library
 
         try:
@@ -256,6 +264,9 @@ class TunebatCrates:
             files = [p for p in library.LibraryIndex(seed_dir).find(t.id) if p.parent.resolve() == here]
             if files:
                 self.music.import_now(files)
+                track = self.music.lib.track_for_path(files[0])
+                if track is not None and job is not None:  # so the download panel can follow its analysis to ready
+                    self._set_hash(job, t.id, track["hash"])
         except Exception:  # noqa: BLE001 - the folder import at the end takes it in anyway
             log.warning("couldn't import %s straight away", t.id, exc_info=True)
 

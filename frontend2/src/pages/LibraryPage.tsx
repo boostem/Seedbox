@@ -9,7 +9,7 @@ import { FailedAnalysisBar } from "@/features/library/FailedAnalysisBar";
 import { LibrarySkeleton, LibraryTable } from "@/features/library/LibraryTable";
 import { KeyEditor } from "@/features/library/KeyEditor";
 import { plural } from "@/lib/format";
-import { navigate } from "@/lib/router";
+import { navigate, useHashQuery } from "@/lib/router";
 import { importFix, importSummary, useImports } from "@/store/imports";
 import { followLibrary, loadCrates, loadLibrary, saveSmartCrates, useLibrary } from "@/store/library";
 import { toast } from "@/store/toasts";
@@ -69,6 +69,15 @@ export function LibraryPage() {
   const [sort, setSort] = useState<Sort>({ key: "artist", dir: "asc" });
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const anchor = useRef<number | null>(null);
+
+  // #/library?show=not-ready (the top bar's analysis indicator): the whole library, only the tracks that aren't ready
+  const show = useHashQuery().get("show");
+  useEffect(() => {
+    if (show !== "not-ready") return;
+    setScope({ kind: "all" });
+    setFilter({ ...EMPTY_FILTER, unanalysed: true });
+    navigate({ name: "library" }, { replace: true });
+  }, [show]);
 
   // a crate or set narrows the table to its tracks (re-read when its track count changes: something was dropped on it)
   const scopeCount = scope.kind === "crate" ? crates.find((c) => c.id === scope.id)?.track_count : scope.kind === "set" ? sets.find((x) => x.id === scope.id)?.track_count : undefined;

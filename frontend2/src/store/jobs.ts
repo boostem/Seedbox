@@ -31,6 +31,8 @@ export interface JobsState {
   running: Record<string, RunningJob>;
   /** queued job id → its kind */
   queued: Record<string, string>;
+  /** queued job id → the track it is about (jobs about no track aren't here) */
+  queuedHash: Record<string, string>;
   /** learnt seconds per job type */
   seconds: Record<string, number>;
   /** job type → pool, and each pool's workers */
@@ -40,7 +42,7 @@ export interface JobsState {
   pausedPools: string[];
 }
 
-export const useJobs = create<JobsState>()(() => ({ running: {}, queued: {}, seconds: {}, pools: {}, workers: { light: 2, heavy: 1 }, pausedPools: [] }));
+export const useJobs = create<JobsState>()(() => ({ running: {}, queued: {}, queuedHash: {}, seconds: {}, pools: {}, workers: { light: 2, heavy: 1 }, pausedPools: [] }));
 
 export function poolOf(kind: string, pools: Record<string, string>): string {
   return pools[kind] ?? (HEAVY.has(kind) ? "heavy" : "light");
@@ -73,6 +75,38 @@ export function queueEta(s: Pick<JobsState, "running" | "queued" | "seconds" | "
   return Math.max(...Object.entries(work).map(([pool, w]) => w / Math.max(1, s.workers[pool] ?? 1)));
 }
 
+/** What the queue holds per track: the tracks with a job running or queued, and whether stems are all that's left
+ * for them (with the running stems job's progress, the furthest along). Jobs about no track (an export) don't count. */
+export function pendingTracks(s: Pick<JobsState, "running" | "queued" | "queuedHash">): { tracks: Set<string>; stemsOnly: boolean; stemsProgress: number | null } {
+  const tracks = new Set<string>();
+  let stemsOnly = true;
+  let stemsProgress: number | null = null;
+  for (const j of Object.values(s.running)) {
+    if (!j.hash) continue;
+    tracks.add(j.hash);
+    if (j.kind !== "stems") stemsOnly = false;
+    else stemsProgress = Math.max(stemsProgress ?? 0, j.progress);
+  }
+  for (const [id, hash] of Object.entries(s.queuedHash)) {
+    tracks.add(hash);
+    if (s.queued[id] !== "stems") stemsOnly = false;
+  }
+  return { tracks, stemsOnly: tracks.size > 0 && stemsOnly, stemsProgress };
+}
+
+/** Each track's pending jobs: hash → { running: the running jobs' kinds and progress, queued: how many wait }. */
+export function jobsByTrack(s: Pick<JobsState, "running" | "queued" | "queuedHash">): Map<string, { running: { kind: string; progress: number }[]; queued: number }> {
+  const out = new Map<string, { running: { kind: string; progress: number }[]; queued: number }>();
+  const at = (h: string) => {
+    let e = out.get(h);
+    if (!e) out.set(h, (e = { running: [], queued: 0 }));
+    return e;
+  };
+  for (const j of Object.values(s.running)) if (j.hash) at(j.hash).running.push({ kind: j.kind, progress: j.progress });
+  for (const h of Object.values(s.queuedHash)) at(h).queued += 1;
+  return out;
+}
+
 /** How many jobs of each type are queued. */
 export function queuedByKind(queued: Record<string, string>): Record<string, number> {
   const out: Record<string, number> = {};
@@ -94,12 +128,14 @@ export function applyJobEvent(s: JobsState, type: string, data: unknown, t: numb
   switch (type) {
     case "job.queued": {
       if (s.queued[id] || s.running[id] || typeof row.kind !== "string") return null;
-      return { queued: { ...s.queued, [id]: row.kind } };
+      const hash = hashOf(row);
+      return { queued: { ...s.queued, [id]: row.kind }, ...(hash ? { queuedHash: { ...s.queuedHash, [id]: hash } } : {}) };
     }
     case "job.started": {
       const { [id]: _, ...queued } = s.queued;
+      const { [id]: queuedHashOf, ...queuedHash } = s.queuedHash;
       const kind = row.kind ?? s.queued[id] ?? "job";
-      return { queued, running: { ...s.running, [id]: { id, kind, hash: hashOf(row), progress: row.progress ?? 0, startedAt: t, seenStart: true } } };
+      return { queued, queuedHash, running: { ...s.running, [id]: { id, kind, hash: hashOf(row) ?? queuedHashOf ?? null, progress: row.progress ?? 0, startedAt: t, seenStart: true } } };
     }
     case "job.progress": {
       const j = s.running[id];
@@ -107,7 +143,8 @@ export function applyJobEvent(s: JobsState, type: string, data: unknown, t: numb
         // started before we listened: follow it from here
         const kind = row.kind ?? "job";
         const { [id]: _, ...queued } = s.queued;
-        return { queued, running: { ...s.running, [id]: { id, kind, hash: null, progress: row.progress ?? 0, startedAt: t, seenStart: false } } };
+        const { [id]: queuedHashOf, ...queuedHash } = s.queuedHash;
+        return { queued, queuedHash, running: { ...s.running, [id]: { id, kind, hash: hashOf(row) ?? queuedHashOf ?? null, progress: row.progress ?? 0, startedAt: t, seenStart: false } } };
       }
       return { running: { ...s.running, [id]: { ...j, progress: row.progress ?? j.progress } } };
     }
@@ -117,8 +154,9 @@ export function applyJobEvent(s: JobsState, type: string, data: unknown, t: numb
       const j = s.running[id];
       const { [id]: _r, ...running } = s.running;
       const { [id]: _q, ...queued } = s.queued;
+      const { [id]: _h, ...queuedHash } = s.queuedHash;
       const kind = row.kind ?? j?.kind ?? s.queued[id];
-      const out: Partial<JobsState> = { running, queued };
+      const out: Partial<JobsState> = { running, queued, queuedHash };
       if (type === "job.done" && j?.seenStart && kind) {
         // learn from the jobs we saw from start to end: a moving average that settles after a few
         const took = (t - j.startedAt) / 1000;
@@ -148,6 +186,7 @@ export function followJobs(): () => void {
         workers: Object.keys(workers).length ? workers : s.workers,
         running: Object.fromEntries(running.items.map((j) => [j.id, s.running[j.id] ?? { id: j.id, kind: j.kind, hash: hashOf(j), progress: j.progress, startedAt: t, seenStart: false }])),
         queued: Object.fromEntries(queued.items.map((j) => [j.id, j.kind])),
+        queuedHash: Object.fromEntries(queued.items.flatMap((j) => (hashOf(j) ? [[j.id, hashOf(j) as string]] : []))),
       }));
     } catch {
       // the engine isn't there yet: the events fill it in
