@@ -450,15 +450,25 @@ cue-in and A's in-point, and the overlap runs to the end of A's run. A tracklist
 search to 10 minutes around it. Dead links are noted and skipped; YouTube rate limits ("confirm you're not a bot") are
 retried by the next run.
 
-**First result on real mixes (2026-11-11, 22 mixes, 114 aligned transitions):** both cues within 8 bars of the DJ's on
-the held-out mixes 21% of the time with the learnt model against 14% with the hand-set penalties. B's cue is within 8
-bars 79% against 71%, the length matches 43% against 29%. That is far from the 74% target, and the held-out set is
-small (2 mixes, 14 transitions). `auto` kept the logit: the network's validation loss was no better on this little
-data. The main limit is the candidate set, not the score. 58 of the 112 transitions have no candidate within a phrase
-of what the DJ did. In 44 of them the DJ cued B after the end of its detected intro, and the planner only cues B inside
-it. DJs left A with a median of 9 bars of its music to go (75th percentile 21) and overlapped a median of 26 bars. Part
-of the late B cues may be the alignment: a quiet fade-in counts from when B is clearly heard. Letting the planner cue B
-past its intro is the change that would move this number; it is a planner decision, not part of the model.
+**Result on real mixes (2026-11-11):** 60 mixes selected, 54 downloaded, 683 tracks analysed (stems on an RTX 4070 Ti,
+about 7 a minute with three workers). 43 mixes gave 224 aligned transitions. On the 5 held-out mixes (34 transitions):
+
+| within 8 bars of the DJ | network (ONNX) | logit | hand-set |
+| --- | --- | --- | --- |
+| both cues | 17.6% | 17.6% | 11.8% |
+| B's cue | 52.9% | 50.0% | 44.1% |
+| A's in-point | 32.4% | 26.5% | 23.5% |
+| both within 16 bars | 35.3% | 35.3% | 26.5% |
+| length matches | 38.2% | 23.5% | 32.4% |
+
+The learnt score beats the penalties, but this is far from the 74% target, and the held-out set is small. `auto` picks
+the logit (validation loss 3.69 against the network's 3.80, on 29 transitions). Even so, the network is better on A's
+in-point and the length. The main limit is the candidate set, not the score: 87 of the 222 transitions have no
+candidate within a phrase of what the DJ did. In 45 of them the DJ cued B after the end of its detected intro, which the
+planner never does. DJs overlapped a median of 26 bars (quartiles 16 and 45) and left A with a median of 11 bars to go.
+Part of the late B cues may be the alignment: a quiet fade-in only counts once B is clearly heard. Letting the planner
+cue B past its intro, and plan 64 bars, is what would move the number. That is a planner decision, not part of the
+model.
 
 **The data and its licence.** The paper's data is not usable as it is. `mir-aidj/djmix-dataset` publishes only
 metadata: 5,040 mixes from mixesdb with their tracklists, the mix's audio URL (SoundCloud, Mixcloud, YouTube) and the
