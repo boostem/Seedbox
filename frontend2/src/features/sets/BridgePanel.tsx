@@ -7,8 +7,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { onServerEvent } from "@/api/events";
 import type { LibraryBridge, LibraryBridges, OnlineBridges, ServerEvent, SetOrderResult, TunebatDownload } from "@/api/types";
-import { Button, KeyBadge, Skeleton } from "@/components/ui";
+import { Button, KeyBadge, Skeleton, Tooltip } from "@/components/ui";
+import { readiness, liveJobs } from "@/features/library/readiness";
 import { DownloadAction } from "@/features/onboarding/TunebatTry";
+import { useJobs } from "@/store/jobs";
+import { useLibrary } from "@/store/library";
 
 export interface BridgePanelProps {
   setId: number;
@@ -29,6 +32,11 @@ function Scores({ a, b }: { a: number; b: number }) {
 }
 
 export function LibraryRow({ track, adding, onAdd }: { track: LibraryBridge; adding: boolean; onAdd: () => void }) {
+  // the library says it isn't ready for sets and mixes (any more): no adding, and why (#100)
+  const libRow = useLibrary((s) => s.rows?.find((r) => r.hash === track.hash));
+  const live = useJobs((s) => liveJobs(s, track.hash));
+  const r = libRow ? readiness(libRow, live) : null;
+  const blocked = r !== null && !r.usable;
   return (
     <li className="flex items-center gap-3 py-1">
       <div className="min-w-0 flex-1">
@@ -40,9 +48,11 @@ export function LibraryRow({ track, adding, onAdd }: { track: LibraryBridge; add
       </div>
       <KeyBadge camelot={track.key} size="xs" className="shrink-0" />
       <Scores a={track.score_in} b={track.score_out} />
-      <Button size="sm" icon={Plus} loading={adding} onClick={onAdd}>
-        Add here
-      </Button>
+      <Tooltip content={blocked ? r.reason : null}>
+        <Button size="sm" icon={Plus} loading={adding} disabled={blocked} onClick={onAdd}>
+          Add here
+        </Button>
+      </Tooltip>
     </li>
   );
 }

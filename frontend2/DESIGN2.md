@@ -81,6 +81,7 @@ Elevation goes with the layer: the higher an element sits, the stronger its shad
 |---|---|---|---|
 | 0 | none, 1 px `line` | — | page content, panels, tables |
 | 1 | `shadow-card` | — | cards, raised tiles |
+| — | — | `z-raised` (1) | content above a canvas laid over it (the library's readiness badges), below sticky headers |
 | — | — | `z-sticky` (10) | sticky table headers, pinned toolbars |
 | 2 | `shadow-pop` | `z-dropdown` (100) | menus, popovers, floating labels over the waveform |
 | 3 | `shadow-modal` | `z-modal` (200) | dialogs (native `<dialog>` is in the top layer anyway) |
@@ -182,5 +183,5 @@ reads at the same weight. `keyColor(code)` gives `{ base, bg, border, solidFg }`
 - an arbitrary value with a unit, colour or timing (`h-[18px]`, `shadow-[0_1px_…]`, `text-[9px]`), or any arbitrary
   `z-`, `duration-`, `ease-`, `leading-`, `tracking-`, `text-`, `shadow-` or colour utility. Viewport and percent
   sizes (`max-h-[85vh]`), keywords (`rounded-[inherit]`) and property lists (`transition-[width]`) are allowed;
-- numeric `z-10`, `duration-150`, `delay-75`: use `z-sticky` … `z-tooltip` and `duration-fast/base/slow`;
+- numeric `z-10`, `duration-150`, `delay-75`: use `z-raised` … `z-tooltip` and `duration-fast/base/slow`;
 - a `--text-*` token, a canvas font (`` `600 9px ${…}` ``, `font(p, 9)`) or an SVG `fontSize` under 10 px.

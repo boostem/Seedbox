@@ -35,7 +35,7 @@ export function FailedAnalysisBar({ rows }: { rows: LibraryRow[] }) {
     <div className="flex items-center gap-2.5 border-b border-line bg-warn/8 px-5 py-2 text-sm" role="status">
       <AlertTriangle size={15} className="shrink-0 text-warn" />
       <span className="min-w-0 flex-1 text-fg-muted">
-        <span className="font-medium text-fg">{plural(tracks, "track")} couldn't be fully analysed.</span> They still play and mix on what was found. The file may be damaged: retry, or replace it.
+        <span className="font-medium text-fg">{plural(tracks, "track")} couldn't be fully analysed.</span> They still play, but stay out of sets and mixes until analysed: retry, or choose “Use anyway” on a track. The file may be damaged.
       </span>
       <Button size="sm" icon={RotateCw} loading={busy} onClick={() => void retry()}>
         Retry

@@ -5,6 +5,9 @@
  *
  * Rows drag (the selection, or the row grabbed) as `application/x-seedbox-tracks`: a JSON list of hashes, which the
  * crate and set list takes. Click selects, ⇧-click a range, ⌘/Ctrl-click toggles.
+ *
+ * A track that can't go into a set or mix yet (#100) is dimmed, with its readiness badge over its waveform. It still drags
+ * (onto a crate); a drag of unready tracks says so (UNREADY_MIME), and the sets refuse them with the reason.
  */
 import { AlertTriangle, AudioLines, Check, Clock, Layers, Loader2 } from "lucide-react";
 import { memo, type DragEvent, type MouseEvent, type Ref, useCallback, useEffect, useLayoutEffect, useRef } from "react";
@@ -15,9 +18,12 @@ import { useFrame } from "@/features/waveform/hooks";
 import { formatKey } from "@/lib/camelot";
 import { cn } from "@/lib/cn";
 import { fmtTime } from "@/lib/format";
+import { unusableRows } from "@/store/library";
 import { ui, useUi } from "@/store/ui";
 import { energy10, type Sort, type SortKey } from "./filter";
 import { overviews } from "./overviews";
+import { readiness } from "./readiness";
+import { ReadinessBadge, useReadiness } from "./ReadinessBadge";
 
 export const LIBRARY_ROW_H = 34;
 const HINT_SOURCE: Record<string, string> = { rekordbox: "Rekordbox", tunebat: "Tunebat", file: "the file's tags", itunes: "iTunes" };
@@ -50,6 +56,10 @@ function KeyCell({ row: r }: { row: LibraryRow }) {
 }
 
 export const TRACKS_MIME = "application/x-seedbox-tracks";
+/** Also on a drag whose tracks aren't ready for sets and mixes: "all" or "some" of them (a drop target can only see
+ * the types while dragging, not the data). */
+export const UNREADY_ALL_MIME = "application/x-seedbox-unready-all";
+export const UNREADY_SOME_MIME = "application/x-seedbox-unready-some";
 const WAVE_PAD_X = 8;
 const WAVE_PAD_Y = 6;
 const COLS = 11;
@@ -108,6 +118,7 @@ export function LibraryTable({ rows, sort, onSort, selected, onSelect, dragHashe
       const y = i * LIBRARY_ROW_H - top + WAVE_PAD_Y;
       const state = list[i].status.state;
       const outline = img || (state !== "analysing" && state !== "queued") ? null : waveOutline(w, h, dpr, state === "analysing" ? "rgba(111,125,255,0.4)" : "rgba(127,127,127,0.2)");
+      ctx.globalAlpha = readiness(list[i]).usable ? 1 : 0.45;
       if (img) ctx.drawImage(img, WAVE_PAD_X, y, w, h);
       else if (outline) ctx.drawImage(outline, WAVE_PAD_X, y, w, h);
       else {
@@ -285,8 +296,10 @@ const Row = memo(function Row({ row: r, index, selected, onSelect, dragHashes }:
     e.dataTransfer.effectAllowed = "copy";
     e.dataTransfer.setData(TRACKS_MIME, JSON.stringify(hashes));
     e.dataTransfer.setData("text/plain", hashes.length === 1 ? `${r.artist} - ${r.title}` : `${hashes.length} tracks`);
+    const unready = unusableRows(hashes).length;
+    if (unready) e.dataTransfer.setData(unready === hashes.length ? UNREADY_ALL_MIME : UNREADY_SOME_MIME, String(unready));
     const ghost = document.createElement("div");
-    ghost.textContent = hashes.length === 1 ? r.title || "1 track" : `${hashes.length} tracks`;
+    ghost.textContent = (hashes.length === 1 ? r.title || "1 track" : `${hashes.length} tracks`) + (unready === hashes.length ? " · not ready: crates only" : unready ? ` · ${unready} not ready` : "");
     ghost.className = "fixed -top-20 left-0 rounded-sm bg-accent px-2 py-1 text-xs font-semibold text-accent-fg shadow-lg";
     document.body.appendChild(ghost);
     e.dataTransfer.setDragImage(ghost, -8, -8);
@@ -296,8 +309,18 @@ const Row = memo(function Row({ row: r, index, selected, onSelect, dragHashes }:
   // values on their way: the outline of the value, pulsing while it is worked on
   const coming = r.status.state === "analysing" || r.status.state === "queued";
   const waiting = r.status.state === "queued";
+  const { usable } = useReadiness(r);
   return (
-    <Tr rowHeight={LIBRARY_ROW_H} selected={selected} draggable onDragStart={onDragStart} onClick={(e) => onSelect(r.hash, index, e)} data-hash={r.hash}>
+    <Tr
+      rowHeight={LIBRARY_ROW_H}
+      selected={selected}
+      draggable
+      onDragStart={onDragStart}
+      onClick={(e) => onSelect(r.hash, index, e)}
+      data-hash={r.hash}
+      data-unready={usable ? undefined : ""}
+      className={cn(!usable && "[&>td:not([data-keep])]:opacity-45")}
+    >
       <Td className="pr-0">
         <CoverArt src={r.artwork ? apiUrl(`/api/tracks/${r.hash}/artwork`) : null} size={26} camelot={r.key ?? undefined} rounded="xs" />
       </Td>
@@ -322,7 +345,10 @@ const Row = memo(function Row({ row: r, index, selected, onSelect, dragHashes }:
       <Td truncate muted>
         {r.genre}
       </Td>
-      <Td />
+      <Td className="max-w-0 overflow-hidden" data-keep>
+        {/* over the (dimmed) waveform, where the analysis shows: above the shared canvas, below the sticky header */}
+        <ReadinessBadge row={r} className="relative z-raised rounded-xs bg-bg pr-0.5" />
+      </Td>
       <Td align="center">
         <StatusIcons row={r} />
       </Td>

@@ -105,13 +105,16 @@ const TRACKS = [
   added_at: "2026-10-01T12:00:00Z",
 }));
 
-type RowState = "new" | "queued" | "analysing" | "done" | "failed";
+/** "stems": analysing, with its stems 40% separated; "anyway": failed, and the user said to use it anyway (#100) */
+type RowState = "new" | "queued" | "analysing" | "stems" | "done" | "failed" | "anyway";
 
 /** The library view's rows: `analysed` of them done, the rest in the `rest` states in turn, with what they carry. */
 function rows(analysed: number, rest: RowState[] = []) {
   return TRACKS.map((t, i) => {
-    const state: RowState = i < analysed ? "done" : rest[(i - analysed) % rest.length];
+    const as: RowState = i < analysed ? "done" : rest[(i - analysed) % rest.length];
+    const state = as === "stems" ? "analysing" : as === "anyway" ? "failed" : as;
     const done = state === "done";
+    const failed = state === "failed";
     return {
       hash: t.hash, duration: t.duration, title: t.title, artist: t.artist, album: t.album, source: t.source, added_at: t.added_at,
       bpm: done ? t.tags.file.bpm : null, bpm_from: done ? "analysis" : null,
@@ -120,7 +123,12 @@ function rows(analysed: number, rest: RowState[] = []) {
       key_hint: done && i % 4 === 1 ? "3B" : null, key_hint_from: done && i % 4 === 1 ? "tunebat" : null,
       energy: done ? 0.4 + (i % 6) / 10 : null, energy_from: done ? "analysis" : null,
       genre: done ? "House" : "", text: "", artwork: false, format: t.tags.file.format,
-      status: { state, waveform: done, stems: false, stems_progress: null, analyses: [], jobs: state === "failed" ? { waveform: "failed" } : {} },
+      status: {
+        state, ready: done, missing: done ? [] : as === "stems" ? ["stems"] : failed ? ["beats", "waveform", "stems"] : ["beats", "key", "energy", "sections", "vocals", "waveform", "stems"],
+        use_anyway: as === "anyway", usable: done || as === "anyway",
+        waveform: done || as === "stems", stems: as === "stems" ? "running" : false, stems_progress: as === "stems" ? 0.4 : null, analyses: [],
+        jobs: failed ? { beats: "failed", waveform: "failed" } : as === "stems" ? { stems: "running" } : {},
+      },
     };
   });
 }
@@ -299,7 +307,8 @@ const TB_CRATE = {
 const TB_SEARCH = { total: 3, items: [TB_SEED, TB("s2", "Night Bus (Extended Mix)", "Kerrin", 124, "10A", 452), TB("s3", "Night Buses", "Ferro", 118, "3B", 301)] };
 const TB_JOB = {
   id: "j1", seed_id: "seed", seed: "Kerrin - Night Bus", folder: "Kerrin - Night Bus", state: "running", error: null,
-  items: [["seed", "downloaded"], ["r1", "downloaded"], ["r2", null], ["r4", null]].map(([id, status]) => ({ id, name: id, artists: [], text: status ?? "downloading", status, reason: null })),
+  // the downloaded ones are in the library (the last two tracks): one failed, one separating its stems
+  items: [["seed", "downloaded", 10], ["r1", "downloaded", 11], ["r2", null], ["r4", null]].map(([id, status, at]) => ({ id, name: id, artists: [], text: status ?? "downloading", status, reason: null, hash: at ? TRACKS[at as number]?.hash ?? null : null })),
 };
 const DISCOVER = { "/api/tunebat/search": TB_SEARCH, "/api/tunebat/crates/seed": TB_CRATE };
 
@@ -310,6 +319,8 @@ const SHOTS: Shot[] = [
   { name: "library-empty", hash: "#/library", data: { "/api/library": { ...LIBRARY, tracks: 0, track_paths: 0, crates: 0 }, "/api/library/tracks": { total: 0, items: [] }, "/api/library/view": { total: 0, items: [] }, "/api/library/crates": [], "/api/sets": [] } },
   { name: "library-analysing", hash: "#/library", data: { "/api/library/view": { total: TRACKS.length, items: rows(4, ["analysing", "queued", "queued"]) } } },
   { name: "library-analysis-failed", hash: "#/library", data: { "/api/library/view": { total: TRACKS.length, items: rows(9, ["failed"]) } } },
+  // #100: unready tracks dimmed with their badge, the failed ones with Retry analysis and Use anyway
+  { name: "library-not-ready", hash: "#/library", data: { "/api/library/view": { total: TRACKS.length, items: rows(6, ["queued", "stems", "failed", "anyway", "analysing", "new"]) } } },
   { name: "library-load-failed", hash: "#/library", fail: ["/api/library/view"] },
   { name: "ffmpeg-missing", hash: "#/", data: { "/api/system": { ...SYSTEM, ffmpeg: null, frozen: true } } },
   { name: "deno-missing", hash: "#/", data: { "/api/system": { ...SYSTEM, deno: null } } },
@@ -332,7 +343,7 @@ const SHOTS: Shot[] = [
   { name: "discover", hash: "#/discover" },
   { name: "discover-results", hash: "#/discover?q=night%20bus", data: DISCOVER },
   { name: "discover-crate", hash: "#/discover?q=night%20bus", data: DISCOVER, clicks: ["Open"] },
-  { name: "discover-downloading", hash: "#/discover?q=night%20bus", data: DISCOVER, posts: { "/api/tunebat/crates/seed/download": TB_JOB }, clicks: ["Open", "Download 4 tracks"] },
+  { name: "discover-downloading", hash: "#/discover?q=night%20bus", data: { ...DISCOVER, "/api/library/view": { total: TRACKS.length, items: rows(10, ["failed", "stems"]) } }, posts: { "/api/tunebat/crates/seed/download": TB_JOB }, clicks: ["Open", "Download 4 tracks"] },
   { name: "mixes", hash: "#/mixes" },
   { name: "settings", hash: "#/settings" },
   { name: "settings-low-power", hash: "#/settings", data: { "/api/power": ON_BATTERY } },

@@ -192,6 +192,8 @@ export const api = {
       }
       return data as ImportStatus;
     },
+    /** "Use anyway" (#99): a failed track may go into sets and mixes all the same (or, false, no longer). Its row comes back. */
+    useAnyway: (hash: string, useAnyway: boolean, opts?: RequestOptions) => put<LibraryRow>(`/api/library/tracks/${hash}/use-anyway`, { use_anyway: useAnyway }, opts),
     /** Every track as a table row (#73); `hashes`: only these. */
     view: (hashes?: string[], opts?: RequestOptions) =>
       hashes ? post<{ total: number; items: LibraryRow[] }>("/api/library/view", { hashes }, opts) : get<{ total: number; items: LibraryRow[] }>("/api/library/view", opts),

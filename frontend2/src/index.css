@@ -240,13 +240,18 @@
   }
 }
 
-/* z-index scale (Tailwind has no theme namespace for it): z-sticky, z-dropdown, z-modal, z-toast, z-tooltip */
+/* z-index scale (Tailwind has no theme namespace for it): z-raised, z-sticky, z-dropdown, z-modal, z-toast, z-tooltip.
+ * z-raised: above a canvas laid over its content (the library's waveform column), below sticky headers. */
 :root {
+  --z-raised: 1;
   --z-sticky: 10;
   --z-dropdown: 100;
   --z-modal: 200;
   --z-toast: 300;
   --z-tooltip: 400;
+}
+@utility z-raised {
+  z-index: var(--z-raised);
 }
 @utility z-sticky {
   z-index: var(--z-sticky);
