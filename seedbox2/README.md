@@ -32,7 +32,7 @@ Flags:
   (in-process and in a spawned worker), and the server answering `/api/health` and serving `frontend2/dist`.
 - `--version`
 
-Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_seedbox2_packaging.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_setexport.py tests/test_seedbox2_bridge.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_sections.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_tunebat_crate.py tests/test_seedbox2_sets.py tests/test_seedbox2_longset.py tests/test_seedbox2_now_playing.py tests/test_seedbox2_assistant.py tests/test_seedbox2_styles.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
+Tests: `.venv/bin/python -m pytest tests/test_seedbox2.py tests/test_seedbox2_master.py tests/test_seedbox2_eval.py tests/test_seedbox2_packaging.py tests/test_bench.py tests/test_seedbox2_library.py tests/test_seedbox2_setexport.py tests/test_seedbox2_bridge.py tests/test_seedbox2_jobs.py tests/test_seedbox2_power.py tests/test_seedbox2_waveform.py tests/test_seedbox2_import.py tests/test_seedbox2_mixmetrics.py tests/test_seedbox2_stretch.py tests/test_seedbox2_golden.py tests/test_seedbox2_models.py tests/test_seedbox2_library_view.py tests/test_seedbox2_stems.py tests/test_seedbox2_beats.py tests/test_seedbox2_sections.py tests/test_seedbox2_vocals.py tests/test_seedbox2_energy.py tests/test_seedbox2_listen.py tests/test_seedbox2_mix_plan.py tests/test_seedbox2_stream.py tests/test_seedbox2_render.py tests/test_seedbox2_engine_parity.py tests/test_seedbox2_engine_chunks.py tests/test_seedbox2_engine_browser.py tests/test_seedbox2_automation.py tests/test_seedbox2_onboarding.py tests/test_seedbox2_tunebat_crate.py tests/test_seedbox2_sets.py tests/test_seedbox2_longset.py tests/test_seedbox2_now_playing.py tests/test_seedbox2_assistant.py tests/test_seedbox2_styles.py tests/test_seedbox2_setplan.py`, and in `frontend2/` `deno task build`, `deno task test`, `deno task lint` and `deno task screenshot` (Docker; see `frontend2/DESIGN.md`).
 
 Seedbox 2 keeps its own settings, caches and logs in each OS's usual folders (`seedbox2/paths.py`, from
 `platformdirs`), so trying it never touches Seedbox 1's sets or settings:
@@ -617,14 +617,46 @@ target arc, the tempo and the Camelot path.
   job (`waiting` while a track's beats are still to come, `failed` with why). An order that's only proposed plans too, but
   can't be dragged until it's used or discarded.
 - **`set_plan` is a stopgap:** one pair at a time, `musicreco.mixplan.generate` on our beats and energy analysis, with the vocal
-  stem's activity when a track has it (`vocals.plan_input_for`). It doesn't use stems or the set around the pair, and
-  doesn't run #56's `adapt`: that's #53 and #61. It never touches a pair that has a plan, so edits and imports stand.
+  stem's activity when a track has it (`vocals.plan_input_for`). The set around the pair comes in as #61's pick (below);
+  it doesn't run #56's `adapt`. It never touches a pair that has a plan, so edits and imports stand.
 - **Playing:** the live engine has two decks, so the set plays as a chain of plans (`playback.ts`), as now-playing does: each is
   stretched over its first track's part of the set, and `engine.schedule(next, carry)` moves on once the outgoing track has
   gone and the tempo has settled on the incoming one's, with the track they share going on from its sample. Unlike
   now-playing's fixed chain it plays from any second of the set and copes with plans still to come: a next plan that isn't
   ready holds the music at the last of this one, and it picks up when it is. Reordering stops the music. A seek before Play
   only moves the playhead: the AudioContext waits for Play.
+
+**The whole set's plan** (#61, `seedbox2/sets/setplan.py`, `POST /api/sets/{id}/setplan`): the running order, each
+transition's style, length and cue points, and how much of each track plays, chosen together rather than a pair at a time.
+
+- **Options per pair:** each style that applies (#57's `rank`) at its lengths, on cue pairs from the sections: A goes out at
+  its outro, its last bars, after its last drop or after its first (never before 45 % of it); B comes in at its top, so its
+  intro ends with the overlap, or onto its first drop (a cut on the drop itself). Each costs its distance below the pair's
+  best style, its cues (an earlier way out costs more), a blend over two singers or a key clash, and a style that needs
+  drops on a pair without them; the 18 cheapest are kept, at most three per style (the cheapest, the longest, the shortest).
+- **Variety rules,** in a Viterbi pass over (last style, times in a row, transitions since a long blend): a style never three
+  times running; the same kind twice costs 1 (blends 0.5); a cut costs up to 2 more in the set's quiet stretches and 2 less
+  at its peaks (the arc's level there and B's own energy), and 0.8 less onto B's drop; a long blend (16 bars or more, or a
+  long style) at least every `long_every` transitions (4), each one overdue costing 10, so it holds wherever a pair offers one.
+- **Set length** (`target_minutes`): the set is the tracks less what each transition leaves out of them (A after its cue, B
+  before its), a sum over transitions, so a price per second keeps the pass exact; the price climbs until the length passes
+  the target, then bisects there. Within a minute is free, then 4 a minute (more than a key clash). A target the cues can't
+  reach ends as close as they go. `plays` says where each track starts and stops.
+- **Order and options together** (`reorder`): from #60's order and the order as it stands, a rolling-horizon search in the
+  manner of DJ-MC (Liebman, Saar-Tsechansky & Stone, AAMAS 2015) fills each position by trying the next tracks with every
+  continuation of `lookahead` (3-5, default 4) tracks, 3 at each level and always #60's next, rolled out to the end in #60's
+  order, and scored on #60's cost plus the plan's. The two cheapest starts are then polished: every window of 4 positions in
+  every order, re-running only the window's transitions against the pass's forward and backward tables. Pins hold. It is
+  never worse than #60's order with its best plan, and has no randomness. `found_by` says which start won.
+- **Incremental:** the last 8 planners are kept (by tracks and settings) with each pair's options, so after a drag
+  `POST /sets/{id}/timeline` and the set plan meet only the new pairs.
+- **Into the plans:** the timeline queues each `set_plan` job with its pair's pick (style, bars, cues; no target length, the
+  set's saved arc), and `plan_pair` plans it in that style with the generator's window on those cues; when the style doesn't
+  fit that window after all, the pair is planned on its own as before. A saved plan is still never touched.
+- **Measured** on synthetic sets (`tests/test_seedbox2_setplan.py`'s, target 4 minutes a track) on a 12-thread desktop, not
+  yet the reference laptops: 30 tracks 0.88-1.01 s with reordering (#60's solver is 0.3-0.4 s of that), 15 tracks 0.3 s;
+  planning again after a drag 0.02 s. The joint plan beat #60's order with its best plan in 8 of 10 sets, and tied it in 2.
+  **The weights are a prior** like #60's and #57's: no human-planned sets have scored them yet.
 
 **A track for a gap** (#64, `seedbox2/sets/bridge.py`, `#/sets`): every transition has a `score` out of 100, from what its two
 tracks cost each other (key, tempo, vibe, genre, the energy step; not how they fit the arc or journey). Under 55 it is a

@@ -1,7 +1,7 @@
 """Set ordering on Seedbox 2's own analysis (#60): `arcs` (the energy shape), `features` (what the analysis says about
 each track), `cost` (what a running order costs), `solver` (finds a cheap one, with pinned tracks), `explain` and
 `service` (one call from a set in the library to an explained order). `bridge` finds a track for a gap in the set (#64), and `longset` builds
-long sets across crates (#62)."""
+long sets across crates (#62). `setplan` plans the transitions of the whole set with the order, with lookahead (#61)."""
 
 from seedbox2.sets.arcs import TEMPLATES, Arc, arc_from
 from seedbox2.sets.cost import Problem, TempoJourney, Weights

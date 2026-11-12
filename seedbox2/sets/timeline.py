@@ -7,14 +7,16 @@ never waits for planning; the `job.done` event says when to ask again.
 `set_plan` plans one pair on its own, in the transition style its genres, tempo, energy and vocals call for (#57,
 `seedbox2.mix.styles`) over Seedbox 1's generator on our analysis, made stem-aware by
 `seedbox2.mix.stemplan` (#53: bass and vocal hand-offs on the stem lanes, no doubled kicks, mashup moments), and saves it.
-A track whose stems aren't cached yet plays those lanes on its EQ. #61 plans a whole set with lookahead; #56's `adapt`
-isn't run here. A track's vocals are the stem's when it has them
+A track whose stems aren't cached yet plays those lanes on its EQ. The set's plan (#61, `setplan`) picks each pair's style,
+length and cue points with the rest of the set in view; the job gets that pick and plans the pair on it, or as before when
+the style doesn't fit the pair's window after all. #56's `adapt` isn't run here. A track's vocals are the stem's when it has them
 (`vocals.plan_input_for`). A saved plan is left alone: a person's edit, an import or an
 earlier job's result always wins.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import numpy as np
@@ -28,6 +30,7 @@ from seedbox2.mix import genre, master, stemplan, styles
 from seedbox2.mix.plan import MixPlan, deck_time
 from seedbox2.sets.features import load_features
 
+log = logging.getLogger(__name__)
 JOB = "set_plan"
 PLAN_SOURCE = "set"
 _MAX_CURVE_POINTS = 64  # a whole set is drawn from these: a point per bar is more than a track's width shows
@@ -94,12 +97,15 @@ def _failed_pairs(lib: Any) -> dict[tuple[str, str], str]:
     return out
 
 
-def timeline(lib: Any, hashes: list[str], jobs: Any = None, *, retry: bool = False) -> dict:
+def timeline(lib: Any, hashes: list[str], jobs: Any = None, *, retry: bool = False,
+             picks: Any = None) -> dict:  # fmt: skip
     """The running order `hashes` as the timeline draws it. With `jobs`, what's missing is queued: a pair's plan once both
-    tracks have beats (the first thing a track gets), else those beats. `retry` tries a failed pair again."""
+    tracks have beats (the first thing a track gets), else those beats. `retry` tries a failed pair again. `picks()`
+    gives the set plan's pick per pair (`setplan.picks`), asked only when a pair is queued."""
     tracks = {h: track_view(lib, h) for h in set(hashes)}
     failed = _failed_pairs(lib)
     out = []
+    chosen: dict | None = None
     for a, b in zip(hashes, hashes[1:]):
         row = lib.plan(a, b)
         item: dict[str, Any] = {"from": a, "to": b, "state": "pending"}
@@ -119,9 +125,22 @@ def timeline(lib: Any, hashes: list[str], jobs: Any = None, *, retry: bool = Fal
                 for h in missing:
                     beats.submit(jobs, h, front=True)
                 if not missing:
-                    jobs.submit(JOB, {"from": a, "to": b}, front=True)
+                    if chosen is None:
+                        chosen = _picks(picks)
+                    pick = chosen.get((a, b))
+                    jobs.submit(JOB, {"from": a, "to": b, **({"pick": pick} if pick else {})}, front=True)
         out.append(item)
     return {"tracks": [tracks[h] for h in hashes], "transitions": out}
+
+
+def _picks(picks: Any) -> dict:
+    if picks is None:
+        return {}
+    try:
+        return picks()
+    except Exception:  # noqa: BLE001 - the set's plan is a hint: a pair plans on its own without it
+        log.warning("the set plan failed; pairs plan on their own", exc_info=True)
+        return {}
 
 
 # --- planning a pair -------------------------------------------------------------------------------------------------
@@ -163,9 +182,10 @@ def seedbox1_analysis(lib: Any, hash_: str, duration: float) -> dict | None:
     }  # fmt: skip
 
 
-def plan_pair(lib: Any, from_hash: str, to_hash: str) -> MixPlan:
-    """A new plan for the pair, not saved."""
-    from musicreco import mixplan
+def plan_pair(lib: Any, from_hash: str, to_hash: str, pick: dict | None = None) -> MixPlan:
+    """A new plan for the pair, not saved. With the set plan's `pick` (`setplan.picks`: style, bars, cue points) the
+    pair is planned in that style on those cues, unless the style doesn't fit the generator's window: then as without."""
+    from musicreco import mixplan, transitions
     from musicreco.models import Track
 
     features = load_features(lib, [from_hash, to_hash])
@@ -193,21 +213,47 @@ def plan_pair(lib: Any, from_hash: str, to_hash: str) -> MixPlan:
                          energy_b=features[to_hash].energy, a_stems=known[0].has_stems, b_stems=known[1].has_stems,
                          b_acapella=bool(known[1].acapella))  # fmt: skip
 
+    def load(raw: dict) -> MixPlan:
+        return convert.load(raw, from_track=from_hash, to_track=to_hash)
+
     def generate(technique: str | None, bars: int | None) -> dict:
         return mixplan.generate(decks[0], analyses[0], decks[1], analyses[1], "", technique=technique, bars=bars)
 
-    styled, _ = styles.plan(ctx, generate, lambda raw: convert.load(raw, from_track=from_hash, to_track=to_hash))
+    styled = None
+    style = styles.by_id(str(pick.get("style"))) if pick else None
+    if pick and style is not None:
+        want = int(pick.get("bars") or 0)
+        bars_ok = want if want in mixplan.BARS else None
+        engine = style.base if style.base in transitions.TECHNIQUES else "long blend" if want >= 16 else "phrase blend"
+        cue = {"ready": True, "from_id": from_hash, "to_id": to_hash, "technique": engine,
+               "out_start_s": float(pick["a_out_s"]), "in_start_s": float(pick["b_in_s"]), "overlap_bars": want}  # fmt: skip
+
+        def on_cues(technique: str | None, bars: int | None) -> dict:
+            if technique == style.base and bars is None:
+                bars = bars_ok if style.kind != "cut" else None
+            return mixplan.generate(decks[0], analyses[0], decks[1], analyses[1], "", technique=technique, bars=bars,
+                                    transition=cue)  # fmt: skip
+
+        try:
+            got, report = styles.plan(ctx, on_cues, load, (style,))
+            styled = got if report["style"] == style.id else None
+        except ValueError:
+            styled = None
+    if styled is None:
+        styled, _ = styles.plan(ctx, generate, load)
     plan, _ = stemplan.plan(styled, known[0], known[1])
     return plan
 
 
 @register(JOB, pool="light")
 def set_plan_job(payload: dict, ctx: Any) -> dict:
-    """Payload `{"from": hash, "to": hash}`: plans the pair and saves it, unless it has a plan by now."""
+    """Payload `{"from": hash, "to": hash, "pick"?: the set plan's pick}`: plans the pair and saves it, unless it has a
+    plan by now."""
     a, b = payload["from"], payload["to"]
     lib = ctx.library
     if lib.plan(a, b) is not None:
         return {"from": a, "to": b, "planned": False}
-    plan = plan_pair(lib, a, b)
+    pick = payload.get("pick")
+    plan = plan_pair(lib, a, b, pick if isinstance(pick, dict) else None)
     lib.put_plan(a, b, plan.model_dump(), user_edited=False, source=PLAN_SOURCE)
     return {"from": a, "to": b, "planned": True, "technique": plan.technique}

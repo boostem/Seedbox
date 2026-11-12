@@ -12,7 +12,11 @@
 - `PUT /sets/{id}/order` with `hashes` too: saves that order and the settings. 409 if the set has other tracks by then.
 - `POST /sets/{id}/timeline` with `hashes`, the running order to draw (#75): tracks' sections and energy, and each
   transition's place in its two files. Pairs without a plan come back `pending` and their `set_plan` job is queued
-  (`waiting` while a track's beats are still to come; `retry` tries `failed` pairs again). 409 if the tracks aren't the set's.
+  with the set plan's pick for the pair (#61) (`waiting` while a track's beats are still to come; `retry` tries
+  `failed` pairs again). 409 if the tracks aren't the set's.
+- `POST /sets/{id}/setplan` (#61) with `hashes` (default: the saved order), `target_minutes`, `long_every`, `lookahead`,
+  `reorder` and the order settings: every transition's style, length and cue points and how much of each track plays,
+  planned together; with `reorder` the order too. Saves nothing. 409 if the tracks aren't the set's.
 
 - `GET /sets/{id}/bridge?position&limit` (#64): what would fit between that position and the next, from the library.
 - `GET /sets/{id}/bridge/online?position&limit`: the same from tunebat's recommendations of both neighbours. 502 if it
@@ -49,7 +53,7 @@ from seedbox2.mix import convert
 from seedbox2.mix import master as master_chain
 from seedbox2.mix.setexport import FORMATS
 from seedbox2.server.deps import JobsDep, LibraryDep, TunebatDep, get_jobs, vibe_index
-from seedbox2.sets import TEMPLATES, OrderRequest, bridge, evaluate_set, order_set
+from seedbox2.sets import TEMPLATES, OrderRequest, bridge, evaluate_set, order_set, setplan
 from seedbox2.sets import export as set_export
 from seedbox2.sets.arcs import ArcError
 from seedbox2.sets.longset import (
@@ -370,7 +374,33 @@ def set_timeline(set_id: int, body: TimelineBody, request: Request, lib: Library
         raise HTTPException(404, "no such set")
     if Counter(hashes) != Counter(body.hashes):
         raise HTTPException(409, "the set's tracks have changed")
-    return timeline(lib, body.hashes, get_jobs(request), retry=body.retry)
+    order_request = request_from_settings(lib.set_order_settings(set_id))
+    return timeline(lib, body.hashes, get_jobs(request), retry=body.retry,
+                    picks=lambda: setplan.picks(lib, body.hashes, order_request))  # fmt: skip
+
+
+class SetPlanBody(OrderBody):
+    hashes: list[str] | None = None
+    target_minutes: float | None = Field(default=None, gt=0, le=24 * 60)
+    long_every: int = Field(default=setplan.LONG_EVERY, ge=1, le=16)
+    lookahead: int = Field(default=setplan.LOOKAHEAD, ge=3, le=5)
+    reorder: bool = False
+
+
+@router.post("/{set_id}/setplan")
+def plan_set(set_id: int, body: SetPlanBody, lib: LibraryDep) -> dict:
+    hashes = lib.set_hashes(set_id)
+    if hashes is None:
+        raise HTTPException(404, "no such set")
+    order = body.hashes if body.hashes is not None else hashes
+    if Counter(hashes) != Counter(order):
+        raise HTTPException(409, "the set's tracks have changed")
+    try:
+        return setplan.plan_hashes(lib, order, body.request(), long_every=body.long_every, reorder=body.reorder,
+                                   target_s=body.target_minutes * 60 if body.target_minutes else None,
+                                   lookahead=body.lookahead)  # fmt: skip
+    except (ArcError, SolverError) as e:
+        raise HTTPException(422, str(e)) from None
 
 
 class ExportBody(BaseModel):
