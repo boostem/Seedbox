@@ -8,10 +8,11 @@ import { FilterBar } from "@/features/library/FilterBar";
 import { FailedAnalysisBar } from "@/features/library/FailedAnalysisBar";
 import { LibrarySkeleton, LibraryTable } from "@/features/library/LibraryTable";
 import { KeyEditor } from "@/features/library/KeyEditor";
+import { refusedMessage } from "@/features/library/readiness";
 import { plural } from "@/lib/format";
 import { navigate, useHashQuery } from "@/lib/router";
 import { importFix, importSummary, useImports } from "@/store/imports";
-import { followLibrary, loadCrates, loadLibrary, saveSmartCrates, useLibrary } from "@/store/library";
+import { followLibrary, loadCrates, loadLibrary, saveSmartCrates, unusableRows, useLibrary } from "@/store/library";
 import { toast } from "@/store/toasts";
 
 /** The latest import: a progress bar while it runs, its summary once done, what to do about it if it failed. */
@@ -143,7 +144,13 @@ export function LibraryPage() {
     void saveSmartCrates(smartCrates.filter((c) => c.id !== id)).catch(() => toast.error("Couldn't delete the smart crate"));
     if (scope.kind === "smart" && scope.id === id) onScope({ kind: "all" });
   };
-  const onDrop = async (target: "crate" | "set", id: number | null, hashes: string[]) => {
+  const onDrop = async (target: "crate" | "set", id: number | null, dropped: string[]) => {
+    // only tracks ready to mix go into a set (#100): say which weren't, and why
+    const refused = target === "set" ? unusableRows(dropped) : [];
+    if (refused.length) toast.warning(refusedMessage(refused), { title: refused.length === dropped.length ? "Not added to the set" : `${plural(refused.length, "track")} left out` });
+    const out = new Set(refused.map((r) => r.hash));
+    const hashes = dropped.filter((h) => !out.has(h));
+    if (!hashes.length) return;
     const what = plural(hashes.length, "track");
     try {
       if (id === null) {

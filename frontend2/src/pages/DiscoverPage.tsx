@@ -8,6 +8,7 @@ import { fmtTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { navigate, useHashQuery } from "@/lib/router";
 import { jobsByTrack, useJobs } from "@/store/jobs";
+import { ReadinessBadge } from "@/features/library/ReadinessBadge";
 import { followLibrary, useLibrary } from "@/store/library";
 
 const TICK_ALL_KEY = "seedbox2.tunebat.tickAll";
@@ -68,6 +69,14 @@ function ItemAnalysis({ hash }: { hash: string }) {
   const jobs = useMemo(() => jobsByTrack({ running, queued, queuedHash }).get(hash), [running, queued, queuedHash, hash]);
   const a = analysisOf(row, jobs);
   if (!a) return null;
+  // in the library and not ready for sets and mixes: the library's badge, with Retry / Use anyway when it failed
+  if (row && !row.status.ready)
+    return (
+      <span className="flex items-center gap-1 text-xs">
+        <span className="text-fg-subtle">·</span>
+        <ReadinessBadge row={row} />
+      </span>
+    );
   return (
     <span className={cn("flex items-center gap-1 text-xs", ANALYSIS_TONE[a.tone])} title={a.title}>
       <span className="text-fg-subtle">·</span>
@@ -232,7 +241,7 @@ function CrateView({ crate, onBack }: { crate: TunebatCrate; onBack: () => void 
             <Badge tone="accent">Seed</Badge>
             {crate.seed.in_library && <Badge>In library</Badge>}
           </span>
-          <span className="flex w-56 justify-end">
+          <span className="flex w-72 justify-end">
             <ItemStatus item={items.get(crate.seed.id)} />
           </span>
         </li>
@@ -245,7 +254,7 @@ function CrateView({ crate, onBack }: { crate: TunebatCrate; onBack: () => void 
               {r.related ? <Badge tone="ok">Mixes</Badge> : <Badge variant="outline">Other</Badge>}
               <ScoreChip value={r.score} move={r.move} passed={r.related} />
             </span>
-            <span className="flex w-56 justify-end">
+            <span className="flex w-72 justify-end">
               <ItemStatus item={items.get(r.track.id)} />
             </span>
           </li>

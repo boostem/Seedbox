@@ -9,6 +9,7 @@ import { onServerEvent } from "@/api/events";
 import type { CrateSummary, LibraryRow, SetSummary } from "@/api/types";
 import { cleanFilter, type SmartCrate } from "@/features/library/filter";
 import { overviews } from "@/features/library/overviews";
+import { readiness } from "@/features/library/readiness";
 import { useImports } from "@/store/imports";
 
 interface LibraryState {
@@ -130,4 +131,28 @@ export function followLibrary(): void {
       refreshSoon(hash);
     }
   });
+}
+
+// ------------------------------------------------------------------------------------------------ readiness (#100)
+
+/** Queue a track's missing (or failed) analyses again. */
+export async function retryAnalysis(row: LibraryRow): Promise<void> {
+  const kinds = new Set([...row.status.missing, ...Object.entries(row.status.jobs).flatMap(([k, v]) => (v === "failed" ? [k] : []))]);
+  for (const kind of kinds) await api.jobs.submit(kind, { hash: row.hash }, { quiet: true });
+  markSoon(row.hash, "queued");
+}
+
+/** "Use anyway" for a failed track (or not any more): kept with the track; its row comes back. */
+export async function setUseAnyway(hash: string, on: boolean): Promise<void> {
+  const row = await api.library.useAnyway(hash, on);
+  useLibrary.setState((s) => (s.rows ? { rows: patchRows(s.rows, [row], [hash]) } : {}));
+}
+
+/** The library rows of these tracks that can't go into a set or mix (tracks the page hasn't loaded aren't judged:
+ * the API still refuses them). */
+export function unusableRows(hashes: string[]): LibraryRow[] {
+  const rows = useLibrary.getState().rows;
+  if (!rows) return [];
+  const want = new Set(hashes);
+  return rows.filter((r) => want.has(r.hash) && !readiness(r).usable);
 }

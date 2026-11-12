@@ -1,11 +1,12 @@
 /**
  * The library's sources (#73): all tracks, smart crates (saved filters), crates and sets. Crates and sets take
- * tracks dragged from the table (TRACKS_MIME); dropping on "New crate" or "New set" makes one with them.
+ * tracks dragged from the table (TRACKS_MIME); dropping on "New crate" or "New set" makes one with them. A set shows
+ * that it won't take tracks that aren't ready to mix (#100): the page then says why.
  */
 import { FolderPlus, Library, ListMusic, ListPlus, Sparkles, X } from "lucide-react";
 import { type DragEvent, type ReactNode, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
-import { TRACKS_MIME } from "./LibraryTable";
+import { TRACKS_MIME, UNREADY_ALL_MIME, UNREADY_SOME_MIME } from "./LibraryTable";
 
 export type Scope = { kind: "all" } | { kind: "crate"; id: number } | { kind: "set"; id: number } | { kind: "smart"; id: string };
 
@@ -85,11 +86,11 @@ export function CrateList({ scope, onScope, total, crates: unsortedCrates, sets:
       </Group>
       <Group title="Sets">
         {sets.map((s) => (
-          <Item key={s.id} icon={ListMusic} active={scope.kind === "set" && scope.id === s.id} onClick={() => onScope({ kind: "set", id: s.id })} count={s.track_count} onTracks={(h) => onDrop("set", s.id, h)}>
+          <Item key={s.id} icon={ListMusic} active={scope.kind === "set" && scope.id === s.id} onClick={() => onScope({ kind: "set", id: s.id })} count={s.track_count} onTracks={(h) => onDrop("set", s.id, h)} forSets>
             {s.name}
           </Item>
         ))}
-        <Item icon={ListPlus} muted onTracks={(h) => onDrop("set", null, h)} title="Drop tracks here to start a set with them">
+        <Item icon={ListPlus} muted onTracks={(h) => onDrop("set", null, h)} forSets title="Drop tracks here to start a set with them">
           New set
         </Item>
       </Group>
@@ -117,17 +118,23 @@ interface ItemProps {
   onClick?: () => void;
   /** Makes it a drop target for tracks dragged from the table. */
   onTracks?: (hashes: string[]) => void;
+  /** A set (or "New set"): it takes only tracks that are ready to mix. */
+  forSets?: boolean;
 }
 
-function Item({ icon: Icon, children, active, muted, count, aside, title, onClick, onTracks }: ItemProps) {
-  const [over, setOver] = useState(false);
+function Item({ icon: Icon, children, active, muted, count, aside, title, onClick, onTracks, forSets }: ItemProps) {
+  const [over, setOver] = useState<false | "ok" | "some" | "none">(false);
   const accepts = (e: DragEvent) => !!onTracks && Array.from(e.dataTransfer.types).includes(TRACKS_MIME);
+  const fit = (e: DragEvent) => {
+    const types = Array.from(e.dataTransfer.types);
+    return !forSets ? "ok" : types.includes(UNREADY_ALL_MIME) ? "none" : types.includes(UNREADY_SOME_MIME) ? "some" : "ok";
+  };
   return (
     <button
       type="button"
       title={title}
       onClick={onClick}
-      onDragEnter={(e) => accepts(e) && setOver(true)}
+      onDragEnter={(e) => accepts(e) && setOver(fit(e))}
       onDragOver={(e) => {
         if (!accepts(e)) return;
         e.preventDefault();
@@ -145,13 +152,19 @@ function Item({ icon: Icon, children, active, muted, count, aside, title, onClic
       className={cn(
         "group/item flex h-7 w-full items-center gap-2 rounded-sm px-2 text-left text-sm transition-colors",
         active ? "bg-selected text-fg" : muted ? "text-fg-subtle hover:bg-hover hover:text-fg-muted" : "text-fg-muted hover:bg-hover hover:text-fg",
-        over && "bg-accent-soft text-fg ring-1 ring-accent/70",
+        over === "ok" && "bg-accent-soft text-fg ring-1 ring-accent/70",
+        over === "some" && "bg-warn/10 text-fg ring-1 ring-warn/60",
+        over === "none" && "cursor-not-allowed bg-danger/10 text-fg ring-1 ring-danger/60",
       )}
     >
       <Icon size={14} className="shrink-0" />
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {aside}
-      {count !== undefined && count !== null && <span className="num text-xs text-fg-faint">{count}</span>}
+      {over === "none" || over === "some" ? (
+        <span className="text-2xs whitespace-nowrap text-fg-muted">{over === "none" ? "Not ready" : "Ready ones only"}</span>
+      ) : (
+        count !== undefined && count !== null && <span className="num text-xs text-fg-faint">{count}</span>
+      )}
     </button>
   );
 }
