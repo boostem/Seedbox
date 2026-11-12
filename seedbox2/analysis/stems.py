@@ -265,13 +265,15 @@ def separate(path: Path | str, out_dir: Path | str, session: Any = None, *, fmt:
 
 
 def read_settings(settings: Any) -> dict:
-    """The `stems` settings from a seedbox2.library.service.Settings (or None: the defaults)."""
+    """The `stems` settings from a seedbox2.library.service.Settings (or None: the defaults). `enabled` False turns
+    stems off: none are queued, and a track is ready without them (the mix falls back on EQ)."""
     raw = settings.get(SETTINGS_KEY, {}) if settings is not None else {}
     raw = raw if isinstance(raw, dict) else {}
     limit = raw.get("limit_gb", DEFAULT_LIMIT_GB)
     fmt = raw.get("format")
     return {"limit_gb": float(limit) if isinstance(limit, (int, float)) and limit >= 0 else DEFAULT_LIMIT_GB,
-            "format": fmt if fmt in FORMATS else DEFAULT_FORMAT, "low_power": bool(raw.get("low_power", False))}  # fmt: skip
+            "format": fmt if fmt in FORMATS else DEFAULT_FORMAT, "low_power": bool(raw.get("low_power", False)),
+            "enabled": bool(raw.get("enabled", True))}  # fmt: skip
 
 
 def stems_dir() -> Path:
@@ -396,6 +398,8 @@ def stems_job(payload: dict, ctx: Any) -> dict:
         touch(found)
         return {"hash": hash_, "path": str(found), "cached": True}
     settings = read_settings(ctx.settings)
+    if not settings["enabled"] and payload.get("set") is None:
+        return {"hash": hash_, "skipped": "disabled"}
     settings["low_power"] = settings["low_power"] or getattr(ctx, "low_power", False)  # seedbox2.power, right now
     fmt, limit = settings["format"], int(settings["limit_gb"] * GB)
     keep = {hash_, *(lib.set_hashes(payload["set"]) or [] if payload.get("set") is not None else [])}
@@ -483,6 +487,8 @@ def queue_missing(jobs: Any, lib: Any, settings: Any = None) -> int:
 
     root = store.models_dir()
     s = read_settings(settings)
+    if not s["enabled"]:
+        return 0
     if not any(store.installed(MODELS[n], root) for n in model_names(s)):
         return 0
     room = int(s["limit_gb"] * GB) - usage()["bytes"]

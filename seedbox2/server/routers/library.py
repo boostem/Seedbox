@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -210,13 +211,21 @@ def choose(body: ChooseBody) -> dict:
 # --- the library view (#73): table rows, overview waveforms, crates and sets to drop tracks into, smart crates -----
 
 
+def _stems_required(lib: Any) -> bool:
+    """Whether a ready track needs its stems: not when stems are off in the settings."""
+    from seedbox2.analysis import stems
+    from seedbox2.library.service import SETTINGS_FILE, Settings
+
+    return stems.read_settings(Settings(Path(lib.db.path).parent / SETTINGS_FILE))["enabled"]
+
+
 @router.get("/view")
 def view(lib: LibraryDep) -> dict:
     """Every track as a table row: BPM, Camelot key, energy and genre (our analysis, else the tags' hints) and its
     analysis status (`seedbox2.library.view`). The table sorts and filters these on the client."""
     from seedbox2.analysis import waveform
 
-    items = lib.view_rows(waveform_version=waveform.MODEL_VERSION)
+    items = lib.view_rows(waveform_version=waveform.MODEL_VERSION, stems_required=_stems_required(lib))
     return {"total": len(items), "items": items}
 
 
@@ -230,7 +239,8 @@ def view_some(body: HashesBody, lib: LibraryDep) -> dict:
     out."""
     from seedbox2.analysis import waveform
 
-    items = lib.view_rows(waveform_version=waveform.MODEL_VERSION, hashes=body.hashes)
+    items = lib.view_rows(waveform_version=waveform.MODEL_VERSION, hashes=body.hashes,
+                          stems_required=_stems_required(lib))
     return {"total": len(items), "items": items}
 
 

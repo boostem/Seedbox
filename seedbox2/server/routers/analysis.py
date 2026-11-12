@@ -14,7 +14,7 @@
 - `GET /analysis/{hash}/sections` (#46): the track's `sections` analysis (`seedbox2.analysis.sections`): sections,
   phrases, mood, fill-ins, mix-in and mix-out candidates. 202 with the queued job if it hasn't been computed yet.
 - `GET /analysis/stems`: the stems cache: its settings, what it holds and which model low-power mode would use.
-- `POST /analysis/stems/settings`: `{limit_gb, format, low_power}`; a lower limit evicts at once.
+- `POST /analysis/stems/settings`: `{limit_gb, format, low_power, enabled}`; a lower limit evicts at once.
 - `GET /analysis/{hash}/energy` (#48): per-bar energy 0-1 and the track's 1-10. 202 while its job is queued.
 - `GET /analysis/{hash}/loudness`: the 400 ms LUFS curve, the integrated LUFS and true peak, and both per section, and the gain for playing the track (`track_gain_db`, #58; the
   sections analysis, or the energy curve's intro, main and outro until there is one). 202 while its job is queued.
@@ -236,6 +236,7 @@ class StemsSettings(BaseModel):
     limit_gb: float | None = Field(default=None, ge=0, le=100_000)
     format: Literal["flac", "opus"] | None = None
     low_power: bool | None = None
+    enabled: bool | None = None
 
 
 @router.get("/stems")

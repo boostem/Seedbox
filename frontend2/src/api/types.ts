@@ -237,6 +237,7 @@ export interface StemsStatus {
   limit_gb: number;
   format: "flac" | "opus";
   low_power: boolean;
+  enabled: boolean; // false: stems are off, none are separated and the mix uses EQ
   usage: { tracks: number; bytes: number };
 }
 
@@ -464,7 +465,12 @@ export interface LibraryRow {
   artwork: boolean;
   format: string;
   status: {
+    /** "done": ready and nothing pending */
     state: AnalysisState;
+    /** every analysis mixing and sets read has finished: beats, key, energy, sections, vocals, waveform, and stems unless they are off */
+    ready: boolean;
+    /** what it lacks, in that order (a failed one counts) */
+    missing: string[];
     waveform: boolean;
     /** true once separated; else the stems job's state, or false if there is none */
     stems: boolean | "queued" | "running" | "failed";

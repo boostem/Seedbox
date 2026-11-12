@@ -130,17 +130,21 @@ class Library:
             f"hash LIMIT ? OFFSET ?", (*args, limit, offset)).fetchall()  # fmt: skip
         return _rows(rows)
 
-    def view_rows(self, *, waveform_version: str | None = None, hashes: Iterable[str] | None = None) -> list[dict]:
-        """Every track (or these ones) as a library-table row (`seedbox2.library.view.describe`), in four queries
+    def view_rows(self, *, waveform_version: str | None = None, hashes: Iterable[str] | None = None,
+                  stems_required: bool = True) -> list[dict]:  # fmt: skip
+        """Every track (or these ones) as a library-table row (`seedbox2.library.view.describe`), in five queries
         whatever the size of the library: the tracks, the fields of their newest beats/tempo/key/energy analyses,
-        their artifacts and the newest job of each kind about each of them."""
+        which of the analyses a ready track needs they have at their current version, their artifacts and the newest
+        job of each kind about each of them. `stems_required`: False when stems are off in the settings."""
+        from seedbox2.analysis import beats, energy, key, sections, vocals
         from seedbox2.library import view
 
         r = self.db.read()
         only = None if hashes is None else list(dict.fromkeys(hashes))
         if only is not None and len(only) > 900:  # SQLite's parameter limit: one query per slice
             return [row for n in range(0, len(only), 900)
-                    for row in self.view_rows(waveform_version=waveform_version, hashes=only[n:n + 900])]  # fmt: skip
+                    for row in self.view_rows(waveform_version=waveform_version, hashes=only[n:n + 900],
+                                              stems_required=stems_required)]  # fmt: skip
         if only is not None and not only:
             return []
         in_ = "" if only is None else f" AND hash IN ({', '.join('?' * len(only))})"
@@ -152,6 +156,12 @@ class Library:
                 f"WHERE analyser IN ('beats', 'tempo', 'key', 'key_override', 'energy') AND json_valid(data){in_} "
                 "ORDER BY created_at, rowid", args):  # fmt: skip
             analyses.setdefault(row["hash"], {})[row["analyser"]] = {k: row[k] for k in ("bpm", "camelot", "key", "energy")}
+        current = {m.ANALYSER: str(m.VERSION) for m in (beats, key, energy, sections, vocals)}
+        finished: dict[str, set[str]] = {}
+        for row in r.execute(f"SELECT hash, analyser, version FROM analyses WHERE analyser IN "
+                             f"({', '.join('?' * len(current))}){in_}", (*current, *args)):  # fmt: skip
+            if current[row["analyser"]] == row["version"]:
+                finished.setdefault(row["hash"], set()).add(row["analyser"])
         artifacts: dict[str, list[str]] = {}
         for row in r.execute(f"SELECT hash, kind, model_version FROM artifacts WHERE 1{in_}", args):
             artifacts.setdefault(row["hash"], []).append(f"{row['kind']}:{row['model_version']}")
@@ -170,7 +180,9 @@ class Library:
         tracks = _rows(r.execute(f"SELECT hash, duration, title, artist, album, tags, source, added_at FROM tracks "
                                  f"WHERE 1{in_} ORDER BY artist COLLATE NOCASE, title COLLATE NOCASE, hash", args))  # fmt: skip
         return [view.describe(t, analyses=analyses.get(t["hash"]), artifacts=artifacts.get(t["hash"], ()),
-                              jobs=jobs.get(t["hash"]), waveform_version=waveform_version) for t in tracks]  # fmt: skip
+                              jobs=jobs.get(t["hash"]), waveform_version=waveform_version,
+                              finished=finished.get(t["hash"], ()), stems_required=stems_required)
+                for t in tracks]  # fmt: skip
 
     def track_count(self) -> int:
         return self.db.read().execute("SELECT count(*) FROM tracks").fetchone()[0]
