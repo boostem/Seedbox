@@ -544,8 +544,11 @@ earlier and overlap for longer than our templates do.
   differ in when the bass moves. In the "early" half (52), B's lows are half up at 13% of the overlap and the lows cross
   at 33%. In the "late" half (42), B's lows come in at 53% and cross at 73%. Techno is almost all early (11 of 13). In
   both, B's mids and highs are in within the first 20%, and A's mids and highs stay up to the end.
-- **Against our templates:** every blend template swaps the lows at about 53% of the overlap. The DJs' overlaps are
-  much longer: a median of 40 bars, 30-52 between quartiles, against our 8/16/32. A DJ transition is on average 5.4 dB
+- **Against our templates:** every blend template swaps the lows at about 53% of the overlap, as a full 30 dB cut
+  within one step of the 16. The DJs move the lows more gently. In each transition the steepest step is a median of
+  14-15 dB for A's lows and B's, and only about half reach 15 dB in a step: they ride the lows over a few bars rather
+  than cutting them. The DJs' overlaps are much longer: a median of 40 bars, 30-52 between quartiles, against our
+  8/16/32. A DJ transition is on average 5.4 dB
   from our nearest template at its length (the best template picked afterwards for each transition, an oracle). It is
   4.9 dB from the plain mean of all DJ shapes, and 4.2 dB from its own cluster's centre.
 - **Prototype** (`curves model`): a multinomial logit on 12 features from our analysis of the overlap: length, both
@@ -555,12 +558,17 @@ earlier and overlap for longer than our templates do.
   plain mean shape (4.9 dB): our analysis doesn't predict the variation in what DJs play.
 - **A/B** (`curves listen --k 1`, 20 pairs): our engine's plan for each DJ pair, rendered as it is ("template") and with
   its fader/EQ/filter lanes replaced by the mean DJ shape ("learnt"), into the `#/listen` folder as `curves 01`-`20`.
-  The listening is #<!--LISTEN-->.
+  The pairs are 11 bass swaps, 4 long blends, 2 phrase blends, 2 echo outs and a filter sweep, of 8 or 16 bars. The
+  listening is #94 and needs people. `mixmetrics` says what to listen for (medians over the 20). The learnt shape
+  overlaps the basses for 6.3 s (26 dB·s), where the template has none. It dips 3.3 LU instead of 1.0 LU, because A's
+  lows leave early. It bumps 1.2 LU against 0.8 LU, and its audible overlap is 31.6 s against 24.6 s. Masking in the mids
+  is the same (0.22/0.13 against 0.24/0.12). Our checks would flag the bass overlap, though DJs play it all the
+  time. Whether it sounds worse is what the listening test is for.
 
 **Verdict:** don't ship a learnt curve model. With this much data the shapes are one broad family, and nothing we
-analyse predicts the variation within it. A cheaper change is worth trying in the templates: open B's lows earlier,
-around a third of the way into the overlap, and offer longer blends (48-64 bars) for house and techno. The A/B tells
-whether that is audible.
+analyse predicts the variation within it. A cheaper change is worth trying in the templates: open B's lows earlier
+and over a few bars (from about a third of the way into the overlap) instead of a hard swap at the middle, and offer
+longer blends (48-64 bars) for house and techno. The A/B (#94) tells whether that is audible.
 
 ## Ordering a set
 
