@@ -349,12 +349,22 @@ def evict(lib: Any, limit_bytes: int, *, keep: Iterable[str] = (), root: Path | 
 
 
 def _clear_partial(root: Path) -> None:
-    """Folders a killed worker left half written. There is one heavy worker, so none of them is in use."""
+    """Folders a killed worker left half written (named after its pid). A live worker's is left alone: the app has one
+    heavy worker, but the dataset tools (`seedbox2.eval djmix`) can run more."""
     if root.is_dir():
         for parent in root.iterdir():
             for d in parent.iterdir() if parent.is_dir() else ():
-                if TMP_MARK in d.name:
+                if TMP_MARK in d.name and not _alive(d.name.rsplit(TMP_MARK, 1)[1]):
                     shutil.rmtree(d, ignore_errors=True)
+
+
+def _alive(pid: str) -> bool:
+    import psutil
+
+    try:
+        return int(pid) != os.getpid() and psutil.pid_exists(int(pid))
+    except ValueError:
+        return False
 
 
 def estimate_bytes(duration: float | None, fmt: str) -> int:

@@ -39,7 +39,7 @@ from typing import Any
 import numpy as np
 
 from musicreco import cuescore, transitions
-from musicreco.cuescore import FEATURES, CueModel
+from musicreco.cuescore import FEATURES, NET_INPUTS, CueModel
 
 PHRASE = transitions.PHRASE
 AGREE_BARS = 8  # "within 8 bars" (Kim et al. 2020: 74 % between DJs, 86 % within 16)
@@ -160,8 +160,10 @@ def length_prior(ts: Iterable[Transition], strength: float = 8.0) -> dict[str, d
     return out
 
 
-def design(ts: list[Transition], prior: CueModel) -> list[tuple[np.ndarray, int]]:
-    """Per usable transition: the candidates' feature matrix and the DJ's row."""
+def design(ts: list[Transition], prior: CueModel, names: tuple[str, ...] = FEATURES,
+           mixes: list[str] | None = None) -> list[tuple[np.ndarray, int]]:  # fmt: skip
+    """Per usable transition: the candidates' feature matrix (columns `names`) and the DJ's row. `mixes` gets each
+    row's mix."""
     rows = []
     for t in ts:
         plans = candidates(t)
@@ -169,7 +171,9 @@ def design(ts: list[Transition], prior: CueModel) -> list[tuple[np.ndarray, int]
         if y is None or len(plans) < 2:
             continue
         x = [cuescore.features(t.ga, t.gb, p.a0, p.b0, p.length, t.key_clash, p.a_loop, p.b_loop, prior) for p in plans]
-        rows.append((np.array([[f[k] for k in FEATURES] for f in x]), y))
+        rows.append((np.array([[f[k] for k in names] for f in x]), y))
+        if mixes is not None:
+            mixes.append(t.mix)
     return rows
 
 
@@ -190,13 +194,15 @@ def fit_logit(rows: list[tuple[np.ndarray, int]], l2: float = 0.05, steps: int =
     return w
 
 
-def platt(rows: list[tuple[np.ndarray, int]], w: np.ndarray, steps: int = 500) -> tuple[float, float]:
+def platt(rows: list[tuple[np.ndarray, int]], w: Any, steps: int = 500, ridge: float = 1e-3) -> tuple[float, float]:
     """scale, bias so that sigmoid(scale * u + bias) is the chance a candidate is the DJ's, classes weighted equally
-    (the DJ's pick reads above 50, the rest below)."""
+    (the DJ's pick reads above 50, the rest below). On the utility as the planner sees it (not relative to the
+    transition's best candidate, which the planner doesn't know when it scores one); `ridge` keeps it finite when
+    the training transitions are separable."""
     us, ys = [], []
     for x, y in rows:
-        u = x @ w
-        us.append(u - u.max())
+        u = x @ w if isinstance(w, np.ndarray) else w(x)
+        us.append(u)
         ys.append(np.eye(len(u))[y])
     u, yv = np.concatenate(us), np.concatenate(ys)
     wt = np.where(yv == 1, 0.5 / max(yv.sum(), 1), 0.5 / max((1 - yv).sum(), 1))
@@ -205,28 +211,166 @@ def platt(rows: list[tuple[np.ndarray, int]], w: np.ndarray, steps: int = 500) -
         p = 1 / (1 + np.exp(-(a * u + c)))
         r = wt * (p - yv)
         s = wt * p * (1 - p) + 1e-9
-        H = np.array([[(s * u * u).sum(), (s * u).sum()], [(s * u).sum(), s.sum()]]) + 1e-6 * np.eye(2)
-        da, dc = np.linalg.solve(H, [(r * u).sum(), r.sum()])
+        H = np.array([[(s * u * u).sum(), (s * u).sum()], [(s * u).sum(), s.sum()]]) + (ridge + 1e-9) * np.eye(2)
+        da, dc = np.linalg.solve(H, [(r * u).sum() + ridge * a, r.sum() + ridge * c])
         a, c = a - da, c - dc
         if abs(da) + abs(dc) < 1e-9:
             break
     return float(a), float(c)
 
 
-def train(ts: list[Transition], holdout: float = 0.2, log: Any = print) -> CueModel:
+# --- the network (ONNX) -----------------------------------------------------------------------------------------------
+
+
+@dataclass
+class Net:
+    mu: np.ndarray
+    sd: np.ndarray
+    w1: np.ndarray  # inputs x hidden
+    b1: np.ndarray
+    w2: np.ndarray  # hidden
+
+    def __call__(self, x: np.ndarray) -> np.ndarray:
+        return np.tanh(((x - self.mu) / self.sd) @ self.w1 + self.b1) @ self.w2
+
+    def onnx(self) -> bytes:
+        """The network as an ONNX graph: float32 [n, inputs] -> [n, 1]. Needs the `onnx` package (dev only)."""
+        import onnx
+        from onnx import TensorProto, helper, numpy_helper
+
+        def const(name: str, a: np.ndarray) -> onnx.TensorProto:
+            return numpy_helper.from_array(np.asarray(a, dtype=np.float32), name)
+
+        nodes = [
+            helper.make_node("Sub", ["x", "mu"], ["xc"]),
+            helper.make_node("Div", ["xc", "sd"], ["xs"]),
+            helper.make_node("MatMul", ["xs", "w1"], ["z"]),
+            helper.make_node("Add", ["z", "b1"], ["zb"]),
+            helper.make_node("Tanh", ["zb"], ["h"]),
+            helper.make_node("MatMul", ["h", "w2"], ["u"]),
+        ]
+        graph = helper.make_graph(
+            nodes, "seedbox_cue_net",
+            [helper.make_tensor_value_info("x", TensorProto.FLOAT, ["n", len(self.mu)])],
+            [helper.make_tensor_value_info("u", TensorProto.FLOAT, ["n", 1])],
+            [const("mu", self.mu), const("sd", self.sd), const("w1", self.w1), const("b1", self.b1),
+             const("w2", self.w2.reshape(-1, 1))],
+        )  # fmt: skip
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)], producer_name="seedbox2.eval.cues")
+        model.ir_version = 8  # readable by older onnxruntime builds (Intel Macs stay on 1.23)
+        onnx.checker.check_model(model)
+        return model.SerializeToString()
+
+
+def _batch(rows: list[tuple[np.ndarray, int]]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Candidates padded to [transitions, max candidates, inputs], the mask of real ones, the DJ's index."""
+    c = max(len(x) for x, _ in rows)
+    d = rows[0][0].shape[1]
+    xb, mask = np.zeros((len(rows), c, d)), np.zeros((len(rows), c), dtype=bool)
+    for i, (x, _) in enumerate(rows):
+        xb[i, : len(x)], mask[i, : len(x)] = x, True
+    return xb, mask, np.array([y for _, y in rows])
+
+
+def _nll(net: Net, rows: list[tuple[np.ndarray, int]]) -> float:
+    total = 0.0
+    for x, y in rows:
+        u = net(x)
+        total += float(np.log(np.exp(u - u.max()).sum()) + u.max() - u[y])
+    return total / max(len(rows), 1)
+
+
+def fit_net(rows: list[tuple[np.ndarray, int]], hidden: int = 8, l2: float = 1e-2, steps: int = 1500,
+            lr: float = 0.005, seed: int = 55, val: list[tuple[np.ndarray, int]] | None = None,
+            log: Any = None) -> tuple[Net, int]:  # fmt: skip
+    """A one-hidden-layer network trained like the logit (a softmax over each transition's candidates), by Adam.
+    With `val`, returns the step count with the lowest validation loss (checked every 50 steps) and that network."""
+    allx = np.concatenate([x for x, _ in rows])
+    mu, sd = allx.mean(axis=0), allx.std(axis=0)
+    sd = np.where(sd < 1e-6, 1.0, sd)
+    xb, mask, y = _batch(rows)
+    xs = (xb - mu) / sd
+    rng = np.random.default_rng(seed)
+    d = xs.shape[2]
+    params = [rng.normal(0, 1 / np.sqrt(d), (d, hidden)), np.zeros(hidden), rng.normal(0, 1 / np.sqrt(hidden), hidden)]
+    m = [np.zeros_like(p) for p in params]
+    v = [np.zeros_like(p) for p in params]
+    t_idx = np.arange(len(rows))
+    best: tuple[float, int, Net] | None = None
+    for step in range(1, steps + 1):
+        w1, b1, w2 = params
+        h = np.tanh(xs @ w1 + b1)  # T x C x H
+        u = np.where(mask, h @ w2, -np.inf)
+        p = np.exp(u - u.max(axis=1, keepdims=True))
+        p /= p.sum(axis=1, keepdims=True)
+        du = p.copy()
+        du[t_idx, y] -= 1.0
+        du /= len(rows)
+        g2 = np.einsum("tch,tc->h", h, du) + l2 * w2
+        dz = du[:, :, None] * w2[None, None, :] * (1 - h * h)
+        g1 = np.einsum("tcd,tch->dh", xs, dz) + l2 * w1
+        gb = dz.sum(axis=(0, 1))
+        for i, g in enumerate((g1, gb, g2)):
+            m[i] = 0.9 * m[i] + 0.1 * g
+            v[i] = 0.999 * v[i] + 0.001 * g * g
+            params[i] = params[i] - lr * (m[i] / (1 - 0.9**step)) / (np.sqrt(v[i] / (1 - 0.999**step)) + 1e-8)
+        if val is not None and step % 50 == 0:
+            net = Net(mu, sd, *[p.copy() for p in params])
+            loss = _nll(net, val)
+            if best is None or loss < best[0]:
+                best = (loss, step, net)
+    if best is not None:
+        if log:
+            log(f"network: best validation loss {best[0]:.3f} at step {best[1]}")
+        return best[2], best[1]
+    return Net(mu, sd, *params), steps
+
+
+def _logit_nll(w: np.ndarray, rows: list[tuple[np.ndarray, int]]) -> float:
+    total = 0.0
+    for x, y in rows:
+        u = x @ w
+        total += float(np.log(np.exp(u - u.max()).sum()) + u.max() - u[y])
+    return total / max(len(rows), 1)
+
+
+def train(ts: list[Transition], holdout: float = 0.2, log: Any = print, kind: str = "auto") -> CueModel:
+    """kind: "logit" (linear weights), "net" (the ONNX network) or "auto": the one with the lower loss on a fifth of
+    the training mixes, each fitted on the other four fifths."""
     train_ts = [t for t in ts if not held_out(t.mix, holdout)]
     prior = CueModel(weights={}, length_prior=length_prior(train_ts))
-    rows = design(train_ts, prior)
+    row_mixes: list[str] = []
+    rows = design(train_ts, prior, FEATURES, row_mixes)
     if not rows:
         raise SystemExit("no usable transitions to train on (none has a candidate within a phrase of the DJ's cues)")
     w = fit_logit(rows)
-    scale, bias = platt(rows, w)
-    model = CueModel(
-        weights=dict(zip(FEATURES, map(float, w), strict=True)), scale=scale, bias=bias,
-        length_prior=prior.length_prior,
-        info={"transitions": len(rows), "mixes": len({t.mix for t in train_ts}), "holdout": holdout,
-              "unusable": len(train_ts) - len(rows)},
-    )  # fmt: skip
+    info: dict[str, Any] = {"transitions": len(rows), "mixes": len({t.mix for t in train_ts}), "holdout": holdout,
+                            "unusable": len(train_ts) - len(rows)}  # fmt: skip
+    net = None
+    if kind in ("net", "auto"):
+        net_rows = design(train_ts, prior, NET_INPUTS)
+        val = [held_out("val:" + mix, 0.2) for mix in row_mixes]
+        tr = [r for r, v in zip(net_rows, val, strict=True) if not v]
+        va = [r for r, v in zip(net_rows, val, strict=True) if v]
+        steps = 1500
+        if tr and va:
+            net_in, steps = fit_net(tr, val=va, steps=3000, log=log)
+            info["val_loss_net"] = round(_nll(net_in, va), 4)
+            lin_tr = [r for r, v in zip(rows, val, strict=True) if not v]
+            lin_va = [r for r, v in zip(rows, val, strict=True) if v]
+            info["val_loss_logit"] = round(_logit_nll(fit_logit(lin_tr), lin_va), 4)
+            log(f"validation loss: network {info['val_loss_net']}, logit {info['val_loss_logit']} "
+                f"({len(va)} transitions)")  # fmt: skip
+        if kind == "net" or info.get("val_loss_net", math.inf) < info.get("val_loss_logit", -math.inf):
+            net, _ = fit_net(net_rows, steps=steps)
+            info["net_steps"] = steps
+            scale, bias = platt(net_rows, net)
+            info["logit_scale"], info["logit_bias"] = platt(rows, w)  # for the comparison in the report
+    if net is None:
+        scale, bias = platt(rows, w)
+    info["kind"] = "net" if net is not None else "logit"
+    model = CueModel(weights=dict(zip(FEATURES, map(float, w), strict=True)), scale=scale, bias=bias,
+                     length_prior=prior.length_prior, info=info, net=net.onnx() if net is not None else None)  # fmt: skip
     log(f"trained on {len(rows)} transitions from {model.info['mixes']} mixes "
         f"({model.info['unusable']} had no candidate within a phrase of the DJ's cues)")  # fmt: skip
     return model
@@ -258,17 +402,22 @@ def agreement(ts: list[Transition], model: CueModel | None) -> dict[str, Any]:
 def report(ts: list[Transition], model: CueModel, holdout: float) -> dict[str, Any]:
     test = [t for t in ts if held_out(t.mix, holdout)]
     learnt, hand = agreement(test, model), agreement(test, None)
-    return {"held_out_mixes": len({t.mix for t in test}), "learnt": learnt, "hand_set": hand,
-            "target": HUMAN_AGREEMENT,
-            "meets_target": learnt["both_within_8"] is not None and learnt["both_within_8"] >= HUMAN_AGREEMENT}
+    out = {"held_out_mixes": len({t.mix for t in test}), "learnt": learnt, "hand_set": hand,
+           "target": HUMAN_AGREEMENT,
+           "meets_target": learnt["both_within_8"] is not None and learnt["both_within_8"] >= HUMAN_AGREEMENT}  # fmt: skip
+    if model.net is not None:  # the same model's linear weights, for comparison
+        out["logit"] = agreement(test, CueModel(weights=model.weights, length_prior=model.length_prior,
+                                                scale=float(model.info.get("logit_scale", model.scale)),
+                                                bias=float(model.info.get("logit_bias", model.bias))))  # fmt: skip
+    return out
 
 
 def _print_report(r: dict[str, Any]) -> None:
     print(f"held out: {r['learnt']['transitions']} transitions from {r['held_out_mixes']} mixes")
-    print(f"{'':16}{'learnt':>8}{'hand-set':>10}")
+    cols = [("learnt", "learnt"), *([("logit", "logit")] if "logit" in r else []), ("hand_set", "hand-set")]
+    print(f"{'':16}" + "".join(f"{label:>10}" for _, label in cols))
     for k in ("b_cue_within_8", "a_in_within_8", "both_within_8", "both_within_16", "length_match"):
-        lv, hv = r["learnt"][k], r["hand_set"][k]
-        print(f"{k:16}{(lv or 0) * 100:7.1f}%{(hv or 0) * 100:9.1f}%")
+        print(f"{k:16}" + "".join(f"{(r[c][k] or 0) * 100:9.1f}%" for c, _ in cols))
     print(f"target {r['target'] * 100:.0f}% (both cues within 8 bars): {'met' if r['meets_target'] else 'not met'}")
 
 
@@ -374,6 +523,9 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--holdout", type=float, default=0.2, help="share of mixes held out (default 0.2)")
     t.add_argument("--json", type=Path, help="write the report as JSON")
     t.add_argument("--library", type=Path, help="library database for the tracks' hashes (default: Seedbox 2's)")
+    t.add_argument("--kind", choices=("auto", "net", "logit"), default="auto",
+                   help="net: a small ONNX network over the features and the pair's tempo and energy; logit: linear "
+                        "weights; auto (default): the one that does better on a fifth of the training mixes")  # fmt: skip
     e = sub.add_parser("eval", help="the planner against the DJs on the held-out mixes")
     e.add_argument("transitions", type=Path)
     e.add_argument("--model", type=Path, help="a model file (default: the installed one)")
@@ -394,7 +546,7 @@ def main(argv: list[str] | None = None) -> int:
     needs_lib = '"hash"' in args.transitions.read_text()
     ts = read(args.transitions, _library(args.library, needs_lib))
     if args.cmd == "train":
-        model = train(ts, args.holdout)
+        model = train(ts, args.holdout, kind=args.kind)
         out = args.out
         if args.install:
             from seedbox2.paths import folders

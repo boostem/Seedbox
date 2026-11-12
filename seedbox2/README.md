@@ -422,6 +422,14 @@ long they overlap, learnt from real DJ mixes instead of `transitions._window`'s 
   transition's candidates, L2, Adam in numpy) learns which candidate the DJ played; Platt scaling puts its utility on
   the planner's 0-100 fit, so the DJ's pick reads above `_MIN_BLEND_FIT` and the others mostly below it. The model is
   plain JSON: weights, the scaling and the length prior (1.6 KB; the limit is 1 MB).
+- **Or a small network (ONNX):** `cues train --kind net` fits a one-hidden-layer network (8 tanh units) over the same
+  features plus the pair's context (`cuescore.CONTEXT`: A's tempo, the tempo gap, the pair's energy), with the same
+  softmax over candidates, in numpy. It is exported as an ONNX graph (about 1.6 KB) inside the same JSON, base64-encoded,
+  and onnxruntime runs it (the app already ships onnxruntime; building it needs the dev-only `onnx` package). The default,
+  `--kind auto`, fits both on four fifths of the training mixes and keeps the one with the lower loss on the rest, so
+  the network is only used when the data shows it does better. Scoring costs about what the linear model does (3.3 against
+  3.2 ms to plan a pair on a loaded desktop). The genre isn't an input: the planner doesn't know it. It still sets the
+  length prior.
 - **Hard limits stay:** candidates are phrase-aligned only, and `_plan` still turns down a blend with more vocal-over-vocal
   bars than `_max_clash` allows or too many clashing-key bars, whatever the score. A Short or Long mix-length setting
   still shifts the fit by its difference to Normal.
@@ -442,6 +450,38 @@ long they overlap, learnt from real DJ mixes instead of `transitions._window`'s 
   edges, no vocal clash, 32 bars) plus noise. On 9 held-out mixes (72 transitions) both cues land within 8 bars 61% of
   the time, against 64% for the DJ's own noiseless taste (the ceiling the noise allows) and 43% for the hand-set
   penalties. The model recovers the taste, but these numbers say nothing about real music.
+
+**Real mixes** (`python -m seedbox2.eval djmix build`, `seedbox2/eval/djmix.py`): turns the dataset's metadata into
+`transitions.jsonl` locally. It picks mixes of the chosen mixesdb genres (house, deep/tech/progressive house, techno,
+minimal by default), one per DJ, with at least 6 consecutive identified tracks. It downloads each mix and its tracks
+with yt-dlp, analyses the tracks with Seedbox 2's own analysers in a library of its own (`~/.cache/seedbox2/djmix`,
+nothing goes into the app's), and aligns them. Beat This! beats for mix and track, 32 mel bands averaged per half beat
+(so the DJ's tempo change drops out), z-scored by the track and compared by cosine. Along each diagonal (one half beat
+of slack) the best run above a similarity floor is where the track is heard. It is kept when long enough, clearly better
+than anywhere else in the mix, and in tracklist order. Consecutive kept tracks give a transition: B's run start is its
+cue-in and A's in-point, and the overlap runs to the end of A's run. A tracklist timestamp, when there is one, narrows the
+search to 10 minutes around it. Dead links are noted and skipped; YouTube rate limits ("confirm you're not a bot") are
+retried by the next run.
+
+**Result on real mixes (2026-11-11):** 60 mixes selected, 54 downloaded, 683 tracks analysed (stems on an RTX 4070 Ti,
+about 7 a minute with three workers). 43 mixes gave 224 aligned transitions. On the 5 held-out mixes (34 transitions):
+
+| within 8 bars of the DJ | network (ONNX) | logit | hand-set |
+| --- | --- | --- | --- |
+| both cues | 17.6% | 17.6% | 11.8% |
+| B's cue | 52.9% | 50.0% | 44.1% |
+| A's in-point | 32.4% | 26.5% | 23.5% |
+| both within 16 bars | 35.3% | 35.3% | 26.5% |
+| length matches | 38.2% | 23.5% | 32.4% |
+
+The learnt score beats the penalties, but this is far from the 74% target, and the held-out set is small. `auto` picks
+the logit (validation loss 3.69 against the network's 3.80, on 29 transitions). Even so, the network is better on A's
+in-point and the length. The main limit is the candidate set, not the score: 87 of the 222 transitions have no
+candidate within a phrase of what the DJ did. In 45 of them the DJ cued B after the end of its detected intro, which the
+planner never does. DJs overlapped a median of 26 bars (quartiles 16 and 45) and left A with a median of 11 bars to go.
+Part of the late B cues may be the alignment: a quiet fade-in only counts once B is clearly heard. Letting the planner
+cue B past its intro, and plan 64 bars, is what would move the number. That is a planner decision, not part of the
+model.
 
 **The data and its licence.** The paper's data is not usable as it is. `mir-aidj/djmix-dataset` publishes only
 metadata: 5,040 mixes from mixesdb with their tracklists, the mix's audio URL (SoundCloud, Mixcloud, YouTube) and the

@@ -312,7 +312,7 @@ def test_the_background_stops_at_the_limit_but_an_open_set_evicts(cache, lib, tm
 @needs_ffmpeg
 def test_a_failed_job_leaves_nothing_behind_and_clears_older_leftovers(cache, lib, tmp_path):
     h = add_track(lib, tmp_path / "a.wav")
-    leftover = st.folder_for(h).with_name(f"aa{st.TMP_MARK}123")
+    leftover = st.folder_for(h).with_name(f"aa{st.TMP_MARK}999999999")  # no such process
     leftover.mkdir(parents=True)
 
     class Broken(FakeSession):
@@ -525,3 +525,13 @@ def test_the_real_model_separates_a_bass_tone_from_a_click_track(tmp_path):
     assert power["bass"] > power["vocals"] * 10 and power["drums"] > power["vocals"] * 10, power
     residual = sum(out.values())[:, :x.shape[1]] - x
     assert np.mean(residual**2) < 0.01 * np.mean(x**2)  # the stems add up to the mix, within -20 dB
+
+
+def test_a_live_workers_partial_folder_is_left_alone(cache, tmp_path):
+    """Two heavy workers (the djmix dataset tools run them): starting a job doesn't delete the other's work."""
+    busy = st.folder_for("bb" * 20).with_name(f"bb{st.TMP_MARK}{os.getppid()}")
+    dead = st.folder_for("cc" * 20).with_name(f"cc{st.TMP_MARK}999999999")
+    for d in (busy, dead):
+        d.mkdir(parents=True)
+    st._clear_partial(st.stems_dir())
+    assert busy.exists() and not dead.exists()
