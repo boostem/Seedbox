@@ -30,15 +30,15 @@ arm64 the same version, so both Macs run the same onnxruntime. `versions.txt` ne
 took.
 
 **ffmpeg stays LGPL.** imageio-ffmpeg's build, which runs Seedbox 2 from source, is GPL and is excluded. On macOS
-`build_ffmpeg.sh` builds from source with libopus only, and refuses a result that says GPL. No one publishes an LGPL
-build for macOS. On Windows it is BtbN's `win64-lgpl` build: if its release is ever pruned the download fails and the
+`build_ffmpeg.sh` builds from source with libopus and LAME only (Opus for the stems, MP3 for every download), and
+refuses a result that says GPL or lacks either encoder. No one publishes an LGPL build for macOS. On Windows it is BtbN's `win64-lgpl` build: if its release is ever pruned the download fails and the
 pin needs a new month's build. The notice the licence asks for goes in the bundle's `licenses/` folder.
 
 **Smoke test** (`check_seedbox2.py <executable>`): the build runs it on the built app and again on what the installer
 installs (the DMG mounted, the setup installed and uninstalled). It runs `--self-test` with empty data folders and
 requires the bundled ffmpeg and deno running, onnxruntime running an embedded tiny model in-process and in a spawned
 worker, onnxruntime's accelerator in the bundle, pywebview's backend loading, the server serving the UI, no torch, and
-ffmpeg with no GPL flag writing Opus. The build fails on an installer of 250 MB or more.
+ffmpeg with no GPL flag writing Opus and MP3. The build fails on an installer of 250 MB or more.
 
 ## Notarisation
 
