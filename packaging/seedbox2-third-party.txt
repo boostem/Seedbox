@@ -1,6 +1,7 @@
 Seedbox 2 ships these programs next to its own code, unchanged and as separate executables in its bin folder:
 
-ffmpeg 8.1.3 (https://ffmpeg.org), LGPL 2.1 or later. Built without GPL or non-free parts, with libopus (BSD).
+ffmpeg 8.1.3 (https://ffmpeg.org), LGPL 2.1 or later. Built without GPL or non-free parts, with libopus (BSD) and LAME
+  (LGPL 2 or later, https://lame.sourceforge.io), its MP3 encoder.
   Licence: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
   Source: https://ffmpeg.org/releases/ffmpeg-8.1.3.tar.xz
   macOS: built by packaging/build_ffmpeg.sh in the Seedbox repository.

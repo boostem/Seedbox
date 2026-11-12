@@ -63,7 +63,7 @@ def forbidden_in(bundle: Path) -> list[str]:
 
 
 def ffmpeg_problems(ffmpeg: str, workdir: Path) -> list[str]:
-    """The bundled ffmpeg has to be LGPL and do what the app asks of it: write Opus and measure loudness."""
+    """The bundled ffmpeg has to be LGPL and do what the app asks of it: write Opus and MP3 (every download) and measure loudness."""
     version = subprocess.run([ffmpeg, "-hide_banner", "-version"], capture_output=True, text=True, timeout=60,
                              check=False).stdout
     found = [f"ffmpeg is built with {flag}" for flag in ("--enable-gpl", "--enable-nonfree") if flag in version]
@@ -75,7 +75,8 @@ def ffmpeg_problems(ffmpeg: str, workdir: Path) -> list[str]:
         w.writeframes(random.Random(0).randbytes(4 * 44100))
     steps = (["-i", str(tone), "-c:a", "libopus", "-b:a", "96k", str(opus)],
              ["-i", str(opus), "-map", "0:a:0", "-af", "ebur128=peak=true:framelog=quiet", "-f", "null", "-"],
-             ["-i", str(opus), "-ac", "2", "-c:a", "aac", "-f", "ipod", str(workdir / "tone.m4a")])
+             ["-i", str(opus), "-ac", "2", "-c:a", "aac", "-f", "ipod", str(workdir / "tone.m4a")],
+             ["-i", str(opus), "-c:a", "libmp3lame", "-b:a", "192k", str(workdir / "tone.mp3")])
     for step in steps:
         r = subprocess.run([ffmpeg, "-nostdin", "-y", "-hide_banner", "-loglevel", "error", *step],
                            capture_output=True, text=True, timeout=120, check=False)
