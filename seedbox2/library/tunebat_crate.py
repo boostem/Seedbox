@@ -7,6 +7,13 @@ those and leave the rest for the user to add. `download(seed_id, ids)` runs musi
 background into the crate's folder in the music folder (`<Artists - Title>/`, as Seedbox 1 names it), writes its
 `tracks.csv` and `crate.json`, then hands the folder to the importer, which takes it in as a crate and a set.
 
+Each track is imported as soon as its file is there (downloaded, copied or already in the folder), so it has its
+library row and its analyses queued while the rest of the batch downloads. That import is a plain one
+(`LocalMusic.import_now`): mid-batch the folder has no `tracks.csv`/`crate.json` yet, or an earlier run's, so a crate
+import would save a half-done crate and set. The folder import at the end reconciles: `complete_batch` only rewrites
+tags (energy, track number), which the content hash ignores, so it finds the same tracks, adds tunebat's data, the
+crate and the set in order, and queues nothing again (only new tracks get analyses queued).
+
 Tunebat calls go through `TunebatTry`'s client: one at a time, 1.2 s apart, a seed's answer kept for the run. One
 download runs at a time; the others wait their turn. Each change to a download is a `tunebat.crate` event with the
 download (`job_json`).
@@ -27,6 +34,7 @@ from seedbox2.library.tunebat_try import TunebatTry, same_track
 log = logging.getLogger(__name__)
 
 FINAL = ("downloaded", "copied", "exists", "skipped", "failed")
+HAVE_FILE = ("downloaded", "copied", "exists")  # the track's file is in the crate folder: import it at once
 MAX_JOBS = 20  # finished downloads kept for the page
 
 
@@ -212,9 +220,19 @@ class TunebatCrates:
             self._set(job, state="running")
             settings = self._settings()
             seed_dir = library.seed_dir(seed, root=Path(self.music.music_dir))
-            results = self._run_batch(selected, seed, seed_dir, workers=int(settings.workers),
-                                      on_update=lambda t, text: self._item(job, t.id, text),
-                                      tolerance_s=float(settings.tolerance_s), cancel=cancel)  # fmt: skip
+            imports = ThreadPoolExecutor(max_workers=1, thread_name_prefix="seedbox2-tunebat-import")
+
+            def on_update(t: Any, text: str) -> None:  # from the download workers: the import waits its turn
+                self._item(job, t.id, text)
+                if text in HAVE_FILE:
+                    imports.submit(self._import_now, seed_dir, t)
+
+            try:
+                results = self._run_batch(selected, seed, seed_dir, workers=int(settings.workers),
+                                          on_update=on_update, tolerance_s=float(settings.tolerance_s),
+                                          cancel=cancel)  # fmt: skip
+            finally:
+                imports.shutdown(wait=True)  # before complete_batch retags the files
             for r in results:
                 self._item(job, r.track.id, r.status, r.status, r.reason)
             self._set(job, state="finishing")
@@ -228,6 +246,18 @@ class TunebatCrates:
         except Exception as e:  # noqa: BLE001 - the thread's last stop: whatever went wrong goes to the screen
             log.exception("tunebat crate %s failed", job["folder"])
             self._set(job, state="failed", error=f"The download failed ({e}). Check the connection and try again.")
+
+    def _import_now(self, seed_dir: Path, t: Any) -> None:
+        """Import the file of a track that just finished, so it is in the library and analysing at once."""
+        from musicreco import library
+
+        try:
+            here = seed_dir.resolve()
+            files = [p for p in library.LibraryIndex(seed_dir).find(t.id) if p.parent.resolve() == here]
+            if files:
+                self.music.import_now(files)
+        except Exception:  # noqa: BLE001 - the folder import at the end takes it in anyway
+            log.warning("couldn't import %s straight away", t.id, exc_info=True)
 
     def close(self) -> None:
         with self._lock:

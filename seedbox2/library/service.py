@@ -129,6 +129,12 @@ class LocalMusic:
 
         return self._submit("files", label, run)
 
+    def import_now(self, paths: list[Path | str]) -> ImportReport:
+        """Import these just-downloaded files at once, on the caller's thread, as plain files (even inside a crate
+        folder) and without `library.import` events: each gets its track and its analyses queued while the rest of
+        its download batch is still running. The batch's folder import afterwards attaches its crate and set."""
+        return self.importer.import_paths([Path(p) for p in paths], source="local", crates=False)
+
     def import_xml(self, path: Path | str) -> dict:
         """Queue an import of a Rekordbox or iTunes/Music XML's playlists. NotAPlaylistFile/OSError at once if
         the file isn't one."""

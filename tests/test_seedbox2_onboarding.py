@@ -92,6 +92,9 @@ def tunebat(tmp_path):
         def import_files(self, paths):
             self.imported.append(paths)
 
+        def import_now(self, paths):
+            self.imported.append(("now", paths))
+
     events = []
     return TunebatTry(Music(), lambda kind, data: events.append((kind, data)), client=FakeClient()), events
 
@@ -152,7 +155,7 @@ def test_download_tags_and_imports(tunebat, tmp_path, monkeypatch):
     wait_for(events, "done")
     assert [d["state"] for _, d in events] == ["finding", "downloading", "done"]
     path = tmp_path / "Artist - Song.mp3"
-    assert try_.music.imported[-1] == [path]
+    assert try_.music.imported[-2:] == [("now", [path]), [path]]  # at once, then the queued import that says so
     tags = ID3(path)
     assert str(tags["TIT2"]) == "Song" and str(tags["TPE1"]) == "Artist" and str(tags["TKEY"]) == "8A"
     assert try_.download("t1")["state"] == "done"  # not fetched twice

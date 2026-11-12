@@ -3,10 +3,12 @@ the ticked ones into a crate folder that is then imported."""
 
 from __future__ import annotations
 
+import shutil
 import time
 from types import SimpleNamespace
 
 import pytest
+from mutagen.id3 import ID3
 from fastapi.testclient import TestClient
 
 from musicreco.models import DownloadResult, Track, TrackDetail
@@ -46,6 +48,9 @@ class Music:
 
     def import_files(self, paths):
         self.imported.append(paths)
+
+    def import_now(self, paths):
+        self.imported.append(("now", paths))
 
 
 def settings():
@@ -173,3 +178,76 @@ def test_api_opens_and_downloads(tmp_path, monkeypatch, ffmpeg):
         assert r.status_code == 202 and r.json()["state"] == "queued"
         wait_for(events, "done")
         assert c.get("/api/tunebat/crates/downloads").json()[0]["state"] == "done"
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs ffmpeg")
+def test_each_track_is_in_the_library_and_queued_as_soon_as_it_downloads(tmp_path, ffmpeg):
+    """A batch of 3 where the first finishes first: it has its row and its analyses queued while the other two are
+    still downloading; after the batch, one row per track and the crate and set hold all three in order."""
+    from musicreco import pipeline
+    from seedbox2.jobs.registry import Registry
+    from seedbox2.library import Library
+    from seedbox2.library.importer import queue_analysis
+    from seedbox2.library.service import LocalMusic, Settings
+    from tests.test_seedbox2_library import _mp3
+
+    class Jobs:  # the supervisor's submit, recording each (kind, hash)
+        def __init__(self):
+            self.registry = Registry()
+            self.registry.add("beats", "x:y", pool="light", per_track=True)
+            self.registry.add("stems", "x:y", pool="heavy", per_track=True)
+            self.submitted = []
+
+        def submit(self, kind, payload, *, priority):
+            self.submitted.append((kind, payload["hash"]))
+            return {"kind": kind}
+
+    lib, jobs = Library.open(tmp_path / "library.sqlite3"), Jobs()
+    root = tmp_path / "music"
+    music = LocalMusic(lib, settings=Settings(tmp_path / "settings.json"), music_dir=root,
+                       on_new=lambda hashes: queue_analysis(jobs, hashes))  # fmt: skip
+    seen_mid_batch = {}
+
+    def run_batch(tracks, seed, seed_dir, *, workers, on_update, tolerance_s, cancel):
+        results = []
+        for n, t in enumerate(tracks):
+            path = _mp3(seed_dir / f"{t.id}.mp3", freq=300 + 100 * n, tags={"title": t.name, "artist": "Artist",
+                                                                             "spotify_id": t.id})  # fmt: skip
+            on_update(t, "downloaded")
+            results.append(DownloadResult(track=t, status="downloaded", path=path))
+            if n == 0:  # tracks 2 and 3 are still to come: wait for track 1's import
+                deadline = time.monotonic() + 20
+                while not lib.tracks() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                seen_mid_batch["rows"] = [r["title"] for r in lib.tracks()]
+                seen_mid_batch["jobs"] = list(jobs.submitted)
+        return results
+
+    tunebat = TunebatTry(None, lambda *_: None, client=FakeClient())
+    tunebat._last_call = -10.0
+    events = []
+    crates = TunebatCrates(tunebat, music, lambda kind, data: events.append((kind, data)), run_batch=run_batch,
+                           complete_batch=pipeline.complete_batch, settings=settings)  # fmt: skip
+    crates.open("seed")
+    crates.download("seed", ["seed", "near", "far"])
+    wait_for(events, "done")
+    assert music.wait_idle(30)
+
+    assert seen_mid_batch["rows"] == ["Seed Song"]  # track 1 has its row before tracks 2 and 3 are there
+    first = lib.tracks(search="Seed Song")[0]["hash"]
+    assert sorted(seen_mid_batch["jobs"]) == [("beats", first), ("stems", first)]  # and its analyses are queued
+    rows = lib.tracks()
+    assert sorted(r["title"] for r in rows) == ["Far", "Near", "Seed Song"]  # one row per track
+    assert {r["source"] for r in rows} == {"seedbox1"}  # the folder import attached tunebat's crate data
+    hashes = {r["hash"] for r in rows}
+    assert sorted(jobs.submitted) == sorted((k, h) for h in hashes for k in ("beats", "stems"))  # queued once each
+    folder = root / "Artist - Seed Song"
+    numbered = sorted(folder.glob("*.mp3"), key=lambda f: int(str(ID3(f)["TRCK"]).split("/")[0]))
+    by_number = [lib.hash_file(f).hash for f in numbered]  # complete_batch's set order, in the files' tags
+    (crate,) = lib.crates()
+    assert crate["name"] == "Artist - Seed Song" and crate["track_count"] == 3
+    assert [t["hash"] for t in lib.crate(crate["id"])["tracks"]] == by_number
+    (set_,) = lib.sets()
+    assert [t["hash"] for t in lib.set(set_["id"])["tracks"]] == by_number
+    crates.close()
+    lib.close()
