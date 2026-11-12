@@ -87,3 +87,10 @@ def test_style_of_reads_mixesdb_tags() -> None:
     assert curves.style_of(tags("Drum & Bass", "House")) == "dnb"
     assert curves.style_of(tags("Someone")) == "other"
     assert curves._timestamp_s("[05] Code 61 - Drop The Deal") == 300.0
+
+
+def test_in_section_reads_the_analysis_seconds() -> None:
+    an = {"first_downbeat_s": 1.0, "bar_s": 2.0, "intro": {"bars": 8, "start_s": 1.0, "end_s": 17.0}}
+    assert curves._in_section(an, "intro", np.arange(0, 8)) == 1.0
+    assert curves._in_section(an, "intro", np.arange(4, 12)) == 0.5
+    assert curves._in_section(an, "outro", np.arange(0, 8)) == 0.0

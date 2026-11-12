@@ -30,6 +30,7 @@ the user (see seedbox2/README.md, "Learnt fader and EQ curves", for the licence 
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import math
 import re
@@ -40,7 +41,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from scipy import optimize, sparse, stats
+from scipy import optimize, sparse
 
 SR = 22050
 FFT, HOP = 4096, 2048  # 186 ms windows, 93 ms frames (the reference code's 8192/4096 at 44.1 kHz)
@@ -66,7 +67,7 @@ def _sub_edges() -> list[tuple[str, float, float]]:
     out = []
     for name, (lo, hi) in BANDS.items():
         e = np.geomspace(lo, hi, SUB_PER_BAND + 1)
-        out += [(name, float(a), float(b)) for a, b in zip(e[:-1], e[1:])]
+        out += [(name, float(a), float(b)) for a, b in itertools.pairwise(e)]
     return out
 
 
@@ -280,9 +281,9 @@ _ONSET_HOP = 220  # 10 ms
 
 def align_features(y: np.ndarray, sr: int = SR, hop_s: float = ALIGN_HOP_S) -> np.ndarray:
     """(len(_THIRDS) - 1, n) log powers in 1/3-octave-ish bands, a frame every hop_s."""
-    hop = int(round(hop_s * sr))
+    hop = round(hop_s * sr)
     f = np.fft.rfftfreq(_ALIGN_FFT, 1.0 / sr)
-    m = np.stack([(f >= a) & (f < b) for a, b in zip(_THIRDS[:-1], _THIRDS[1:])]).astype(np.float32)
+    m = np.stack([(f >= a) & (f < b) for a, b in itertools.pairwise(_THIRDS)]).astype(np.float32)
     win = np.hanning(_ALIGN_FFT).astype(np.float32)
     out = []
     starts = np.arange(0, max(1, len(y) - _ALIGN_FFT), hop)
@@ -680,7 +681,7 @@ def shapes_report(recs: list[dict], k: int | None = None) -> dict[str, Any]:
         cen = C[j].reshape(6, SHAPE_POINTS)
         bars = [rows[i][2] for i in mem]
         tb = nearest_bars(float(np.median(bars)))
-        near = sorted(((distance_db(cen, temps[(t, tb)]), t) for t in TEMPLATE_TECHNIQUES))
+        near = sorted((distance_db(cen, temps[(t, tb)]), t) for t in TEMPLATE_TECHNIQUES)
         clusters.append({
             "cluster": j, "n": len(mem),
             "styles": dict(sorted(Counter(rows[i][0]["style"] for i in mem).items())),
@@ -725,8 +726,8 @@ MODEL_FEATURES = ("log2_bars", "a_low", "b_low", "a_vocal", "b_vocal", "both_voc
 
 
 def _bars_of(an: dict, u0: float, u1: float) -> np.ndarray:
-    b0 = int(math.floor((u0 - an["first_downbeat_s"]) / an["bar_s"]))
-    b1 = int(math.ceil((u1 - an["first_downbeat_s"]) / an["bar_s"]))
+    b0 = math.floor((u0 - an["first_downbeat_s"]) / an["bar_s"])
+    b1 = math.ceil((u1 - an["first_downbeat_s"]) / an["bar_s"])
     return np.arange(max(0, b0), min(an["bar_count"], max(b1, b0 + 1)))
 
 
@@ -737,10 +738,11 @@ def _mean(an: dict, key: str, bars: np.ndarray) -> float:
 
 
 def _in_section(an: dict, kind: str, bars: np.ndarray) -> float:
-    sec = an.get(kind) or {}
-    lo, hi = sec.get("start_bar"), sec.get("end_bar")
-    if lo is None or hi is None or not bars.size:
+    sec = an.get(kind) or {}  # musicreco.structure's intro/outro: start_s, end_s
+    if sec.get("start_s") is None or sec.get("end_s") is None or not bars.size:
         return 0.0
+    lo = (sec["start_s"] - an["first_downbeat_s"]) / an["bar_s"]
+    hi = (sec["end_s"] - an["first_downbeat_s"]) / an["bar_s"]
     return float(np.mean((bars >= lo) & (bars < hi)))
 
 
@@ -838,7 +840,7 @@ def train(recs: list[dict], k: int | None = None) -> dict[str, Any]:
     rep = shapes_report([r for r, *_ in rows], k)
     lab = np.array([c["cluster"] for c in rep["labels"]])
     X = np.stack([f for *_, f in rows])
-    mu, sd = X.mean(0), X.std(0) + 1e-6
+    mu, sd = X.mean(0), np.maximum(X.std(0), 1e-3)  # stored to 4 places: a constant feature's must stay above 0
     W = fit_softmax((X - mu) / sd, lab, rep["k"])
     return {"version": 1, "features": list(MODEL_FEATURES), "mean": _r(mu, 4), "std": _r(sd, 4), "weights": _r(W, 4),
             "shapes": [c["centre"] for c in rep["clusters"]], "trained_on": len(rows)}
